@@ -1,0 +1,83 @@
+{
+  "id": "10005",
+  "key": "CONN-5",
+  "self": "https://example.atlassian.net/rest/api/3/issue/10005",
+  "fields": {
+    "summary": "Draft ADF-to-text extractor",
+    "status": {"name": "In Review"},
+    "issuetype": {"name": "Story"},
+    "priority": {"name": "Medium"},
+    "project": {"key": "CONN", "name": "Mnemify"},
+    "labels": ["phase-1", "adf"],
+    "created": "2026-04-05T12:00:00.000+0000",
+    "updated": "2026-04-14T22:00:59.900+0000",
+    "assignee": {
+      "accountId": "a-lovelace-123",
+      "displayName": "Ada Lovelace",
+      "emailAddress": "ada@example.com"
+    },
+    "reporter": {
+      "accountId": "g-hopper-456",
+      "displayName": "Grace Hopper",
+      "emailAddress": "grace@example.com"
+    },
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "heading",
+          "attrs": {"level": 1},
+          "content": [{"type": "text", "text": "Design"}]
+        },
+        {
+          "type": "paragraph",
+          "content": [
+            {"type": "text", "text": "We need to handle"},
+            {"type": "mention", "attrs": {"id": "u-1", "text": "@Alice"}},
+            {"type": "text", "text": "edge cases."}
+          ]
+        },
+        {
+          "type": "bulletList",
+          "content": [
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{"type": "text", "text": "paragraphs"}]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{"type": "text", "text": "bullet lists"}]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [{"type": "text", "text": "code blocks"}]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "codeBlock",
+          "attrs": {"language": "python"},
+          "content": [{"type": "text", "text": "def foo():\n    return 42"}]
+        }
+      ]
+    },
+    "attachment": [],
+    "customfield_10026": 5
+  }
+}

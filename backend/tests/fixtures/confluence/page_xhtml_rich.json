@@ -1,0 +1,27 @@
+{
+  "id": "300",
+  "type": "page",
+  "status": "current",
+  "title": "XHTML Stress Test",
+  "space": {"key": "ENG", "name": "Engineering"},
+  "body": {
+    "storage": {
+      "value": "<h1>Deployment Checklist</h1><p>Run the migration first. 🚀</p><ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:parameter ac:name=\"language\">python</ac:parameter><ac:plain-text-body><![CDATA[def migrate(db):\n    db.execute(\"ALTER TABLE users ADD COLUMN tier INT\")\n    return db.row_count]]></ac:plain-text-body></ac:structured-macro><ac:structured-macro ac:name=\"info\"><ac:rich-text-body><p>Remember to notify on-call before running.</p></ac:rich-text-body></ac:structured-macro><table><tbody><tr><th>Step</th><th>Owner</th></tr><tr><td>Migrate</td><td>Ada</td></tr><tr><td>Verify</td><td>Eva</td></tr></tbody></table><p>Empty paragraph follows:</p><p></p><p>That was empty.</p>",
+      "representation": "storage"
+    }
+  },
+  "version": {
+    "when": "2026-04-18T10:00:00.000Z",
+    "number": 2
+  },
+  "history": {
+    "createdDate": "2026-03-01T12:00:00.000Z",
+    "createdBy": {
+      "accountId": "acc-author",
+      "displayName": "Ada Author"
+    }
+  },
+  "ancestors": [],
+  "metadata": {"labels": {"results": []}},
+  "_links": {"webui": "/spaces/ENG/pages/300/XHTML+Stress+Test"}
+}

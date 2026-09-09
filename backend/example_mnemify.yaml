@@ -1,0 +1,86 @@
+raw_root: .mnemify/raw          # Where native-format bytes are stored
+converter_version: "0.1.0"
+
+# Copy this to `mnemify.yaml` (gitignored) and fill in your own values.
+# Tokens live in `.env`, not here — these are just the env-var *names*.
+
+sources:
+  notion:
+    enabled: true
+    token_env: NOTION_TOKEN
+    concurrency: 5
+
+  confluence:
+    enabled: false
+    base_url: "https://your-team.atlassian.net/wiki"
+    email_env: CONFLUENCE_EMAIL
+    token_env: CONFLUENCE_API_TOKEN
+    space_keys: ["DOCS", "PROD"]   # which spaces to harvest
+    concurrency: 3
+
+  jira:
+    enabled: false
+    base_url: "https://your-team.atlassian.net"
+    email_env: JIRA_EMAIL
+    token_env: JIRA_API_TOKEN
+    project_keys: ["PROJ"]         # REQUIRED
+    story_points_field: null       # null = auto-discover
+    concurrency: 3
+
+  obsidian:
+    enabled: false
+    vault_path: "~/Documents/Notes"
+    concurrency: 10
+
+  gmail:
+    enabled: false
+    # OAuth: drop your Google Cloud client_secret JSON at
+    #   backend/src/harvester/_google/oauth_client.json
+    # then run `mnemify login --source gmail`. See backend/.env.template
+    # for the one-time Google Cloud Console setup.
+    label_exclude: ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL"]
+    sender_allowlist: []           # empty = every sender
+    max_threads_per_run: null      # null = unbounded; set e.g. 200 for a first sample
+    concurrency: 3
+
+  calendar:
+    enabled: false
+    # Shares the same OAuth client as gmail. After Gmail's `mnemify login`,
+    # run `mnemify login --source calendar` to grant calendar.readonly.
+    calendar_ids: ["primary"]      # add shared / team calendar IDs as needed
+    past_days: 90
+    future_days: 90
+    show_deleted: false
+    concurrency: 3
+
+  slack:
+    enabled: false
+    token_env: SLACK_USER_TOKEN    # User OAuth Token (xoxp-…) — see .env.template
+    document_mode_default: thread  # thread | channel_summary | both
+    past_days: 90                  # cutoff for history walks (esp. DMs)
+    summary_window: day            # day | week (week reserved for V1.1)
+    name_cache_ttl_seconds: 3600
+    concurrency: 3
+    channels:                      # REQUIRED allowlist — no auto-discovery
+      - id: C0123456789            # #engineering (public channel)
+        mode: both                 # optional per-channel override
+      - id: C0987654321            # #standups
+        mode: channel_summary
+      - id: D0ABCDE1234            # a DM — past_days override scopes the walk
+        past_days: 30
+
+  github:
+    enabled: false
+    token_env: GITHUB_TOKEN        # Fine-grained PAT recommended — see .env.template
+    repos:                         # REQUIRED — no auto-discovery in V1
+      - "your-org/mnemify"
+      - "your-handle/notes"
+    include_issues: true
+    include_prs: true
+    include_discussions: true
+    include_readme: true
+    bot_authors_exclude:           # skip noise from the big three dependency bots
+      - "dependabot[bot]"
+      - "github-actions[bot]"
+      - "renovate[bot]"
+    concurrency: 3

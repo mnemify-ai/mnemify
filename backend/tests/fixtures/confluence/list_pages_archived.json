@@ -1,0 +1,34 @@
+{
+  "results": [
+    {
+      "id": "200",
+      "type": "page",
+      "status": "current",
+      "title": "Active Spec",
+      "space": {"key": "PROD", "name": "Product"},
+      "version": {"when": "2026-04-18T09:15:00.000Z", "number": 1},
+      "_links": {"webui": "/spaces/PROD/pages/200/Active+Spec"}
+    },
+    {
+      "id": "201",
+      "type": "page",
+      "status": "archived",
+      "title": "Old Spec",
+      "space": {"key": "PROD", "name": "Product"},
+      "version": {"when": "2026-01-05T10:00:00.000Z", "number": 3},
+      "_links": {"webui": "/spaces/PROD/pages/201/Old+Spec"}
+    },
+    {
+      "id": "202",
+      "type": "page",
+      "status": "archived",
+      "title": "Deprecated Process",
+      "space": {"key": "PROD", "name": "Product"},
+      "version": {"when": "2025-11-20T00:00:00.000Z", "number": 2},
+      "_links": {"webui": "/spaces/PROD/pages/202/Deprecated+Process"}
+    }
+  ],
+  "start": 0,
+  "limit": 100,
+  "size": 3
+}

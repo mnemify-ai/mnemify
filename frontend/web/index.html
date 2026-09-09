@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mnemify · Dashboard</title>
+    <style>
+      /* Light defaults; the dark palette is swapped in by `html.dark` rules
+         in theme/index.css. The bg uses `--c-bg` so it tracks the active
+         theme rather than locking to cream. */
+      :root { --c-bg: 245 239 232; }
+      html.dark { --c-bg: 13 17 23; }
+      html, body, #root { margin: 0; padding: 0; width: 100%; min-height: 100%; background: rgb(var(--c-bg)); }
+      * { box-sizing: border-box; }
+    </style>
+    <script>
+      // Apply the persisted theme BEFORE React mounts so the body never
+      // flashes the wrong palette on navigation/reload. Mirrors the storage
+      // key used by `useThemeMode`.
+      (function () {
+        try {
+          var v = localStorage.getItem("mnemify:theme");
+          if (v === "dark") document.documentElement.classList.add("dark");
+        } catch (_) { /* private mode etc. */ }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

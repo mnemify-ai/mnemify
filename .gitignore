@@ -1,0 +1,72 @@
+# Environment & secrets
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Node / Vite
+node_modules/
+.vite/
+frontend/web/dist/
+frontend/web/tsconfig.tsbuildinfo
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+
+# Claude / agent scratch
+.claude/
+CLAUDE.md
+temp_output/
+
+# Runtime data & local config — regenerated; never committed.
+# (`mnemify.yaml` is the user's source config; `example_mnemify.yaml` is the committed template.)
+.mnemify/
+.mnemify-backup/
+/mnemify.yaml
+/backend/mnemify.yaml
+/backend/debug_sample.md
+# stray writes if an old build path ever resurfaces (the compiler writes to .mnemify/ now)
+/frontend/terrain.json
+/frontend/mocknotes.json
+/frontend/render-data.json
+
+# Google source connectors — code is tracked, real credentials and cached tokens are not
+/backend/src/harvester/_google/oauth_client.json
+
+# Microsoft 365 source connectors — same pattern as Google
+/backend/src/harvester/_microsoft/oauth_client.json
+
+# Outlook + shared _microsoft work-in-progress — not ready to push yet
+/backend/src/harvester/_microsoft/
+/backend/src/harvester/outlook/
+/backend/tests/test_microsoft_oauth.py
+/backend/tests/test_graph_client.py
+/backend/tests/test_outlook_plugin.py
+/backend/tests/test_outlook_query.py
+/backend/tests/test_outlook_normalizer.py
+
+*.zip
+*.mnemify*
+
+/data

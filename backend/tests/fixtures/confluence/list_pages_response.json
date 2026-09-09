@@ -1,0 +1,52 @@
+{
+  "results": [
+    {
+      "id": "100",
+      "type": "page",
+      "status": "current",
+      "title": "Engineering Onboarding",
+      "space": {"key": "ENG", "name": "Engineering"},
+      "version": {"when": "2026-04-18T09:15:00.000Z", "number": 4},
+      "_links": {"webui": "/spaces/ENG/pages/100/Engineering+Onboarding"}
+    },
+    {
+      "id": "101",
+      "type": "page",
+      "status": "current",
+      "title": "Roadmap 2026",
+      "space": {"key": "ENG", "name": "Engineering"},
+      "version": {"when": "2026-04-17T14:42:11.000Z", "number": 12},
+      "_links": {"webui": "/spaces/ENG/pages/101/Roadmap+2026"}
+    },
+    {
+      "id": "102",
+      "type": "page",
+      "status": "current",
+      "title": "RFC: Harvest Pipeline",
+      "space": {"key": "ENG", "name": "Engineering"},
+      "version": {"when": "2026-04-15T08:00:00.000Z", "number": 2},
+      "_links": {"webui": "/spaces/ENG/pages/102/RFC+Harvest+Pipeline"}
+    },
+    {
+      "id": "103",
+      "type": "page",
+      "status": "current",
+      "title": "Release Notes Q2",
+      "space": {"key": "ENG", "name": "Engineering"},
+      "version": {"when": "2026-04-10T17:30:00.000Z", "number": 7},
+      "_links": {"webui": "/spaces/ENG/pages/103/Release+Notes+Q2"}
+    },
+    {
+      "id": "104",
+      "type": "page",
+      "status": "current",
+      "title": "On-Call Runbook",
+      "space": {"key": "ENG", "name": "Engineering"},
+      "version": {"when": "2026-04-05T11:11:11.000Z", "number": 1},
+      "_links": {"webui": "/spaces/ENG/pages/104/On-Call+Runbook"}
+    }
+  ],
+  "start": 0,
+  "limit": 100,
+  "size": 5
+}

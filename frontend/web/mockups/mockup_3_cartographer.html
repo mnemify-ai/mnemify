@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Mockup 3 — Cartographer's desk</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #2c211a; font-family: system-ui, sans-serif; }
+  #info { position: fixed; top: 12px; left: 12px; color: #191316; background: rgba(245,239,232,0.88); padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.4; max-width: 360px; pointer-events: none; }
+  #info b { color: #8E2C5F; }
+  #c { display: block; }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Mockup 3 — Cartographer's desk</b><br/>
+  Hex islands sit on aged paper with a compass rose and faint sepia contour lines. Slight tilt so it reads as a map on a table.<br/>
+  Drag to orbit · scroll to zoom.
+</div>
+<canvas id="c"></canvas>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const PALETTE = { cream: '#F5EFE8', magenta: '#8E2C5F' };
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#2c211a'); // dark desk surface
+
+const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 9, 14);
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 6;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.48;
+controls.update();
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const key = new THREE.DirectionalLight(0xFFF6E5, 1.0);
+key.position.set(-7.2, 4.8, -4.8);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -20; key.shadow.camera.right = 20;
+key.shadow.camera.top = 20; key.shadow.camera.bottom = -20;
+key.shadow.bias = -0.0008;
+scene.add(key);
+scene.add(new THREE.DirectionalLight(0xCDE0F0, 0.35).position.set(8, 6, 6));
+
+// ─── Hex islands ────────────────────────────────────────────────────────
+const HEX_R = 0.9, HEX_H = 0.45;
+const ISLANDS = [
+  { center: [-3.0, -1.7], hexes: [[-3.6, -2.2], [-2.0, -2.7], [-2.6, -1.0], [-4.0, -0.8]] },
+  { center: [ 3.8, -1.9], hexes: [[ 3.6, -3.0], [ 4.6, -1.6], [ 3.2, -1.0]] },
+  { center: [ 0.2,  3.6], hexes: [[ 0.2,  3.2], [ 1.6,  4.1], [-1.2,  3.6]] },
+];
+const hexGeom = new THREE.CylinderGeometry(HEX_R, HEX_R, HEX_H, 6, 1);
+const hexMat = new THREE.MeshStandardMaterial({ color: PALETTE.cream, roughness: 0.78 });
+for (const island of ISLANDS) {
+  for (const [x, z] of island.hexes) {
+    const m = new THREE.Mesh(hexGeom, hexMat);
+    m.position.set(x, -HEX_H / 2, z);
+    m.rotation.y = Math.PI / 6;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    scene.add(m);
+  }
+}
+
+// ─── Aged-paper texture with compass + contours ─────────────────────────
+const PLANE_W = 30, PLANE_H = 22; // paper is a rectangle, not square
+const TEX_W = 2048, TEX_H = 1500;
+const wxToPx = (w) => (w + PLANE_W / 2) * (TEX_W / PLANE_W);
+const wzToPx = (w) => (w + PLANE_H / 2) * (TEX_H / PLANE_H);
+
+const cnv = document.createElement('canvas');
+cnv.width = TEX_W; cnv.height = TEX_H;
+const ctx = cnv.getContext('2d');
+
+// Base sepia paper.
+const base = ctx.createRadialGradient(TEX_W / 2, TEX_H / 2, TEX_W * 0.1, TEX_W / 2, TEX_H / 2, TEX_W * 0.7);
+base.addColorStop(0.0, '#EFE0BD');
+base.addColorStop(0.55, '#E2CE9F');
+base.addColorStop(1.0, '#C9AC78');
+ctx.fillStyle = base;
+ctx.fillRect(0, 0, TEX_W, TEX_H);
+
+// Paper fiber noise.
+const noise = ctx.createImageData(TEX_W, TEX_H);
+for (let i = 0; i < noise.data.length; i += 4) {
+  const n = (Math.random() - 0.5) * 30;
+  noise.data[i + 0] = 200 + n;
+  noise.data[i + 1] = 180 + n;
+  noise.data[i + 2] = 140 + n;
+  noise.data[i + 3] = 28;
+}
+ctx.putImageData(noise, 0, 0);
+
+// Stains & wear marks.
+for (let i = 0; i < 14; i++) {
+  const x = Math.random() * TEX_W;
+  const y = Math.random() * TEX_H;
+  const r = 60 + Math.random() * 240;
+  const stain = ctx.createRadialGradient(x, y, 0, x, y, r);
+  stain.addColorStop(0.0, `rgba(120, 80, 30, ${0.07 + Math.random() * 0.1})`);
+  stain.addColorStop(1.0, 'rgba(120, 80, 30, 0)');
+  ctx.fillStyle = stain;
+  ctx.fillRect(x - r, y - r, r * 2, r * 2);
+}
+
+// Edges — darker burnt vignette.
+const edge = ctx.createLinearGradient(0, 0, 0, TEX_H);
+edge.addColorStop(0.0, 'rgba(80, 50, 20, 0.35)');
+edge.addColorStop(0.08, 'rgba(80, 50, 20, 0.0)');
+edge.addColorStop(0.92, 'rgba(80, 50, 20, 0.0)');
+edge.addColorStop(1.0, 'rgba(80, 50, 20, 0.35)');
+ctx.fillStyle = edge;
+ctx.fillRect(0, 0, TEX_W, TEX_H);
+const edge2 = ctx.createLinearGradient(0, 0, TEX_W, 0);
+edge2.addColorStop(0.0, 'rgba(80, 50, 20, 0.35)');
+edge2.addColorStop(0.06, 'rgba(80, 50, 20, 0.0)');
+edge2.addColorStop(0.94, 'rgba(80, 50, 20, 0.0)');
+edge2.addColorStop(1.0, 'rgba(80, 50, 20, 0.35)');
+ctx.fillStyle = edge2;
+ctx.fillRect(0, 0, TEX_W, TEX_H);
+
+// Faint contour lines around each island.
+ctx.lineCap = 'round';
+for (const island of ISLANDS) {
+  const cx = wxToPx(island.center[0]);
+  const cz = wzToPx(island.center[1]);
+  for (let i = 0; i < 7; i++) {
+    const rWorld = 1.8 + i * 0.85;
+    const rPxX = rWorld * (TEX_W / PLANE_W);
+    const rPxZ = rWorld * (TEX_H / PLANE_H);
+    ctx.beginPath();
+    // Slight ellipse + wobble for hand-drawn feel.
+    const steps = 96;
+    for (let s = 0; s <= steps; s++) {
+      const a = (s / steps) * Math.PI * 2;
+      const wob = 1 + Math.sin(a * 5 + i * 1.2) * 0.04;
+      const x = cx + Math.cos(a) * rPxX * wob;
+      const y = cz + Math.sin(a) * rPxZ * wob;
+      if (s === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = `rgba(115, 78, 32, ${0.38 - i * 0.04})`;
+    ctx.lineWidth = i === 0 ? 2.2 : 1.4;
+    ctx.setLineDash(i % 2 === 0 ? [] : [8, 6]);
+    ctx.stroke();
+  }
+}
+ctx.setLineDash([]);
+
+// Compass rose — bottom-right corner.
+(function drawCompass() {
+  const cx = TEX_W - 220, cy = TEX_H - 200;
+  const R = 130;
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // Outer circle.
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(80, 50, 20, 0.5)'; ctx.lineWidth = 2.2; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.78, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(80, 50, 20, 0.35)'; ctx.lineWidth = 1.2; ctx.stroke();
+
+  // 8-point star.
+  ctx.fillStyle = 'rgba(110, 70, 28, 0.78)';
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((i * Math.PI) / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, -R); ctx.lineTo(R * 0.16, 0); ctx.lineTo(0, R * 0.16); ctx.lineTo(-R * 0.16, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = 'rgba(110, 70, 28, 0.48)';
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((i * Math.PI) / 2 + Math.PI / 4);
+    ctx.beginPath();
+    ctx.moveTo(0, -R * 0.7); ctx.lineTo(R * 0.1, 0); ctx.lineTo(0, R * 0.1); ctx.lineTo(-R * 0.1, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // N/E/S/W letters.
+  ctx.font = '600 26px ui-serif, "Georgia", serif';
+  ctx.fillStyle = 'rgba(80, 50, 20, 0.88)';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('N', 0, -R - 22);
+  ctx.fillText('S', 0,  R + 22);
+  ctx.fillText('E',  R + 22, 0);
+  ctx.fillText('W', -R - 22, 0);
+  ctx.restore();
+})();
+
+// "Map" title in top-left.
+ctx.save();
+ctx.font = 'italic 600 44px ui-serif, "Georgia", serif';
+ctx.fillStyle = 'rgba(80, 50, 20, 0.78)';
+ctx.fillText('Brain-Map of Knowledge', 80, 100);
+ctx.font = 'italic 400 22px ui-serif, "Georgia", serif';
+ctx.fillStyle = 'rgba(80, 50, 20, 0.55)';
+ctx.fillText('drawn ⋅ MMXXVI', 80, 134);
+ctx.restore();
+
+const paperTex = new THREE.CanvasTexture(cnv);
+paperTex.anisotropy = 8;
+paperTex.colorSpace = THREE.SRGBColorSpace;
+
+const paperGeom = new THREE.PlaneGeometry(PLANE_W, PLANE_H);
+paperGeom.rotateX(-Math.PI / 2);
+const paperMat = new THREE.MeshStandardMaterial({
+  map: paperTex,
+  roughness: 0.95,
+  metalness: 0.0,
+});
+const paper = new THREE.Mesh(paperGeom, paperMat);
+paper.position.y = -HEX_H / 2 - 0.02;
+paper.rotation.z = 0.02; // tiny tilt for the desk feel
+paper.receiveShadow = true;
+scene.add(paper);
+
+// ─── Resize / loop ──────────────────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function tick() {
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

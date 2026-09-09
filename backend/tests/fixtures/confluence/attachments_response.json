@@ -1,0 +1,27 @@
+{
+  "results": [
+    {
+      "id": "att-1",
+      "type": "attachment",
+      "title": "diagram.png",
+      "extensions": {"mediaType": "image/png", "fileSize": 7},
+      "_links": {
+        "download": "/download/attachments/100/diagram.png?api=v2",
+        "webui": "/pages/viewpageattachments.action?pageId=100"
+      }
+    },
+    {
+      "id": "att-2",
+      "type": "attachment",
+      "title": "spec.pdf",
+      "extensions": {"mediaType": "application/pdf", "fileSize": 5},
+      "_links": {
+        "download": "/download/attachments/100/spec.pdf?api=v2",
+        "webui": "/pages/viewpageattachments.action?pageId=100"
+      }
+    }
+  ],
+  "start": 0,
+  "limit": 50,
+  "size": 2
+}

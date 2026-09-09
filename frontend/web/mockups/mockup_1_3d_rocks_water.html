@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Mockup 1 — 3D rocks + river</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #F5EFE8; font-family: system-ui, sans-serif; }
+  #info { position: fixed; top: 12px; left: 12px; color: #191316; background: rgba(245,239,232,0.82); padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.4; max-width: 360px; pointer-events: none; }
+  #info b { color: #8E2C5F; }
+  #c { display: block; }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Mockup 1 — 3D rocks + river</b><br/>
+  Hex islands float over a low-poly rocky bed. A shader-driven water plane fills the gaps between sub-regions.<br/>
+  Drag to orbit · scroll to zoom.
+</div>
+<canvas id="c"></canvas>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── App palette (from src/app/theme/index.css) ─────────────────────────
+const PALETTE = {
+  cream:    '#F5EFE8',
+  bone:     '#F0E8DC',
+  lavender: '#E8DCE0',
+  rose:     '#C884A2',
+  magenta:  '#8E2C5F',
+  sage:     '#6E825C',
+  ink:      '#191316',
+  muted:    '#4A4046',
+};
+
+// ─── Renderer / scene / camera ──────────────────────────────────────────
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(PALETTE.cream);
+
+const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 9, 14);
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 0, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 6;
+controls.maxDistance = 40;
+controls.maxPolarAngle = Math.PI * 0.48;
+controls.update();
+
+// ─── Lights (mirrors Scene.tsx) ─────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.32));
+
+const key = new THREE.DirectionalLight(0xFFF6E5, 1.15);
+key.position.set(-7.2, 4.8, -4.8);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -20; key.shadow.camera.right = 20;
+key.shadow.camera.top = 20; key.shadow.camera.bottom = -20;
+key.shadow.bias = -0.0008;
+scene.add(key);
+
+const fill = new THREE.DirectionalLight(0xCDE0F0, 0.45);
+fill.position.set(8, 6, 6);
+scene.add(fill);
+
+// ─── Hex islands (placeholder for the real BrainMap hex grid) ───────────
+const HEX_R = 0.9;
+const HEX_H = 0.45;
+const HEX_TOP_Y = 0; // top face at y=0 → bottom at y=-HEX_H
+
+// 3 sub-region "islands". (x, z) in world space.
+const HEX_POSITIONS = [
+  // Island A — top-left cluster
+  [-3.6, -2.2], [-2.0, -2.7], [-2.6, -1.0], [-4.0, -0.8],
+  // Island B — right cluster
+  [ 3.6, -3.0], [ 4.6, -1.6], [ 3.2, -1.0],
+  // Island C — bottom cluster
+  [ 0.2,  3.2], [ 1.6,  4.1], [-1.2,  3.6],
+];
+
+const hexGeom = new THREE.CylinderGeometry(HEX_R, HEX_R, HEX_H, 6, 1);
+const hexMat = new THREE.MeshStandardMaterial({
+  color: PALETTE.cream,
+  roughness: 0.78,
+  metalness: 0.04,
+});
+
+const hexGroup = new THREE.Group();
+for (const [x, z] of HEX_POSITIONS) {
+  const m = new THREE.Mesh(hexGeom, hexMat);
+  m.position.set(x, HEX_TOP_Y - HEX_H / 2, z);
+  m.rotation.y = Math.PI / 6;
+  m.castShadow = true;
+  m.receiveShadow = true;
+  hexGroup.add(m);
+}
+scene.add(hexGroup);
+
+// ─── Rocky bed (low-poly, beneath the water) ────────────────────────────
+const rockGeom = new THREE.PlaneGeometry(60, 60, 90, 90);
+rockGeom.rotateX(-Math.PI / 2);
+
+// Layered pseudo-Perlin via summed sines for a chunky rocky surface.
+const pos = rockGeom.attributes.position;
+for (let i = 0; i < pos.count; i++) {
+  const x = pos.getX(i), z = pos.getZ(i);
+  const d = Math.sqrt(x * x + z * z);
+  const h =
+    Math.sin(x * 0.42) * Math.cos(z * 0.51) * 0.55 +
+    Math.sin(x * 0.93 + 1.1) * Math.cos(z * 1.07 - 0.4) * 0.28 +
+    Math.sin((x + z) * 1.7) * 0.12 +
+    // Bowl-shape: scoop out the middle so islands sit slightly elevated.
+    Math.max(0, (d - 6) * 0.08);
+  pos.setY(i, h - 1.3);
+}
+rockGeom.computeVertexNormals();
+
+const rockMat = new THREE.MeshStandardMaterial({
+  color: new THREE.Color('#5a4a44'),
+  roughness: 1.0,
+  metalness: 0.02,
+  flatShading: true,
+});
+const rocks = new THREE.Mesh(rockGeom, rockMat);
+rocks.receiveShadow = true;
+scene.add(rocks);
+
+// ─── Water plane (custom shader) ────────────────────────────────────────
+const waterGeom = new THREE.PlaneGeometry(50, 50, 1, 1);
+waterGeom.rotateX(-Math.PI / 2);
+const waterUniforms = {
+  uTime:     { value: 0 },
+  uColorDeep:{ value: new THREE.Color('#3a5b6b') },
+  uColorShallow:{ value: new THREE.Color('#9ec1c8') },
+  uOpacity:  { value: 0.78 },
+};
+const waterMat = new THREE.ShaderMaterial({
+  uniforms: waterUniforms,
+  transparent: true,
+  vertexShader: /* glsl */ `
+    varying vec3 vWorldPos;
+    varying vec3 vNormal;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      vNormal = normalize(mat3(modelMatrix) * normal);
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform float uTime;
+    uniform vec3  uColorDeep;
+    uniform vec3  uColorShallow;
+    uniform float uOpacity;
+    varying vec3  vWorldPos;
+    varying vec3  vNormal;
+
+    // Cheap layered sine "ripple" pattern.
+    float ripple(vec2 p) {
+      float a = sin(p.x * 1.6 + uTime * 0.9);
+      float b = sin(p.y * 1.9 - uTime * 0.7);
+      float c = sin((p.x + p.y) * 1.2 + uTime * 1.1);
+      return (a + b + c) / 3.0;
+    }
+
+    void main() {
+      vec2 p = vWorldPos.xz;
+      float r = ripple(p);
+      float r2 = ripple(p * 2.3 + 4.0);
+      float h = 0.5 + 0.5 * (r * 0.6 + r2 * 0.4);
+
+      vec3 col = mix(uColorDeep, uColorShallow, smoothstep(0.35, 0.85, h));
+
+      // Highlight band where ripples crest.
+      float crest = smoothstep(0.78, 0.92, h);
+      col += vec3(0.18, 0.22, 0.20) * crest;
+
+      gl_FragColor = vec4(col, uOpacity);
+    }
+  `,
+});
+const water = new THREE.Mesh(waterGeom, waterMat);
+water.position.y = -0.55;
+scene.add(water);
+
+// ─── Drifting fog particles ─────────────────────────────────────────────
+const PCOUNT = 220;
+const pGeom = new THREE.BufferGeometry();
+const pPos = new Float32Array(PCOUNT * 3);
+const pVel = new Float32Array(PCOUNT);
+for (let i = 0; i < PCOUNT; i++) {
+  pPos[i * 3 + 0] = (Math.random() - 0.5) * 36;
+  pPos[i * 3 + 1] = Math.random() * 4 - 0.4;
+  pPos[i * 3 + 2] = (Math.random() - 0.5) * 36;
+  pVel[i] = 0.002 + Math.random() * 0.005;
+}
+pGeom.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+const pMat = new THREE.PointsMaterial({
+  color: new THREE.Color('#e8d8c4'),
+  size: 0.06,
+  transparent: true,
+  opacity: 0.55,
+  depthWrite: false,
+});
+const particles = new THREE.Points(pGeom, pMat);
+scene.add(particles);
+
+// ─── Resize / loop ──────────────────────────────────────────────────────
+addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+const clock = new THREE.Clock();
+function tick() {
+  const t = clock.getElapsedTime();
+  waterUniforms.uTime.value = t;
+
+  const arr = particles.geometry.attributes.position.array;
+  for (let i = 0; i < PCOUNT; i++) {
+    arr[i * 3 + 1] += pVel[i];
+    if (arr[i * 3 + 1] > 4.5) arr[i * 3 + 1] = -0.4;
+  }
+  particles.geometry.attributes.position.needsUpdate = true;
+
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

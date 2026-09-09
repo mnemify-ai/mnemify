@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Mockup 6 — Aurora arrival</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #F5EFE8; font-family: system-ui, sans-serif; color: #191316; }
+  #info { position: fixed; top: 12px; left: 12px; background: rgba(245,239,232,0.82); padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.4; max-width: 360px; pointer-events: none; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 10; }
+  #info b { color: #8E2C5F; }
+  #c { display: block; }
+
+  .switcher { position: fixed; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 11; }
+  .switcher a { background: rgba(245,239,232,0.86); backdrop-filter: blur(8px); border: 1px solid rgba(25,19,22,0.08); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #191316; text-decoration: none; }
+  .switcher a.active { background: #8E2C5F; color: #F5EFE8; border-color: #8E2C5F; }
+
+  .cta-panel { position: fixed; bottom: 5vh; left: 50%; transform: translateX(-50%); background: rgba(245,239,232,0.84); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); border: 1px solid rgba(25,19,22,0.06); border-radius: 18px; padding: 22px 28px; box-shadow: 0 12px 40px -12px rgba(25,19,22,0.18); width: min(720px, 92vw); z-index: 10; }
+  .cta-panel .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(74,64,70,0.7); margin-bottom: 4px; }
+  .cta-panel h1 { font-family: ui-serif, Georgia, serif; font-size: 24px; margin: 0 0 6px 0; color: #191316; font-weight: 500; line-height: 1.15; }
+  .cta-panel p { font-size: 13px; color: #4A4046; margin: 0 0 14px 0; }
+  .cta-panel .steps { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .step { background: #F5EFE8; border: 1px solid rgba(25,19,22,0.08); border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #191316; }
+  .step .num { width: 22px; height: 22px; border-radius: 50%; background: rgba(25,19,22,0.18); color: #F5EFE8; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .step.next { border-color: rgba(142,44,95,0.35); }
+  .step.next .num { background: #8E2C5F; }
+
+  .doc-cards { position: fixed; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+  .doc-card { position: absolute; width: 62px; height: 80px; background: rgba(255,251,246,0.94); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); border: 1px solid rgba(142,44,95,0.35); border-radius: 5px; box-shadow: 0 14px 36px -10px rgba(25,19,22,0.32), 0 0 0 1px rgba(255,255,255,0.4) inset; padding: 10px 8px; box-sizing: border-box; transform-origin: center; opacity: 0; will-change: transform, opacity, left, top; }
+  .doc-card .line { display: block; height: 2px; background: rgba(74,64,70,0.45); border-radius: 1px; margin-bottom: 4px; }
+  .doc-card .line.s { width: 50%; }
+  .doc-card .line.m { width: 75%; }
+  .doc-card .line.l { width: 92%; }
+  .doc-card .corner { position: absolute; top: 0; right: 0; width: 14px; height: 14px; background: linear-gradient(225deg, transparent 50%, rgba(25,19,22,0.10) 50%); border-radius: 0 5px 0 0; }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Mockup 6 — Aurora arrival</b><br/>
+  A drifting WebGL aurora (cream, lavender, sage, rose) wraps the floating cream hex islands. Documents arc in along bezier paths; each one lands on a hex peak, which pulses magenta and lifts. The most atmospheric of the three.
+</div>
+
+<div class="switcher">
+  <a href="mockup_5_live_miniature.html">5 · live</a>
+  <a href="mockup_6_aurora_arrival.html" class="active">6 · aurora</a>
+  <a href="mockup_7_cartographer_reveal.html">7 · ink</a>
+</div>
+
+<canvas id="c"></canvas>
+<div class="doc-cards" id="docCards"></div>
+
+<div class="cta-panel">
+  <p class="eyebrow">Your Knowledge Map</p>
+  <h1>Ready when you are</h1>
+  <p>Follow the first steps to see your own knowledge map.</p>
+  <div class="steps">
+    <div class="step next"><span class="num">1</span>Connect a source</div>
+    <div class="step"><span class="num">2</span>Harvest documents</div>
+    <div class="step"><span class="num">3</span>Compile the map</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+const PALETTE = {
+  cream:    new THREE.Color('#F5EFE8'),
+  bone:     new THREE.Color('#F0E8DC'),
+  lavender: new THREE.Color('#E8DCE0'),
+  rose:     new THREE.Color('#C884A2'),
+  magenta:  new THREE.Color('#8E2C5F'),
+  sage:     new THREE.Color('#6E825C'),
+};
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 200);
+const CAM_RADIUS = 14, CAM_HEIGHT = 9;
+let camAngle = Math.PI * 0.25;
+function updateCamera() {
+  camera.position.set(Math.sin(camAngle) * CAM_RADIUS, CAM_HEIGHT, Math.cos(camAngle) * CAM_RADIUS);
+  camera.lookAt(0, 0.3, 0);
+}
+updateCamera();
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const key = new THREE.DirectionalLight(0xFFF6E5, 1.0);
+key.position.set(-7.2, 4.8, -4.8);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -20; key.shadow.camera.right = 20;
+key.shadow.camera.top = 20; key.shadow.camera.bottom = -20;
+key.shadow.bias = -0.0008;
+scene.add(key);
+scene.add(new THREE.DirectionalLight(0xCDE0F0, 0.4).position.set(8, 6, 6));
+
+// hex islands — cream, varied heights, one peak per cluster
+const HEX_R = 0.85, HEX_BASE_H = 0.55;
+const ISLANDS = [
+  { peakIdx: 0, hexes: [[-3.5, -2.2, 1.3], [-2.0, -2.7, 0.55], [-2.6, -1.0, 0.7], [-4.0, -0.8, 0.5]] },
+  { peakIdx: 0, hexes: [[ 3.5, -2.9, 1.15], [ 4.6, -1.6, 0.6], [ 3.2, -1.0, 0.5]] },
+  { peakIdx: 0, hexes: [[ 0.2,  3.2, 1.4], [ 1.6,  4.1, 0.55], [-1.2,  3.6, 0.65]] },
+];
+const HEX_PRISM = new THREE.CylinderGeometry(HEX_R, HEX_R, 1, 6, 1);
+const HEX_MAT = new THREE.MeshStandardMaterial({ color: PALETTE.cream, roughness: 0.78, metalness: 0.04 });
+const allHexes = [];
+for (const island of ISLANDS) {
+  let peakHex = null;
+  let peakH = 0;
+  for (const [x, z, h] of island.hexes) {
+    const m = new THREE.Mesh(HEX_PRISM, HEX_MAT.clone());
+    m.position.set(x, h / 2, z);
+    m.scale.set(1, h, 1);
+    m.rotation.y = Math.PI / 6;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    scene.add(m);
+    const entry = { mesh: m, pos: new THREE.Vector3(x, h, z), baseH: h, flashUntil: 0, isPeak: h >= 1.0 };
+    allHexes.push(entry);
+    if (h > peakH) { peakHex = entry; peakH = h; }
+  }
+  if (peakHex) peakHex.isPeak = true;
+}
+
+// aurora shader — drifting blob field (ported from mockup_4)
+const auroraUniforms = {
+  uTime:     { value: 0 },
+  uCream:    { value: PALETTE.cream },
+  uBone:     { value: PALETTE.bone },
+  uLavender: { value: PALETTE.lavender },
+  uRose:     { value: PALETTE.rose },
+  uSage:     { value: PALETTE.sage },
+};
+const VERTEX = /* glsl */ `
+  varying vec3 vWorldPos;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`;
+const FRAG = /* glsl */ `
+  uniform float uTime;
+  uniform vec3 uCream, uBone, uLavender, uRose, uSage;
+  varying vec3 vWorldPos;
+  float blob(vec2 p, vec2 c, float r) {
+    return 1.0 - smoothstep(0.0, r, distance(p, c));
+  }
+  void main() {
+    vec2 p = vWorldPos.xy * 0.025;
+    float t = uTime * 0.06;
+    vec2 c1 = vec2(sin(t * 0.9) * 0.6, cos(t * 0.7) * 0.5);
+    vec2 c2 = vec2(cos(t * 0.8 + 1.4) * 0.7, sin(t * 0.6 + 0.3) * 0.55);
+    vec2 c3 = vec2(sin(t * 0.5 + 2.1) * 0.65, cos(t * 0.85 + 1.9) * 0.6);
+    vec2 c4 = vec2(cos(t * 0.65 + 3.3) * 0.6, sin(t * 0.95 + 2.6) * 0.5);
+    vec3 col = uCream;
+    col = mix(col, uLavender, blob(p, c1, 1.4) * 0.85);
+    col = mix(col, uSage,     blob(p, c2, 1.5) * 0.32);
+    col = mix(col, uRose,     blob(p, c3, 1.3) * 0.45);
+    col = mix(col, uBone,     blob(p, c4, 1.6) * 0.55);
+    float v = clamp((vWorldPos.y + 30.0) / 60.0, 0.0, 1.0);
+    col = mix(col * 0.96, col, v);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+const skyMat = new THREE.ShaderMaterial({ uniforms: auroraUniforms, side: THREE.BackSide, depthWrite: false, vertexShader: VERTEX, fragmentShader: FRAG });
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(60, 48, 32), skyMat));
+
+const groundMat = new THREE.ShaderMaterial({ uniforms: auroraUniforms, side: THREE.FrontSide, vertexShader: VERTEX, fragmentShader: FRAG });
+const groundGeom = new THREE.PlaneGeometry(60, 60);
+groundGeom.rotateX(-Math.PI / 2);
+const ground = new THREE.Mesh(groundGeom, groundMat);
+ground.position.y = -0.01;
+scene.add(ground);
+
+// soft contact shadow plane (so hexes still feel grounded)
+const shadowGround = new THREE.Mesh(groundGeom.clone(), new THREE.ShadowMaterial({ opacity: 0.16 }));
+shadowGround.position.y = 0;
+shadowGround.receiveShadow = true;
+scene.add(shadowGround);
+
+// HTML doc cards flying in
+const docRoot = document.getElementById('docCards');
+const flights = [];
+function createDoc() {
+  const el = document.createElement('div');
+  el.className = 'doc-card';
+  el.innerHTML = `<div class="corner"></div><div class="line s"></div><div class="line l"></div><div class="line m"></div><div class="line l"></div><div class="line s"></div>`;
+  docRoot.appendChild(el);
+  return el;
+}
+function projectToScreen(p) {
+  const v = p.clone().project(camera);
+  return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
+}
+function launch(target) {
+  const fromLeft = Math.random() < 0.5;
+  flights.push({
+    el: createDoc(),
+    target,
+    startX: fromLeft ? -90 : window.innerWidth + 90,
+    startY: 50 + Math.random() * 160,
+    ctrlX: window.innerWidth / 2 + (Math.random() - 0.5) * 280,
+    ctrlY: -80 + Math.random() * 110,
+    startTime: performance.now(),
+    duration: 2500 + Math.random() * 600,
+  });
+}
+function updateFlights() {
+  const now = performance.now();
+  for (let i = flights.length - 1; i >= 0; i--) {
+    const f = flights[i];
+    const t = (now - f.startTime) / f.duration;
+    const tw = f.target.pos.clone(); tw.y = f.target.baseH + 0.1;
+    const ts = projectToScreen(tw);
+    if (t >= 1) {
+      f.target.flashUntil = now + 800;
+      f.el.remove();
+      flights.splice(i, 1);
+      continue;
+    }
+    const u = 1 - t;
+    const x = u * u * f.startX + 2 * u * t * f.ctrlX + t * t * ts.x;
+    const y = u * u * f.startY + 2 * u * t * f.ctrlY + t * t * ts.y;
+    const opacity = t < 0.12 ? t / 0.12 : (t > 0.88 ? (1 - t) / 0.12 : 1);
+    const scale = 0.5 + t * 0.7;
+    const rot = -20 + t * 40;
+    f.el.style.left = (x - 31) + 'px';
+    f.el.style.top = (y - 40) + 'px';
+    f.el.style.opacity = opacity;
+    f.el.style.transform = `scale(${scale}) rotate(${rot}deg)`;
+  }
+}
+
+const PEAKS = allHexes.filter(h => h.isPeak);
+let nextLaunch = performance.now() + 700;
+function scheduleLaunches() {
+  const now = performance.now();
+  if (now >= nextLaunch && flights.length < 4) {
+    launch(PEAKS[Math.floor(Math.random() * PEAKS.length)]);
+    nextLaunch = now + 1500 + Math.random() * 800;
+  }
+}
+
+// hex flash + lift on landing
+const magentaColor = new THREE.Color('#8E2C5F');
+function updateHexFlashes() {
+  const now = performance.now();
+  for (const h of allHexes) {
+    if (h.flashUntil > now) {
+      const t = (h.flashUntil - now) / 800;
+      h.mesh.material.color.copy(PALETTE.cream).lerp(magentaColor, t * 0.7);
+      const ease = Math.sin(t * Math.PI);
+      const newH = h.baseH + ease * 0.22;
+      h.mesh.position.y = newH / 2;
+      h.mesh.scale.y = newH;
+    } else if (h.flashUntil !== 0) {
+      h.mesh.material.color.copy(PALETTE.cream);
+      h.mesh.position.y = h.baseH / 2;
+      h.mesh.scale.y = h.baseH;
+      h.flashUntil = 0;
+    }
+  }
+}
+
+addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clock = new THREE.Clock();
+function tick() {
+  const dt = clock.getDelta();
+  auroraUniforms.uTime.value = clock.getElapsedTime();
+  if (!reducedMotion) {
+    camAngle += dt * 0.05;
+    updateCamera();
+    scheduleLaunches();
+    updateFlights();
+    updateHexFlashes();
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

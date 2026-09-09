@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Mockup 7 — Cartographer's reveal</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #2c211a; font-family: system-ui, sans-serif; color: #191316; }
+  #info { position: fixed; top: 12px; left: 12px; background: rgba(245,239,232,0.88); padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.4; max-width: 360px; pointer-events: none; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 10; }
+  #info b { color: #8E2C5F; }
+  #c { display: block; }
+
+  .switcher { position: fixed; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 11; }
+  .switcher a { background: rgba(245,239,232,0.86); backdrop-filter: blur(8px); border: 1px solid rgba(25,19,22,0.08); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #191316; text-decoration: none; }
+  .switcher a.active { background: #8E2C5F; color: #F5EFE8; border-color: #8E2C5F; }
+
+  .cta-panel { position: fixed; bottom: 5vh; left: 50%; transform: translateX(-50%); background: rgba(239,224,189,0.92); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); border: 1px solid rgba(80,50,20,0.18); border-radius: 18px; padding: 22px 28px; box-shadow: 0 12px 40px -12px rgba(25,19,22,0.45); width: min(720px, 92vw); z-index: 10; }
+  .cta-panel .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(80,50,20,0.75); margin-bottom: 4px; font-style: italic; }
+  .cta-panel h1 { font-family: ui-serif, Georgia, serif; font-size: 24px; margin: 0 0 6px 0; color: #50331A; font-weight: 500; line-height: 1.15; font-style: italic; }
+  .cta-panel p { font-size: 13px; color: #50331A; margin: 0 0 14px 0; opacity: 0.78; }
+  .cta-panel .steps { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .step { background: rgba(245,239,232,0.7); border: 1px solid rgba(80,50,20,0.18); border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #50331A; }
+  .step .num { width: 22px; height: 22px; border-radius: 50%; background: rgba(80,50,20,0.3); color: #F5EFE8; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex-shrink: 0; font-family: ui-serif, Georgia, serif; }
+  .step.next { border-color: rgba(142,44,95,0.45); }
+  .step.next .num { background: #8E2C5F; }
+
+  .doc-cards { position: fixed; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+  .doc-card { position: absolute; width: 56px; height: 78px; background: linear-gradient(180deg, #EFE0BD 0%, #E2CE9F 100%); border: 1px solid rgba(80,50,20,0.4); border-radius: 2px; box-shadow: 0 12px 30px -10px rgba(25,19,22,0.55); padding: 9px 7px; box-sizing: border-box; transform-origin: center; opacity: 0; will-change: transform, opacity, left, top; }
+  .doc-card::before, .doc-card::after { content: ''; position: absolute; left: 6px; right: 6px; height: 1px; background: rgba(80,50,20,0.25); }
+  .doc-card::before { top: 22px; }
+  .doc-card::after { top: 50px; }
+  .doc-card .line { display: block; height: 1.5px; background: rgba(80,50,20,0.55); border-radius: 1px; margin-bottom: 4px; }
+  .doc-card .line.s { width: 50%; }
+  .doc-card .line.m { width: 78%; }
+  .doc-card .line.l { width: 92%; }
+  .doc-card .corner { position: absolute; bottom: 0; right: 0; width: 14px; height: 14px; background: linear-gradient(315deg, #C9AC78 50%, transparent 50%); border-radius: 0 0 2px 0; }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Mockup 7 — Cartographer's reveal</b><br/>
+  Aged paper, compass rose, faint contour lines — the map starts blank. Folded letters drop from above; on landing, ink rings bleed across the paper and hex peaks rise where each one fell. The map fills in as you drop docs, then loops blank. Most narrative.
+</div>
+
+<div class="switcher">
+  <a href="mockup_5_live_miniature.html">5 · live</a>
+  <a href="mockup_6_aurora_arrival.html">6 · aurora</a>
+  <a href="mockup_7_cartographer_reveal.html" class="active">7 · ink</a>
+</div>
+
+<canvas id="c"></canvas>
+<div class="doc-cards" id="docCards"></div>
+
+<div class="cta-panel">
+  <p class="eyebrow">Your knowledge atlas</p>
+  <h1>The cartographer is ready.</h1>
+  <p>Drop the first source — the map will draw itself.</p>
+  <div class="steps">
+    <div class="step next"><span class="num">1</span>Connect a source</div>
+    <div class="step"><span class="num">2</span>Harvest documents</div>
+    <div class="step"><span class="num">3</span>Compile the map</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#2c211a');
+
+const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 200);
+// fixed camera — looking at the desk, no orbit (matches the "map on a desk" framing)
+camera.position.set(0, 9, 14);
+camera.lookAt(0, 0, 0);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const key = new THREE.DirectionalLight(0xFFF6E5, 1.0);
+key.position.set(-7.2, 4.8, -4.8);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -20; key.shadow.camera.right = 20;
+key.shadow.camera.top = 20; key.shadow.camera.bottom = -20;
+key.shadow.bias = -0.0008;
+scene.add(key);
+scene.add(new THREE.DirectionalLight(0xCDE0F0, 0.35).position.set(8, 6, 6));
+
+// landing spots — predefined positions where hexes appear
+const SPOTS = [
+  { center: [-3.0, -1.5], hexes: [[-3.6, -2.0, 1.3], [-2.0, -2.5, 0.55], [-2.4, -0.8, 0.65]] },
+  { center: [ 3.4, -1.8], hexes: [[ 3.4, -2.7, 1.15], [ 4.5, -1.4, 0.55], [ 3.0, -0.9, 0.5]] },
+  { center: [-1.2,  3.3], hexes: [[-1.2,  3.2, 1.0], [-2.4,  3.7, 0.55], [-0.2,  4.0, 0.5]] },
+  { center: [ 3.5,  3.4], hexes: [[ 3.5,  3.2, 1.2], [ 4.6,  4.0, 0.55], [ 2.4,  4.0, 0.5]] },
+];
+
+// aged-paper texture w/ compass — built on a canvas, redrawable for ink rings
+const PLANE_W = 30, PLANE_H = 22;
+const TEX_W = 2048, TEX_H = 1500;
+const wxToPx = (w) => (w + PLANE_W / 2) * (TEX_W / PLANE_W);
+const wzToPx = (w) => (w + PLANE_H / 2) * (TEX_H / PLANE_H);
+
+const paperCanvas = document.createElement('canvas');
+paperCanvas.width = TEX_W; paperCanvas.height = TEX_H;
+const pctx = paperCanvas.getContext('2d');
+
+// The base paper (sepia + noise + stains + compass + title) is expensive to
+// draw — the noise loop alone is ~3M iterations. Bake it once into an offscreen
+// canvas so the per-frame redraw during ink-reveal is a single drawImage blit.
+const baseCanvas = document.createElement('canvas');
+baseCanvas.width = TEX_W; baseCanvas.height = TEX_H;
+const bctx = baseCanvas.getContext('2d');
+(function bakeBasePaper() {
+  const base = bctx.createRadialGradient(TEX_W / 2, TEX_H / 2, TEX_W * 0.1, TEX_W / 2, TEX_H / 2, TEX_W * 0.7);
+  base.addColorStop(0.0, '#EFE0BD');
+  base.addColorStop(0.55, '#E2CE9F');
+  base.addColorStop(1.0, '#C9AC78');
+  bctx.fillStyle = base;
+  bctx.fillRect(0, 0, TEX_W, TEX_H);
+
+  const noise = bctx.createImageData(TEX_W, TEX_H);
+  for (let i = 0; i < noise.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 30;
+    noise.data[i + 0] = 200 + n;
+    noise.data[i + 1] = 180 + n;
+    noise.data[i + 2] = 140 + n;
+    noise.data[i + 3] = 28;
+  }
+  bctx.putImageData(noise, 0, 0);
+
+  for (let i = 0; i < 14; i++) {
+    const x = Math.random() * TEX_W;
+    const y = Math.random() * TEX_H;
+    const r = 60 + Math.random() * 240;
+    const stain = bctx.createRadialGradient(x, y, 0, x, y, r);
+    stain.addColorStop(0.0, `rgba(120, 80, 30, ${0.07 + Math.random() * 0.1})`);
+    stain.addColorStop(1.0, 'rgba(120, 80, 30, 0)');
+    bctx.fillStyle = stain;
+    bctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  const edge = bctx.createLinearGradient(0, 0, 0, TEX_H);
+  edge.addColorStop(0.0, 'rgba(80, 50, 20, 0.35)');
+  edge.addColorStop(0.08, 'rgba(80, 50, 20, 0.0)');
+  edge.addColorStop(0.92, 'rgba(80, 50, 20, 0.0)');
+  edge.addColorStop(1.0, 'rgba(80, 50, 20, 0.35)');
+  bctx.fillStyle = edge;
+  bctx.fillRect(0, 0, TEX_W, TEX_H);
+  const edge2 = bctx.createLinearGradient(0, 0, TEX_W, 0);
+  edge2.addColorStop(0.0, 'rgba(80, 50, 20, 0.35)');
+  edge2.addColorStop(0.06, 'rgba(80, 50, 20, 0.0)');
+  edge2.addColorStop(0.94, 'rgba(80, 50, 20, 0.0)');
+  edge2.addColorStop(1.0, 'rgba(80, 50, 20, 0.35)');
+  bctx.fillStyle = edge2;
+  bctx.fillRect(0, 0, TEX_W, TEX_H);
+
+  const cx = TEX_W - 220, cy = TEX_H - 200, R = 130;
+  bctx.save();
+  bctx.translate(cx, cy);
+  bctx.beginPath(); bctx.arc(0, 0, R, 0, Math.PI * 2);
+  bctx.strokeStyle = 'rgba(80, 50, 20, 0.5)'; bctx.lineWidth = 2.2; bctx.stroke();
+  bctx.beginPath(); bctx.arc(0, 0, R * 0.78, 0, Math.PI * 2);
+  bctx.strokeStyle = 'rgba(80, 50, 20, 0.35)'; bctx.lineWidth = 1.2; bctx.stroke();
+  bctx.fillStyle = 'rgba(110, 70, 28, 0.78)';
+  for (let i = 0; i < 4; i++) {
+    bctx.save(); bctx.rotate((i * Math.PI) / 2);
+    bctx.beginPath();
+    bctx.moveTo(0, -R); bctx.lineTo(R * 0.16, 0); bctx.lineTo(0, R * 0.16); bctx.lineTo(-R * 0.16, 0);
+    bctx.closePath(); bctx.fill(); bctx.restore();
+  }
+  bctx.fillStyle = 'rgba(110, 70, 28, 0.48)';
+  for (let i = 0; i < 4; i++) {
+    bctx.save(); bctx.rotate((i * Math.PI) / 2 + Math.PI / 4);
+    bctx.beginPath();
+    bctx.moveTo(0, -R * 0.7); bctx.lineTo(R * 0.1, 0); bctx.lineTo(0, R * 0.1); bctx.lineTo(-R * 0.1, 0);
+    bctx.closePath(); bctx.fill(); bctx.restore();
+  }
+  bctx.font = '600 26px ui-serif, "Georgia", serif';
+  bctx.fillStyle = 'rgba(80, 50, 20, 0.88)';
+  bctx.textAlign = 'center'; bctx.textBaseline = 'middle';
+  bctx.fillText('N', 0, -R - 22);
+  bctx.fillText('S', 0,  R + 22);
+  bctx.fillText('E',  R + 22, 0);
+  bctx.fillText('W', -R - 22, 0);
+  bctx.restore();
+
+  bctx.save();
+  bctx.font = 'italic 600 44px ui-serif, "Georgia", serif';
+  bctx.fillStyle = 'rgba(80, 50, 20, 0.78)';
+  bctx.fillText('Brain-Map of Knowledge', 80, 100);
+  bctx.font = 'italic 400 22px ui-serif, "Georgia", serif';
+  bctx.fillStyle = 'rgba(80, 50, 20, 0.55)';
+  bctx.fillText('drawn ⋅ MMXXVI', 80, 134);
+  bctx.restore();
+})();
+
+// Cheap blit — used every frame during active ink reveals.
+function drawBasePaper() {
+  pctx.drawImage(baseCanvas, 0, 0);
+}
+
+drawBasePaper();
+const paperTex = new THREE.CanvasTexture(paperCanvas);
+paperTex.anisotropy = 8;
+paperTex.colorSpace = THREE.SRGBColorSpace;
+
+const paperGeom = new THREE.PlaneGeometry(PLANE_W, PLANE_H);
+paperGeom.rotateX(-Math.PI / 2);
+const paper = new THREE.Mesh(paperGeom, new THREE.MeshStandardMaterial({ map: paperTex, roughness: 0.95 }));
+paper.position.y = -0.01;
+paper.rotation.z = 0.02;
+paper.receiveShadow = true;
+scene.add(paper);
+
+// hex meshes — pre-created at scale=0, animate up when their spot is reached
+const HEX_R = 0.85;
+const HEX_PRISM = new THREE.CylinderGeometry(HEX_R, HEX_R, 1, 6, 1);
+const allHexes = [];
+for (const spot of SPOTS) {
+  const group = [];
+  for (const [x, z, h] of spot.hexes) {
+    const m = new THREE.Mesh(HEX_PRISM, new THREE.MeshStandardMaterial({ color: '#EFE0BD', roughness: 0.85 }));
+    m.position.set(x, 0, z);
+    m.scale.set(1, 0.001, 1);
+    m.rotation.y = Math.PI / 6;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    scene.add(m);
+    group.push({ mesh: m, targetH: h, pos: new THREE.Vector3(x, 0, z), revealStart: 0 });
+  }
+  spot.hexGroup = group;
+  spot.revealed = false;
+  spot.revealStart = 0;
+}
+
+// ink ring overlay — separate canvas drawn onto paper texture progressively
+function drawInkRing(center, progress) {
+  const cx = wxToPx(center[0]);
+  const cz = wzToPx(center[1]);
+  // 3 nested rings, each fading in across the progress range
+  for (let i = 0; i < 3; i++) {
+    const start = i * 0.25;
+    const end = start + 0.4;
+    const local = Math.max(0, Math.min(1, (progress - start) / (end - start)));
+    if (local <= 0) continue;
+    const rWorld = 1.6 + i * 0.9;
+    const rPxX = rWorld * (TEX_W / PLANE_W);
+    const rPxZ = rWorld * (TEX_H / PLANE_H);
+    const alpha = (0.42 - i * 0.10) * local;
+    pctx.beginPath();
+    const steps = 96;
+    const arcEnd = local * Math.PI * 2;
+    for (let s = 0; s <= steps; s++) {
+      const a = (s / steps) * arcEnd - Math.PI / 2;
+      const wob = 1 + Math.sin(a * 5 + i * 1.2) * 0.04;
+      const x = cx + Math.cos(a) * rPxX * wob;
+      const y = cz + Math.sin(a) * rPxZ * wob;
+      if (s === 0) pctx.moveTo(x, y); else pctx.lineTo(x, y);
+    }
+    pctx.strokeStyle = `rgba(115, 78, 32, ${alpha})`;
+    pctx.lineWidth = i === 0 ? 2.4 : 1.5;
+    pctx.setLineDash(i % 2 === 0 ? [] : [8, 6]);
+    pctx.stroke();
+  }
+  pctx.setLineDash([]);
+  paperTex.needsUpdate = true;
+}
+
+// HTML scroll cards — drop from above onto a landing spot
+const docRoot = document.getElementById('docCards');
+const flights = [];
+function createScroll() {
+  const el = document.createElement('div');
+  el.className = 'doc-card';
+  el.innerHTML = `<div class="corner"></div><div class="line s"></div><div class="line l"></div><div class="line m"></div><div class="line l"></div><div class="line s"></div>`;
+  docRoot.appendChild(el);
+  return el;
+}
+function projectToScreen(p) {
+  const v = p.clone().project(camera);
+  return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
+}
+function launch(spot) {
+  const targetWorld = new THREE.Vector3(spot.center[0], 0.3, spot.center[1]);
+  const ts = projectToScreen(targetWorld);
+  flights.push({
+    el: createScroll(),
+    spot,
+    startX: ts.x + (Math.random() - 0.5) * 60,
+    startY: -100,
+    endX: ts.x,
+    endY: ts.y,
+    startTime: performance.now(),
+    duration: 1400,
+  });
+}
+function updateFlights() {
+  const now = performance.now();
+  for (let i = flights.length - 1; i >= 0; i--) {
+    const f = flights[i];
+    const t = Math.min(1, (now - f.startTime) / f.duration);
+    // ease-in fall + slight rotation
+    const eased = t * t;
+    const x = f.startX + (f.endX - f.startX) * eased;
+    const y = f.startY + (f.endY - f.startY) * eased;
+    const opacity = t < 0.1 ? t / 0.1 : (t > 0.92 ? (1 - t) / 0.08 : 1);
+    const scale = 0.7 + t * 0.55;
+    const rot = -15 + t * 18;
+    f.el.style.left = (x - 28) + 'px';
+    f.el.style.top = (y - 39) + 'px';
+    f.el.style.opacity = opacity;
+    f.el.style.transform = `scale(${scale}) rotate(${rot}deg)`;
+    if (t >= 1) {
+      // begin reveal
+      if (!f.spot.revealed) {
+        f.spot.revealed = true;
+        f.spot.revealStart = now;
+      }
+      f.el.remove();
+      flights.splice(i, 1);
+    }
+  }
+}
+
+// reveal progress: 1600ms total — first 60% ink rings, last 40% hex rise.
+// Canvas stroke is additive, so to avoid oversaturation we redraw the whole
+// paper (base + every spot's rings at their current progress) when anyone is
+// still in the ink-drawing phase. Completed spots get re-painted at progress=1
+// so they don't disappear when neighbours clear+redraw.
+function updateReveals() {
+  const now = performance.now();
+  let anyDrawing = false;
+  for (const spot of SPOTS) {
+    if (!spot.revealed) continue;
+    const p = Math.min(1, (now - spot.revealStart) / 1600);
+    if (p < 0.6) { anyDrawing = true; break; }
+  }
+  if (anyDrawing) {
+    drawBasePaper();
+    for (const spot of SPOTS) {
+      if (!spot.revealed) continue;
+      const p = Math.min(1, (now - spot.revealStart) / 1600);
+      drawInkRing(spot.center, p < 0.6 ? p / 0.6 : 1);
+    }
+    paperTex.needsUpdate = true;
+  }
+  for (const spot of SPOTS) {
+    if (!spot.revealed) continue;
+    const p = Math.min(1, (now - spot.revealStart) / 1600);
+    if (p >= 0.6) {
+      const hexP = (p - 0.6) / 0.4;
+      const eased = 1 - Math.pow(1 - hexP, 3);
+      for (const h of spot.hexGroup) {
+        const cur = h.targetH * eased;
+        h.mesh.position.y = cur / 2;
+        h.mesh.scale.y = Math.max(0.001, cur);
+      }
+    }
+  }
+}
+
+// loop: after all spots revealed + a pause, fade to blank and restart
+let loopState = 'reveal'; // 'reveal' | 'hold' | 'fade'
+let loopMark = 0;
+let activeSpotIdx = 0;
+let nextScrollAt = performance.now() + 800;
+
+function scheduleScrolls() {
+  const now = performance.now();
+  if (loopState !== 'reveal') return;
+  if (activeSpotIdx >= SPOTS.length) {
+    loopState = 'hold';
+    loopMark = now;
+    return;
+  }
+  if (now >= nextScrollAt) {
+    launch(SPOTS[activeSpotIdx]);
+    activeSpotIdx++;
+    nextScrollAt = now + 2200;
+  }
+}
+
+function updateLoop() {
+  const now = performance.now();
+  if (loopState === 'hold' && now - loopMark > 3500) {
+    loopState = 'fade';
+    loopMark = now;
+  } else if (loopState === 'fade') {
+    const t = Math.min(1, (now - loopMark) / 1500);
+    // fade hexes back down
+    for (const spot of SPOTS) {
+      if (!spot.revealed) continue;
+      for (const h of spot.hexGroup) {
+        const newH = h.targetH * (1 - t);
+        h.mesh.scale.y = Math.max(0.001, newH);
+        h.mesh.position.y = newH / 2;
+      }
+    }
+    if (t >= 1) {
+      // reset paper & state
+      drawBasePaper();
+      paperTex.needsUpdate = true;
+      for (const spot of SPOTS) {
+        spot.revealed = false;
+        spot.revealStart = 0;
+      }
+      activeSpotIdx = 0;
+      nextScrollAt = now + 1000;
+      loopState = 'reveal';
+    }
+  }
+}
+
+addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function tick() {
+  if (!reducedMotion) {
+    scheduleScrolls();
+    updateFlights();
+    updateReveals();
+    updateLoop();
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

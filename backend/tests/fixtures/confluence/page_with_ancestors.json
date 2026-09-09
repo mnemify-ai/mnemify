@@ -1,0 +1,41 @@
+{
+  "id": "101",
+  "type": "page",
+  "status": "current",
+  "title": "Roadmap 2026",
+  "space": {"key": "ENG", "name": "Engineering"},
+  "body": {
+    "storage": {
+      "value": "<p>The 2026 roadmap sketches out four themes: scale, reliability, developer experience, and cost.</p>",
+      "representation": "storage"
+    }
+  },
+  "version": {
+    "when": "2026-04-17T14:42:11.000Z",
+    "number": 12,
+    "by": {"accountId": "acc-editor", "displayName": "Eva Editor"}
+  },
+  "history": {
+    "createdDate": "2026-01-08T11:00:00.000Z",
+    "createdBy": {
+      "accountId": "acc-author",
+      "displayName": "Ada Author",
+      "type": "known"
+    }
+  },
+  "ancestors": [
+    {"id": "1", "title": "Engineering Home"},
+    {"id": "10", "title": "Planning"},
+    {"id": "50", "title": "2026"}
+  ],
+  "metadata": {
+    "labels": {
+      "results": [
+        {"name": "planning"},
+        {"name": "roadmap"},
+        {"name": "strategy"}
+      ]
+    }
+  },
+  "_links": {"webui": "/spaces/ENG/pages/101/Roadmap+2026"}
+}

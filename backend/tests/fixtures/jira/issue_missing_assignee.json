@@ -1,0 +1,23 @@
+{
+  "id": "10008",
+  "key": "CONN-8",
+  "self": "https://example.atlassian.net/rest/api/3/issue/10008",
+  "fields": {
+    "summary": "Unassigned triage ticket",
+    "status": {"name": "Backlog"},
+    "issuetype": {"name": "Bug"},
+    "priority": null,
+    "project": {"key": "CONN", "name": "Mnemify"},
+    "labels": [],
+    "created": "2026-04-11T07:00:00.000+0000",
+    "updated": "2026-04-11T07:05:00.000+0000",
+    "assignee": null,
+    "reporter": {
+      "accountId": "g-hopper-456",
+      "displayName": "Grace Hopper",
+      "emailAddress": "grace@example.com"
+    },
+    "description": null,
+    "attachment": []
+  }
+}

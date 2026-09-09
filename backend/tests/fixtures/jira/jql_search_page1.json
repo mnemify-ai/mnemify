@@ -1,0 +1,66 @@
+{
+  "expand": "schema,names",
+  "nextPageToken": "eyJpZCI6NX0=",
+  "issues": [
+    {
+      "id": "10001",
+      "key": "CONN-1",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10001",
+      "fields": {
+        "summary": "Ship harvester MVP",
+        "status": {"name": "In Progress"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-18T09:21:33.123+0000",
+        "issuetype": {"name": "Story"}
+      }
+    },
+    {
+      "id": "10002",
+      "key": "CONN-2",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10002",
+      "fields": {
+        "summary": "Wire up attachments pipeline",
+        "status": {"name": "Done"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-17T10:02:05.500+0000",
+        "issuetype": {"name": "Story"}
+      }
+    },
+    {
+      "id": "10003",
+      "key": "CONN-3",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10003",
+      "fields": {
+        "summary": "Investigate 429 retry policy",
+        "status": {"name": "To Do"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-16T14:45:11.000+0000",
+        "issuetype": {"name": "Task"}
+      }
+    },
+    {
+      "id": "10004",
+      "key": "CONN-4",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10004",
+      "fields": {
+        "summary": "Story-points auto-discovery",
+        "status": {"name": "Done"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-15T08:10:00.000+0000",
+        "issuetype": {"name": "Story"}
+      }
+    },
+    {
+      "id": "10005",
+      "key": "CONN-5",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10005",
+      "fields": {
+        "summary": "Draft ADF-to-text extractor",
+        "status": {"name": "In Review"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-14T22:00:59.900+0000",
+        "issuetype": {"name": "Story"}
+      }
+    }
+  ]
+}

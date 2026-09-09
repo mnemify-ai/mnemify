@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "workspace": "Mnemify · Acme Workspace",
+  "generatedAt": "2026-04-24T15:00:00Z",
+  "bounds": { "minX": -120, "maxX": 120, "minZ": -120, "maxZ": 120 },
+  "stats": {
+    "topics": 162,
+    "notes": 942,
+    "sources": 271,
+    "connections": 1284,
+    "deltas": { "topics": 0.12, "notes": 0.08, "sources": 0.06, "connections": 0.15 }
+  },
+  "regions": [
+    {
+      "id": "product-strategy",
+      "name": "Product Strategy",
+      "summary": "Strategic analysis, product differentiation, and go-to-market positioning.",
+      "color": "#3F6DF3",
+      "accent": "#7AA2FF",
+      "center": { "x": 0, "z": -40 },
+      "radius": 36,
+      "layers": 6,
+      "counts": { "notes": 94, "sources": 27, "peaks": 5 },
+      "peaks": [
+        { "id": "ps-market",     "label": "Market Positioning",  "level": 1, "offset": { "dx":  0,   "dz": -4 },  "density": 1.00, "noteCount": 24, "blurb": "Competitive map + differentiation", "downstreamPeakIds": ["ps-launch"] },
+        { "id": "ps-roadmap",    "label": "Roadmaps & Planning", "level": 1, "offset": { "dx": -18,  "dz":  6 },  "density": 0.85, "noteCount": 31, "blurb": "Quarterly roadmaps & OKRs" },
+        { "id": "ps-vision",     "label": "Vision & OKRs",       "level": 1, "offset": { "dx":  16,  "dz":  5 },  "density": 0.70, "noteCount": 18, "blurb": "North-star + multi-year vision" },
+        { "id": "ps-competitive","label": "Competitive Intel",   "level": 1, "offset": { "dx": -12,  "dz": 18 },  "density": 0.65, "noteCount": 27, "blurb": "Teardown notes & pricing" },
+        { "id": "ps-launch",     "label": "Launch Strategy",     "level": 1, "offset": { "dx":  10,  "dz": 19 },  "density": 0.55, "noteCount": 16, "blurb": "GTM playbooks & launch retros" }
+      ],
+      "topNotes": [
+        { "id": "n-ps-1", "title": "Market Positioning Framework", "author": "Lily Chen",    "updatedAt": "2026-05-12T10:00:00Z" },
+        { "id": "n-ps-2", "title": "Competitive Landscape Q2",      "author": "David Park",   "updatedAt": "2026-05-06T10:00:00Z" },
+        { "id": "n-ps-3", "title": "Differentiation Strategy",      "author": "Sarah Johnson","updatedAt": "2026-04-28T10:00:00Z" }
+      ],
+      "relatedSources": [
+        { "id": "s-ps-1", "title": "2024 Market Report",     "kind": "pdf",    "updatedAt": "2026-05-01T00:00:00Z", "origin": "Acme Research" },
+        { "id": "s-ps-2", "title": "Competitor Analysis Deck","kind": "slides", "updatedAt": "2026-04-24T00:00:00Z", "origin": "Google Slides" },
+        { "id": "s-ps-3", "title": "Customer Interviews (Q1)","kind": "notion", "updatedAt": "2026-04-20T00:00:00Z", "origin": "Notion" }
+      ],
+      "linkedSubtopics": [
+        { "id": "st-vp",   "label": "Value Proposition",    "noteCount": 12 },
+        { "id": "st-seg",  "label": "Target Segments",      "noteCount":  9 },
+        { "id": "st-msg",  "label": "Messaging Framework",  "noteCount":  7 },
+        { "id": "st-diff", "label": "Differentiators",      "noteCount":  6 }
+      ]
+    },
+    {
+      "id": "customer-research",
+      "name": "Customer Research",
+      "summary": "User interviews, jobs-to-be-done, survey synthesis and ethnography.",
+      "color": "#8B5CF6",
+      "accent": "#B79BFF",
+      "center": { "x": -90, "z": -20 },
+      "radius": 28,
+      "layers": 5,
+      "counts": { "notes": 68, "sources": 18, "peaks": 4 },
+      "peaks": [
+        { "id": "cr-interviews", "label": "Interviews",      "level": 1, "offset": { "dx":  0,  "dz":  0 }, "density": 0.92, "noteCount": 28, "blurb": "1:1 interview notes & clips" },
+        { "id": "cr-jtbd",       "label": "Jobs-to-be-Done", "level": 1, "offset": { "dx": -9,  "dz": 10 }, "density": 0.70, "noteCount": 16 },
+        { "id": "cr-surveys",    "label": "Surveys",         "level": 1, "offset": { "dx": 11,  "dz":  8 }, "density": 0.58, "noteCount": 14 },
+        { "id": "cr-personas",   "label": "Personas",        "level": 1, "offset": { "dx":  2,  "dz": -11}, "density": 0.45, "noteCount": 10 }
+      ]
+    },
+    {
+      "id": "technical-architecture",
+      "name": "Technical Architecture",
+      "summary": "System design, service boundaries, RFCs and technical decisions.",
+      "color": "#14B8A6",
+      "accent": "#5EEAD4",
+      "center": { "x": 95, "z": -25 },
+      "radius": 30,
+      "layers": 5,
+      "counts": { "notes": 81, "sources": 22, "peaks": 5 },
+      "peaks": [
+        { "id": "ta-rfcs",     "label": "RFCs",           "level": 1, "offset": { "dx":  0,   "dz":  0 }, "density": 0.95, "noteCount": 34 },
+        { "id": "ta-services", "label": "Service Design", "level": 1, "offset": { "dx": -11,  "dz": 10 }, "density": 0.74, "noteCount": 19 },
+        { "id": "ta-data",     "label": "Data Platform",  "level": 1, "offset": { "dx": 12,   "dz":  9 }, "density": 0.65, "noteCount": 14 },
+        { "id": "ta-infra",    "label": "Infra & DevOps", "level": 1, "offset": { "dx":  8,   "dz": -9 }, "density": 0.55, "noteCount": 10 },
+        { "id": "ta-security", "label": "Security",       "level": 2, "offset": { "dx": -10,  "dz": -8 }, "density": 0.40, "noteCount":  4, "parentPeakId": "ta-rfcs" }
+      ]
+    },
+    {
+      "id": "integrations",
+      "name": "Integrations",
+      "summary": "Third-party connectors — Notion, Confluence, Slack, Salesforce, Hilti.",
+      "color": "#2563EB",
+      "accent": "#93C5FD",
+      "center": { "x": -95, "z": 55 },
+      "radius": 26,
+      "layers": 4,
+      "counts": { "notes": 47, "sources": 14, "peaks": 4 },
+      "peaks": [
+        { "id": "in-notion",     "label": "Notion Connector",     "level": 1, "offset": { "dx":  0,   "dz":  0 }, "density": 0.85, "noteCount": 17 },
+        { "id": "in-confluence", "label": "Confluence Connector", "level": 1, "offset": { "dx": -10,  "dz":  9 }, "density": 0.68, "noteCount": 12 },
+        { "id": "in-slack",      "label": "Slack Pipeline",       "level": 1, "offset": { "dx":  9,   "dz":  8 }, "density": 0.50, "noteCount":  9 },
+        { "id": "in-hilti",      "label": "Hilti Sync",           "level": 1, "offset": { "dx":  6,   "dz": -8 }, "density": 0.40, "noteCount":  9 }
+      ]
+    },
+    {
+      "id": "delivery",
+      "name": "Delivery",
+      "summary": "Sprint artifacts, launch checklists, incident retros, release notes.",
+      "color": "#B08B3E",
+      "accent": "#E8C988",
+      "center": { "x": 10, "z": 70 },
+      "radius": 32,
+      "layers": 5,
+      "counts": { "notes": 112, "sources": 31, "peaks": 5 },
+      "peaks": [
+        { "id": "de-sprints",   "label": "Sprint Notes",     "level": 1, "offset": { "dx":  0,   "dz":  0 }, "density": 0.98, "noteCount": 40 },
+        { "id": "de-releases",  "label": "Release Trains",   "level": 1, "offset": { "dx": -12,  "dz":  9 }, "density": 0.78, "noteCount": 22 },
+        { "id": "de-incidents", "label": "Incident Retros",  "level": 1, "offset": { "dx": 12,   "dz":  8 }, "density": 0.62, "noteCount": 17 },
+        { "id": "de-qa",        "label": "QA Playbooks",     "level": 1, "offset": { "dx": -7,   "dz": -10}, "density": 0.50, "noteCount": 18 },
+        { "id": "de-checklist", "label": "Launch Checklist", "level": 2, "offset": { "dx":  8,   "dz": -9 }, "density": 0.42, "noteCount": 15, "parentPeakId": "de-releases" }
+      ]
+    },
+    {
+      "id": "meetings",
+      "name": "Meetings",
+      "summary": "Standups, all-hands, 1:1 templates, meeting minutes and recordings.",
+      "color": "#E46A3B",
+      "accent": "#FFB89A",
+      "center": { "x": 100, "z": 40 },
+      "radius": 24,
+      "layers": 4,
+      "counts": { "notes": 56, "sources": 12, "peaks": 3 },
+      "peaks": [
+        { "id": "mt-allhands",  "label": "All-Hands",  "level": 1, "offset": { "dx":  0,  "dz":  0 }, "density": 0.80, "noteCount": 22 },
+        { "id": "mt-standup",   "label": "Standups",   "level": 1, "offset": { "dx": -9,  "dz":  8 }, "density": 0.60, "noteCount": 18 },
+        { "id": "mt-reviews",   "label": "Reviews",    "level": 1, "offset": { "dx":  9,  "dz":  7 }, "density": 0.50, "noteCount": 16 }
+      ]
+    },
+    {
+      "id": "competitive-analysis",
+      "name": "Competitive Analysis",
+      "summary": "Teardowns, pricing studies, positioning maps, competitor watch.",
+      "color": "#C14B8C",
+      "accent": "#F5A3C6",
+      "center": { "x": 70, "z": 95 },
+      "radius": 22,
+      "layers": 4,
+      "counts": { "notes": 39, "sources": 11, "peaks": 3 },
+      "peaks": [
+        { "id": "ca-teardowns", "label": "Teardowns",    "level": 1, "offset": { "dx":  0,  "dz":  0 }, "density": 0.75, "noteCount": 15 },
+        { "id": "ca-pricing",   "label": "Pricing Study","level": 1, "offset": { "dx": -8,  "dz":  7 }, "density": 0.55, "noteCount": 13 },
+        { "id": "ca-feature",   "label": "Feature Matrix","level": 1,"offset": { "dx":  8,  "dz":  6 }, "density": 0.42, "noteCount": 11 }
+      ]
+    },
+    {
+      "id": "engineering-ops",
+      "name": "Engineering Ops",
+      "summary": "On-call rotations, SLOs, tooling playbooks and onboarding.",
+      "color": "#5B8F3A",
+      "accent": "#A7D285",
+      "center": { "x": -55, "z": 100 },
+      "radius": 24,
+      "layers": 4,
+      "counts": { "notes": 44, "sources": 10, "peaks": 4 },
+      "peaks": [
+        { "id": "eo-oncall",    "label": "On-Call",      "level": 1, "offset": { "dx":  0,  "dz":  0 }, "density": 0.78, "noteCount": 16 },
+        { "id": "eo-slos",      "label": "SLOs",         "level": 1, "offset": { "dx": -8,  "dz":  8 }, "density": 0.55, "noteCount": 11 },
+        { "id": "eo-tooling",   "label": "Tooling",      "level": 1, "offset": { "dx":  9,  "dz":  7 }, "density": 0.50, "noteCount":  9 },
+        { "id": "eo-onboard",   "label": "Onboarding",   "level": 1, "offset": { "dx":  4,  "dz": -8 }, "density": 0.40, "noteCount":  8 }
+      ]
+    }
+  ],
+  "connections": [
+    { "fromRegionId": "product-strategy",       "toRegionId": "customer-research",     "weight": 0.92, "label": "informed by" },
+    { "fromRegionId": "product-strategy",       "toRegionId": "technical-architecture","weight": 0.78 },
+    { "fromRegionId": "product-strategy",       "toRegionId": "competitive-analysis",  "weight": 0.85 },
+    { "fromRegionId": "product-strategy",       "toRegionId": "delivery",              "weight": 0.70 },
+    { "fromRegionId": "customer-research",      "toRegionId": "competitive-analysis",  "weight": 0.55 },
+    { "fromRegionId": "technical-architecture", "toRegionId": "integrations",          "weight": 0.80 },
+    { "fromRegionId": "technical-architecture", "toRegionId": "delivery",              "weight": 0.72 },
+    { "fromRegionId": "integrations",           "toRegionId": "delivery",              "weight": 0.60 },
+    { "fromRegionId": "delivery",               "toRegionId": "meetings",              "weight": 0.55 },
+    { "fromRegionId": "delivery",               "toRegionId": "engineering-ops",       "weight": 0.68 },
+    { "fromRegionId": "engineering-ops",        "toRegionId": "technical-architecture","weight": 0.62 },
+    { "fromRegionId": "meetings",               "toRegionId": "product-strategy",      "weight": 0.48 }
+  ]
+}

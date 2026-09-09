@@ -1,0 +1,37 @@
+{
+  "id": "100",
+  "type": "page",
+  "status": "current",
+  "title": "Engineering Onboarding",
+  "space": {"key": "ENG", "name": "Engineering"},
+  "body": {
+    "storage": {
+      "value": "<p>Welcome to engineering onboarding.</p><p>See attached diagram and spec.</p>",
+      "representation": "storage"
+    }
+  },
+  "version": {
+    "when": "2026-04-18T09:15:00.000Z",
+    "number": 4,
+    "by": {"accountId": "acc-editor", "displayName": "Eva Editor"}
+  },
+  "history": {
+    "createdDate": "2026-02-01T08:00:00.000Z",
+    "createdBy": {
+      "accountId": "acc-author",
+      "displayName": "Ada Author",
+      "type": "known"
+    }
+  },
+  "ancestors": [
+    {"id": "1", "title": "Engineering Home"}
+  ],
+  "metadata": {
+    "labels": {
+      "results": [
+        {"name": "onboarding"}
+      ]
+    }
+  },
+  "_links": {"webui": "/spaces/ENG/pages/100/Engineering+Onboarding"}
+}

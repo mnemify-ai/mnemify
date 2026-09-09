@@ -1,0 +1,54 @@
+{
+  "id": "10001",
+  "key": "CONN-1",
+  "self": "https://example.atlassian.net/rest/api/3/issue/10001",
+  "fields": {
+    "summary": "Ship harvester MVP",
+    "status": {"name": "In Progress"},
+    "issuetype": {"name": "Story"},
+    "priority": {"name": "High"},
+    "project": {"key": "CONN", "name": "Mnemify"},
+    "labels": ["phase-1", "mvp"],
+    "created": "2026-04-01T10:00:00.000+0000",
+    "updated": "2026-04-18T09:21:33.123+0000",
+    "assignee": {
+      "accountId": "a-lovelace-123",
+      "displayName": "Ada Lovelace",
+      "emailAddress": "ada@example.com"
+    },
+    "reporter": {
+      "accountId": "g-hopper-456",
+      "displayName": "Grace Hopper",
+      "emailAddress": "grace@example.com"
+    },
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {"type": "text", "text": "Attach the design doc and a screenshot of the flow."}
+          ]
+        }
+      ]
+    },
+    "attachment": [
+      {
+        "id": "20001",
+        "filename": "design.pdf",
+        "content": "https://example.atlassian.net/rest/api/3/attachment/content/20001",
+        "mimeType": "application/pdf",
+        "size": 11
+      },
+      {
+        "id": "20002",
+        "filename": "screenshot.png",
+        "content": "https://example.atlassian.net/rest/api/3/attachment/content/20002",
+        "mimeType": "image/png",
+        "size": 11
+      }
+    ],
+    "customfield_10026": 8
+  }
+}

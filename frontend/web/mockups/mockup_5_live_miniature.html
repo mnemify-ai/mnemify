@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Mockup 5 — Live miniature (real-map preview)</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #F5EFE8; font-family: system-ui, sans-serif; color: #191316; }
+  #info { position: fixed; top: 12px; left: 12px; background: rgba(245,239,232,0.82); padding: 10px 14px; border-radius: 10px; font-size: 13px; line-height: 1.4; max-width: 360px; pointer-events: none; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 10; }
+  #info b { color: #8E2C5F; }
+  #c { display: block; }
+
+  .switcher { position: fixed; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 11; }
+  .switcher a { background: rgba(245,239,232,0.86); backdrop-filter: blur(8px); border: 1px solid rgba(25,19,22,0.08); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #191316; text-decoration: none; }
+  .switcher a.active { background: #8E2C5F; color: #F5EFE8; border-color: #8E2C5F; }
+
+  .cta-panel { position: fixed; bottom: 5vh; left: 50%; transform: translateX(-50%); background: rgba(245,239,232,0.84); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2); border: 1px solid rgba(25,19,22,0.06); border-radius: 18px; padding: 22px 28px; box-shadow: 0 12px 40px -12px rgba(25,19,22,0.18); width: min(720px, 92vw); z-index: 10; }
+  .cta-panel .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(74,64,70,0.7); margin-bottom: 4px; }
+  .cta-panel h1 { font-family: ui-serif, Georgia, serif; font-size: 24px; margin: 0 0 6px 0; color: #191316; font-weight: 500; line-height: 1.15; }
+  .cta-panel p { font-size: 13px; color: #4A4046; margin: 0 0 14px 0; }
+  .cta-panel .steps { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .step { background: #F5EFE8; border: 1px solid rgba(25,19,22,0.08); border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #191316; }
+  .step .num { width: 22px; height: 22px; border-radius: 50%; background: rgba(25,19,22,0.18); color: #F5EFE8; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .step.next { border-color: rgba(142,44,95,0.35); }
+  .step.next .num { background: #8E2C5F; }
+
+  .doc-cards { position: fixed; inset: 0; pointer-events: none; z-index: 5; overflow: hidden; }
+  .doc-card { position: absolute; width: 60px; height: 76px; background: #F0E8DC; border: 1.5px solid rgba(142,44,95,0.55); border-radius: 4px; box-shadow: 0 10px 28px -10px rgba(25,19,22,0.4); padding: 9px 7px; box-sizing: border-box; transform-origin: center; opacity: 0; will-change: transform, opacity, left, top; }
+  .doc-card .line { display: block; height: 2px; background: rgba(25,19,22,0.4); border-radius: 1px; margin-bottom: 3.5px; }
+  .doc-card .line.s { width: 55%; }
+  .doc-card .line.m { width: 78%; }
+  .doc-card .line.l { width: 92%; }
+  .doc-card .corner { position: absolute; top: 0; right: 0; width: 14px; height: 14px; background: linear-gradient(225deg, transparent 50%, rgba(25,19,22,0.12) 50%); border-radius: 0 4px 0 0; }
+</style>
+</head>
+<body>
+<div id="info">
+  <b>Mockup 5 — Live miniature</b><br/>
+  The real-map preview: 4-region hex terrain with gradient arcs and peak bloom — same look as the actual BrainMap. Documents fly in from off-canvas; the peak they hit pulses magenta and lifts briefly. Auto-orbits, no controls.
+</div>
+
+<div class="switcher">
+  <a href="mockup_5_live_miniature.html" class="active">5 · live</a>
+  <a href="mockup_6_aurora_arrival.html">6 · aurora</a>
+  <a href="mockup_7_cartographer_reveal.html">7 · ink</a>
+</div>
+
+<canvas id="c"></canvas>
+<div class="doc-cards" id="docCards"></div>
+
+<div class="cta-panel">
+  <p class="eyebrow">Your Knowledge Map</p>
+  <h1>Ready when you are</h1>
+  <p>Follow the first steps to see your own knowledge map.</p>
+  <div class="steps">
+    <div class="step next"><span class="num">1</span>Connect a source</div>
+    <div class="step"><span class="num">2</span>Harvest documents</div>
+    <div class="step"><span class="num">3</span>Compile the map</div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// Palette mirrors src/app/theme/index.css.
+const PALETTE = { cream: '#F5EFE8', bone: '#F0E8DC', magenta: '#8E2C5F' };
+
+// 4 of the 8 region colors from mockresults.v1.json — same hexcodes the real
+// BrainMap would render.
+const REGIONS = [
+  { name: 'Product Strategy',       color: '#3F6DF3', center: [-3.6, -1.9] },
+  { name: 'Customer Research',      color: '#8B5CF6', center: [ 3.6, -1.9] },
+  { name: 'Technical Architecture', color: '#14B8A6', center: [-3.0,  2.4] },
+  { name: 'Delivery',               color: '#B08B3E', center: [ 3.0,  2.6] },
+];
+
+const HEX_SIZE = 0.55;
+const HEX_RADIUS = (HEX_SIZE * 2) / Math.sqrt(3);
+
+// axial (q, r) → cartesian (x, z) for pointy-top hexes.
+function hexToWorld(q, r) {
+  return [HEX_SIZE * 1.732 * (q + r * 0.5), HEX_SIZE * 1.5 * r];
+}
+
+// [q, r, height, isPeak] per region. One peak per region is the bloom target.
+const REGION_HEXES = [
+  [[0,0,1.35,true], [1,0,0.6,false], [-1,0,0.7,false], [0,1,0.5,false], [0,-1,0.55,false], [1,-1,0.4,false]],
+  [[0,0,1.15,true], [1,0,0.55,false], [-1,1,0.45,false], [0,1,0.6,false], [1,-1,0.4,false], [-1,0,0.5,false]],
+  [[0,0,1.55,true], [-1,0,0.7,false], [1,-1,0.55,false], [0,1,0.5,false], [1,0,0.5,false], [-1,1,0.4,false]],
+  [[0,0,1.05,true], [1,0,0.55,false], [0,1,0.5,false], [-1,0,0.45,false], [0,-1,0.42,false]],
+];
+
+// gradient arcs between region peaks
+const ARCS = [[0,1,0.9], [0,2,0.8], [0,3,0.7], [2,3,0.65], [1,3,0.5]];
+
+// renderer / scene / camera
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(PALETTE.cream);
+
+const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 200);
+const CAM_RADIUS = 14, CAM_HEIGHT = 9;
+let camAngle = Math.PI * 0.25;
+function updateCamera() {
+  camera.position.set(Math.sin(camAngle) * CAM_RADIUS, CAM_HEIGHT, Math.cos(camAngle) * CAM_RADIUS);
+  camera.lookAt(0, 0.3, 0);
+}
+updateCamera();
+
+// lighting — copied from src/brainMap/scene/Scene.tsx
+scene.add(new THREE.AmbientLight(0xffffff, 0.32));
+const key = new THREE.DirectionalLight(0xFFF6E5, 1.15);
+key.position.set(-7.2, 4.8, -4.8);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -20; key.shadow.camera.right = 20;
+key.shadow.camera.top = 20; key.shadow.camera.bottom = -20;
+key.shadow.bias = -0.0008;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xCDE0F0, 0.45);
+fill.position.set(8, 6, 6);
+scene.add(fill);
+
+// hex terrain — single InstancedMesh (matches HexField.tsx pattern)
+const hexGeom = new THREE.CylinderGeometry(HEX_RADIUS, HEX_RADIUS, 1, 6, 1);
+const hexMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.04, flatShading: true });
+const totalCount = REGION_HEXES.reduce((acc, list) => acc + list.length, 0);
+const hexMesh = new THREE.InstancedMesh(hexGeom, hexMat, totalCount);
+hexMesh.castShadow = true;
+hexMesh.receiveShadow = true;
+hexMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(totalCount * 3), 3);
+
+const allHexes = [];
+const tmpMatrix = new THREE.Matrix4();
+const tmpPos = new THREE.Vector3();
+const tmpQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 6, 0));
+const tmpScale = new THREE.Vector3();
+
+let inst = 0;
+for (let ri = 0; ri < REGIONS.length; ri++) {
+  const baseColor = new THREE.Color(REGIONS[ri].color).lerp(new THREE.Color(PALETTE.cream), 0.18);
+  for (const [q, r, h, isPeak] of REGION_HEXES[ri]) {
+    const [hx, hz] = hexToWorld(q, r);
+    const wx = REGIONS[ri].center[0] + hx;
+    const wz = REGIONS[ri].center[1] + hz;
+
+    tmpPos.set(wx, h / 2, wz);
+    tmpScale.set(1, h, 1);
+    tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
+    hexMesh.setMatrixAt(inst, tmpMatrix);
+
+    // Height-based darkening; peaks pushed bright enough to clear the bloom
+    // threshold so they get the post-processing glow.
+    const factor = isPeak ? 1.45 : 0.78 - h * 0.10;
+    const c = baseColor.clone().multiplyScalar(factor);
+    hexMesh.setColorAt(inst, c);
+
+    allHexes.push({
+      idx: inst,
+      pos: new THREE.Vector3(wx, h, wz),
+      regionIdx: ri,
+      isPeak,
+      baseColor: c.clone(),
+      baseHeight: h,
+      flashUntil: 0,
+    });
+    inst++;
+  }
+}
+hexMesh.instanceMatrix.needsUpdate = true;
+hexMesh.instanceColor.needsUpdate = true;
+scene.add(hexMesh);
+
+// arcs — quadratic bezier tubes with per-vertex gradient colors (matches Arcs.tsx)
+const peaks = REGIONS.map((_, ri) => allHexes.find(h => h.regionIdx === ri && h.isPeak));
+for (const [a, b, w] of ARCS) {
+  const pa = peaks[a].pos.clone(); pa.y += 0.05;
+  const pb = peaks[b].pos.clone(); pb.y += 0.05;
+  const mid = pa.clone().add(pb).multiplyScalar(0.5);
+  mid.y += pa.distanceTo(pb) * 0.30 + 1.5;
+  const curve = new THREE.QuadraticBezierCurve3(pa, mid, pb);
+  const tubeGeom = new THREE.TubeGeometry(curve, 36, 0.07 + w * 0.10, 6, false);
+
+  const colorAttr = new Float32Array(tubeGeom.attributes.position.count * 3);
+  const colA = new THREE.Color(REGIONS[a].color);
+  const colB = new THREE.Color(REGIONS[b].color);
+  for (let i = 0; i < tubeGeom.attributes.position.count; i++) {
+    const t = Math.min(1, Math.max(0, (i / tubeGeom.attributes.position.count)));
+    const c = colA.clone().lerp(colB, t);
+    colorAttr[i * 3] = c.r; colorAttr[i * 3 + 1] = c.g; colorAttr[i * 3 + 2] = c.b;
+  }
+  tubeGeom.setAttribute('color', new THREE.BufferAttribute(colorAttr, 3));
+
+  scene.add(new THREE.Mesh(tubeGeom, new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.74, depthWrite: false,
+  })));
+}
+
+// ground shadow catcher
+const groundGeom = new THREE.PlaneGeometry(40, 40);
+groundGeom.rotateX(-Math.PI / 2);
+const ground = new THREE.Mesh(groundGeom, new THREE.ShadowMaterial({ opacity: 0.20 }));
+ground.position.y = -0.01;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// post-processing: bloom on peaks
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.85, 0.55, 0.5);
+composer.addPass(bloom);
+
+// HTML document cards flying in
+const docRoot = document.getElementById('docCards');
+const flights = [];
+
+function createDoc() {
+  const el = document.createElement('div');
+  el.className = 'doc-card';
+  el.innerHTML = `<div class="corner"></div><div class="line s"></div><div class="line l"></div><div class="line m"></div><div class="line l"></div><div class="line s"></div>`;
+  docRoot.appendChild(el);
+  return el;
+}
+
+function projectToScreen(p) {
+  const v = p.clone().project(camera);
+  return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
+}
+
+function launch(target) {
+  const fromLeft = Math.random() < 0.5;
+  flights.push({
+    el: createDoc(),
+    target,
+    startX: fromLeft ? -90 : window.innerWidth + 90,
+    startY: 60 + Math.random() * 140,
+    ctrlX: window.innerWidth / 2 + (Math.random() - 0.5) * 240,
+    ctrlY: -60 + Math.random() * 100,
+    startTime: performance.now(),
+    duration: 2300 + Math.random() * 500,
+  });
+}
+
+function updateFlights() {
+  const now = performance.now();
+  for (let i = flights.length - 1; i >= 0; i--) {
+    const f = flights[i];
+    const t = (now - f.startTime) / f.duration;
+    const tw = f.target.pos.clone(); tw.y = f.target.baseHeight + 0.1;
+    const ts = projectToScreen(tw);
+
+    if (t >= 1) {
+      f.target.flashUntil = now + 720;
+      f.el.remove();
+      flights.splice(i, 1);
+      continue;
+    }
+
+    const u = 1 - t;
+    const x = u * u * f.startX + 2 * u * t * f.ctrlX + t * t * ts.x;
+    const y = u * u * f.startY + 2 * u * t * f.ctrlY + t * t * ts.y;
+    const opacity = t < 0.12 ? t / 0.12 : (t > 0.88 ? (1 - t) / 0.12 : 1);
+    const scale = 0.45 + t * 0.65;
+    const rot = -18 + t * 36;
+    f.el.style.left = (x - 30) + 'px';
+    f.el.style.top = (y - 38) + 'px';
+    f.el.style.opacity = opacity;
+    f.el.style.transform = `scale(${scale}) rotate(${rot}deg)`;
+  }
+}
+
+const PEAKS = allHexes.filter(h => h.isPeak);
+let nextLaunch = performance.now() + 700;
+function scheduleLaunches() {
+  const now = performance.now();
+  if (now >= nextLaunch && flights.length < 4) {
+    launch(PEAKS[Math.floor(Math.random() * PEAKS.length)]);
+    nextLaunch = now + 1700 + Math.random() * 900;
+  }
+}
+
+// hex flash + lift on landing
+const magenta = new THREE.Color(PALETTE.magenta);
+function updateHexFlashes() {
+  const now = performance.now();
+  let dirty = false;
+  for (const h of allHexes) {
+    if (h.flashUntil > now) {
+      const t = (h.flashUntil - now) / 720;
+      const c = h.baseColor.clone().lerp(magenta, t * 0.75);
+      hexMesh.setColorAt(h.idx, c);
+      const ease = Math.sin(t * Math.PI);
+      const newH = h.baseHeight + ease * 0.22;
+      tmpPos.set(h.pos.x, newH / 2, h.pos.z);
+      tmpScale.set(1, newH, 1);
+      tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
+      hexMesh.setMatrixAt(h.idx, tmpMatrix);
+      dirty = true;
+    } else if (h.flashUntil !== 0) {
+      hexMesh.setColorAt(h.idx, h.baseColor);
+      tmpPos.set(h.pos.x, h.baseHeight / 2, h.pos.z);
+      tmpScale.set(1, h.baseHeight, 1);
+      tmpMatrix.compose(tmpPos, tmpQuat, tmpScale);
+      hexMesh.setMatrixAt(h.idx, tmpMatrix);
+      h.flashUntil = 0;
+      dirty = true;
+    }
+  }
+  if (dirty) {
+    hexMesh.instanceColor.needsUpdate = true;
+    hexMesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
+});
+
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clock = new THREE.Clock();
+function tick() {
+  const dt = clock.getDelta();
+  if (!reducedMotion) {
+    camAngle += dt * 0.06;
+    updateCamera();
+    scheduleLaunches();
+    updateFlights();
+    updateHexFlashes();
+  }
+  composer.render();
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>

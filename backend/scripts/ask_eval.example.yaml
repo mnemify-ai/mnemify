@@ -1,0 +1,22 @@
+# Golden retrieval set for /api/ask — copy to .mnemify/ask_eval.yaml and
+# fill in questions from YOUR corpus. Run: python -m scripts.ask_eval
+#
+# Per question, list any of:
+#   expect_labels:   substrings that should appear in a retrieved item's label
+#   expect_text:     substrings that should appear in a retrieved summary or
+#                    expanded raw excerpt (the strongest check — proves the
+#                    answer material actually reached the prompt)
+#   expect_node_ids: exact graph node ids (from terrain.json / retrieval_debug)
+#
+# A question passes when every listed category matches at least one bundle item.
+
+questions:
+  - q: "What documentation do we have about messaging and context inside workflow agents?"
+    expect_labels:
+      - "workflow"
+    expect_text:
+      - "agent"
+
+  - q: "What is the architecture area of the corpus about?"
+    expect_labels:
+      - "architecture"

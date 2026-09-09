@@ -1,0 +1,87 @@
+[project]
+name = "mnemify"
+version = "0.1.0"
+description = "Mnemify Harvester — source connectors for professional knowledge infrastructure"
+requires-python = ">=3.11"
+readme = "README.md"
+license = "PolyForm-Noncommercial-1.0.0"
+
+dependencies = [
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "pydantic>=2.0",
+    "atlassian-python-api>=4.0",
+    "beautifulsoup4>=4.14",
+    # HTML → Markdown conversion used by the confluence, gmail, and
+    # calendar normalizers.
+    "markdownify>=0.13",
+    "tenacity>=9.1",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sse-starlette>=2.1",
+    "ruamel.yaml>=0.18",
+    "openai>=1.99",
+    # Terrain ai_mode="anthropic" (Messages API structured outputs) — the
+    # metered alternative to the subscription `claude` CLI mode.
+    "anthropic>=0.97",
+    # Agentic /api/ask path (providers "claude" + "anthropic"): drives the
+    # local Claude Code runtime; inherits subscription auth from the logged-in
+    # CLI, or takes ANTHROPIC_API_KEY per-session (src/api/ask_agent.py).
+    "claude-agent-sdk>=0.1",
+    "pydantic-ai-slim[openai]>=1.0",
+    "langchain-text-splitters>=1.0",
+    "numpy>=1.26",  # terrain v3 hex bake (src/terrain/render_v3.py)
+    "scikit-learn>=1.3",  # HDBSCAN clusterer (src/terrain/utils/clusterer.py)
+    # Leiden community detection (Stage 4) — soft clustering signal that
+    # nudges same-community edge weights (src/terrain/pipelines/compiler.py
+    # _run_leiden). Both ship prebuilt wheels; no system graph lib required.
+    "igraph>=0.11",
+    "leidenalg>=0.10",
+    # Google source connectors (gmail + calendar). `google-auth-oauthlib`
+    # ships the InstalledAppFlow used by `mnemify login`; the API
+    # client provides googleapiclient.discovery for the read paths.
+    "google-auth>=2.30",
+    "google-auth-oauthlib>=1.2",
+    "google-api-python-client>=2.130",
+    # APScheduler powers /api/schedules — cron-style harvest triggers fired
+    # in-process by an AsyncIOScheduler hooked into the FastAPI lifespan.
+    # Single-worker only: multiple uvicorn workers would each run the
+    # scheduler and double-fire.
+    "apscheduler>=3.10",
+    # Slack source connector. Uses the sync slack_sdk.WebClient wrapped
+    # in asyncio.to_thread — same pattern as the Jira plugin's atlassian
+    # client. Avoids pulling in aiohttp (which AsyncWebClient requires)
+    # so Mnemify keeps a single async HTTP stack (httpx).
+    "slack-sdk>=3.27",
+    # GitHub uses the existing httpx for both REST and GraphQL — no
+    # GitHub-specific library required.
+    "python-frontmatter>=1.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "python-frontmatter>=1.3.0",
+]
+
+[project.scripts]
+mnemify = "src.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# `src` is the import package (the code does `from src.… import …`), not a
+# src-layout container — be explicit so editable installs put it on sys.path.
+include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,21 @@
+{
+  "id": "400",
+  "type": "page",
+  "status": "current",
+  "title": "Truncated Body",
+  "space": {"key": "ENG", "name": "Engineering"},
+  "body": {
+    "storage": {
+      "value": "<p>This paragraph never closes <strong>and this bold tag is lost <ac:structured-macro ac:name=\"code\"><ac:plain-text-body><![CDATA[print(\"truncated",
+      "representation": "storage"
+    }
+  },
+  "version": {"when": "2026-04-18T10:00:00.000Z", "number": 1},
+  "history": {
+    "createdDate": "2026-04-18T10:00:00.000Z",
+    "createdBy": {"accountId": "acc-author", "displayName": "Ada Author"}
+  },
+  "ancestors": [],
+  "metadata": {"labels": {"results": []}},
+  "_links": {"webui": "/spaces/ENG/pages/400/Truncated+Body"}
+}

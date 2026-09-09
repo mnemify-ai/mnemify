@@ -1,0 +1,65 @@
+{
+  "expand": "schema,names",
+  "issues": [
+    {
+      "id": "10006",
+      "key": "CONN-6",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10006",
+      "fields": {
+        "summary": "Confluence HTML-to-plain-text",
+        "status": {"name": "Done"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-13T11:15:22.040+0000",
+        "issuetype": {"name": "Story"}
+      }
+    },
+    {
+      "id": "10007",
+      "key": "CONN-7",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10007",
+      "fields": {
+        "summary": "Manifest two-gate dedup review",
+        "status": {"name": "In Progress"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-12T15:40:00.000+0000",
+        "issuetype": {"name": "Task"}
+      }
+    },
+    {
+      "id": "10008",
+      "key": "CONN-8",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10008",
+      "fields": {
+        "summary": "Unassigned triage ticket",
+        "status": {"name": "Backlog"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-11T07:05:00.000+0000",
+        "issuetype": {"name": "Bug"}
+      }
+    },
+    {
+      "id": "10009",
+      "key": "CONN-9",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10009",
+      "fields": {
+        "summary": "Rate-limit retry instrumentation",
+        "status": {"name": "Done"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-10T18:00:00.000+0000",
+        "issuetype": {"name": "Task"}
+      }
+    },
+    {
+      "id": "10010",
+      "key": "CONN-10",
+      "self": "https://example.atlassian.net/rest/api/3/issue/10010",
+      "fields": {
+        "summary": "Docs — Atlassian credentials setup",
+        "status": {"name": "To Do"},
+        "project": {"key": "CONN"},
+        "updated": "2026-04-09T09:30:00.000+0000",
+        "issuetype": {"name": "Task"}
+      }
+    }
+  ]
+}

@@ -1,0 +1,92 @@
+/* react-pdf surface theming — keeps pdf.js page canvases inside our cream chrome.
+ * Loaded only when PdfRenderer's chunk is dynamically imported. */
+
+.attachment-pdf {
+  /* Scroll container for the virtualized page list. A distinct neutral gray
+   * backdrop (NOT the page/--c-bg color) so the white page canvases pop with
+   * their border + shadow and any fit-margin reads as intentional viewer
+   * chrome — never mistaken for document-white. Standard PDF-viewer look. */
+  background: #d4d0c7;
+}
+
+html.dark .attachment-pdf,
+html[data-theme="dark"] .attachment-pdf {
+  background: #14171c;
+}
+
+/* Page placeholder while pdf.js rasterizes. Sits a touch off the backdrop so
+ * it reads as "page loading here" — but never white, so fast scrolling past
+ * not-yet-rendered pages doesn't flash white. */
+.pdf-page-skeleton {
+  background: #c9c4ba;
+}
+
+html.dark .pdf-page-skeleton,
+html[data-theme="dark"] .pdf-page-skeleton {
+  background: #1b1f25;
+}
+
+/* The <Document> wrapper is the flex row holding the thumbnail sidebar and
+ * the scroll container (so both share react-pdf's Document context). Its
+ * flex layout comes from Tailwind classes in PdfRenderer. */
+
+.attachment-pdf .react-pdf__Page {
+  background: rgb(var(--c-bg));
+  border: 1px solid rgb(var(--c-line) / 0.12);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgb(var(--c-line) / 0.06),
+              0 8px 24px -8px rgb(var(--c-line) / 0.18);
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+/* The canvas itself sits flush — react-pdf positions text/annotation layers
+ * absolutely over it; keep them in flow. */
+.attachment-pdf .react-pdf__Page__canvas {
+  display: block;
+}
+
+/* Selection coloring matches our magenta accent. */
+.attachment-pdf .react-pdf__Page__textContent ::selection {
+  background: rgb(var(--c-magenta) / 0.25);
+}
+
+/* Annotation layer (links): when enabled later, theme the anchor color. */
+.attachment-pdf .react-pdf__Page__annotations a {
+  color: rgb(var(--c-magenta));
+}
+
+/* Search match highlight. The text layer renders selectable text in absolutely
+ * positioned spans over the canvas; <mark> elements wrap matched substrings
+ * (see createPageHighlighter in pdf/searchIndex.ts). Color must use the same
+ * `color: inherit` as the surrounding text so the highlight only paints a
+ * background tint — pdf.js makes the underlying text transparent to preserve
+ * selection alignment. */
+.attachment-pdf .react-pdf__Page__textContent mark {
+  background: rgb(var(--c-magenta) / 0.25);
+  color: inherit;
+  padding: 0;
+  border-radius: 1px;
+}
+
+.attachment-pdf .react-pdf__Page__textContent mark[data-active="true"] {
+  background: rgb(var(--c-magenta) / 0.55);
+  outline: 1px solid rgb(var(--c-magenta));
+}
+
+/* Thumbnail sidebar item — the magenta ring marks the currently-visible page
+ * so the user can scan position even on a long doc. */
+.pdf-thumb {
+  outline: 1px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 120ms ease;
+}
+
+.pdf-thumb:hover {
+  outline-color: rgb(var(--c-line) / 0.25);
+}
+
+.pdf-thumb[data-current="true"] {
+  outline-color: rgb(var(--c-magenta));
+  outline-width: 2px;
+}
