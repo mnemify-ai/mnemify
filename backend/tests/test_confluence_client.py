@@ -147,6 +147,54 @@ async def test_list_pages_in_space_normalises_bare_list(confluence_cls):
     }
 
 
+async def test_list_pages_in_space_normalises_generator(confluence_cls):
+    """5.x-style lazy generators are windowed to the requested ``limit``.
+
+    ``atlassian-python-api`` 5.0's Cloud implementation returns a
+    generator that paginates internally.  We pin ``<5``, but a mismatched
+    install must not blow up with ``AttributeError: 'generator' object
+    has no attribute 'get'`` — and consuming only ``limit`` items keeps
+    the caller's ``start += len(results)`` loop honest.
+    """
+    confluence_cls.return_value.get_all_pages_from_space.return_value = (
+        {"id": str(i)} for i in range(10)
+    )
+    client = ConfluenceClient("https://ex.atlassian.net/wiki", "e", "t")
+    result = await client.list_pages_in_space("ENG", start=0, limit=4)
+
+    assert result["size"] == 4
+    assert result["results"] == [{"id": "0"}, {"id": "1"}, {"id": "2"}, {"id": "3"}]
+
+
+async def test_list_spaces_normalises_none_to_empty_envelope(confluence_cls):
+    """An empty body (``None``) is "nothing to list", not an error."""
+    confluence_cls.return_value.get_all_spaces.return_value = None
+
+    client = ConfluenceClient("https://ex.atlassian.net/wiki", "e", "t")
+    result = await client.list_spaces(limit=1)
+
+    assert result["results"] == []
+
+
+async def test_incompatible_library_raises_actionable_error(confluence_cls):
+    """A library missing the v1 methods fails fast with the remedy named."""
+    # ``spec`` makes ``hasattr`` return False for everything else — the
+    # shape of 5.x's Cloud impl, which renamed ``get_page_by_id`` and
+    # ``get_attachments_from_content``.
+    confluence_cls.return_value = MagicMock(
+        spec=["get_all_spaces", "get_all_pages_from_space", "get_page_child_by_type"]
+    )
+    client = ConfluenceClient("https://ex.atlassian.net/wiki", "e", "t")
+
+    with pytest.raises(ConfluenceAPIError) as excinfo:
+        await client.list_spaces(limit=1)
+
+    message = str(excinfo.value)
+    assert "get_page_by_id" in message
+    assert "get_attachments_from_content" in message
+    assert "atlassian-python-api<5" in message
+
+
 async def test_get_page_applies_default_expand(confluence_cls):
     confluence_cls.return_value.get_page_by_id.return_value = {"id": "abc", "title": "t"}
 
