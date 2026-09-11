@@ -10,12 +10,6 @@ dependencies = [
     "httpx>=0.27",
     "python-dotenv>=1.0",
     "pydantic>=2.0",
-    # Pinned below 5.0: that release replaced ``Confluence`` with a facade
-    # that dispatches Cloud calls to a v2-backed implementation — the list
-    # endpoints return lazy generators instead of ``{"results": [...]}``
-    # envelopes, and ``get_page_by_id`` / ``get_attachments_from_content``
-    # were renamed (``get_content`` / ``get_attachments``). The confluence
-    # client (src/harvester/confluence/client.py) speaks the 4.x v1 shape.
     "atlassian-python-api>=4.0,<5",
     "beautifulsoup4>=4.14",
     # HTML → Markdown conversion used by the confluence, gmail, and
@@ -27,12 +21,6 @@ dependencies = [
     "sse-starlette>=2.1",
     "ruamel.yaml>=0.18",
     "openai>=1.99",
-    # openai>=3 / anthropic>=1 / pydantic-ai ship the ``httpx2`` client, whose
-    # Brotli decoder calls ``Decompressor.process(data, output_buffer_limit=…)``
-    # — a keyword only brotli>=1.2.0 accepts. httpx2 treats brotli as an
-    # optional codec and declares no floor, so a stale brotli (conda base
-    # ships 1.0.9) makes every API response with ``Content-Encoding: br``
-    # raise ``TypeError``, which the SDKs relabel "Connection error.".
     "brotli>=1.2.0",
     # Terrain ai_mode="anthropic" (Messages API structured outputs) — the
     # metered alternative to the subscription `claude` CLI mode.
