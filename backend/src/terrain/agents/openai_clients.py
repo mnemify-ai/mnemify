@@ -252,6 +252,28 @@ _FATAL_EXTRACT_ERRORS = {
     "ClaudeCLIUnavailableError",
 }
 
+def _describe_llm_error(exc: BaseException) -> str:
+    """``str(exc)`` plus the wrapped root cause, when there is one.
+
+    The SDKs wrap *any* failure inside the transport in
+    ``APIConnectionError("Connection error.")`` — including pure Python bugs
+    such as a codec ``TypeError`` — so the top-level message alone can send
+    you chasing the network. Walks ``__cause__``/``__context__`` (capped, like
+    ``compiler.compile_error_kind``) and appends the innermost exception.
+    """
+    root: BaseException = exc
+    seen = 0
+    while seen < 5:
+        nxt = root.__cause__ or root.__context__
+        if nxt is None or nxt is root:
+            break
+        root = nxt
+        seen += 1
+    if root is exc:
+        return str(exc)
+    return f"{exc} [caused by {type(root).__name__}: {root}]"
+
+
 _SYSTEM_EXTRACT = (
     "Extract semantic features from a knowledge-management chunk for use in a "
     "hierarchical knowledge map. Return concise fields. Do not invent products, "
@@ -321,7 +343,10 @@ class OpenAIFeatureExtractor(OpenAIClientMixin):
             except Exception as e:  # noqa: BLE001
                 if type(e).__name__ in _FATAL_EXTRACT_ERRORS:
                     raise
-                logger.warning("terrain: single-chunk extract failed, skipping: %s", e)
+                logger.warning(
+                    "terrain: single-chunk extract failed, skipping: %s",
+                    _describe_llm_error(e),
+                )
                 return [None]
         try:
             return self._extract_batch_call(chunks)
@@ -331,7 +356,7 @@ class OpenAIFeatureExtractor(OpenAIClientMixin):
             mid = len(chunks) // 2
             logger.warning(
                 "terrain: batch extract of %d chunks failed (%s); splitting %d/%d",
-                len(chunks), e, mid, len(chunks) - mid,
+                len(chunks), _describe_llm_error(e), mid, len(chunks) - mid,
             )
             return self.extract_batch(chunks[:mid]) + self.extract_batch(chunks[mid:])
 
