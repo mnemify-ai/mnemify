@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import abc
+from itertools import islice
 from typing import Awaitable, Callable, TypeVar
 
 from atlassian import Confluence
@@ -53,6 +55,25 @@ _MAX_ATTEMPTS = 5
 _WAIT_MULTIPLIER = 1.0
 _WAIT_MAX = 60.0
 _DEFAULT_RETRY_AFTER = 2.0
+
+
+# ── Library compatibility ─────────────────────────────────────────
+#
+# This client speaks the ``atlassian-python-api`` 4.x surface, which maps
+# onto the Confluence Cloud **v1** REST API (``/wiki/rest/api/...``).
+# 5.0 turned ``Confluence`` into a facade whose Cloud implementation is
+# partly v2-backed: list calls return lazy generators instead of result
+# envelopes, and the methods below were renamed.  Rather than fail deep
+# in a call stack with an opaque ``AttributeError``, check up front and
+# name the remedy.  ``pyproject.toml`` pins ``<5`` to match.
+_SUPPORTED_LIBRARY_RANGE = ">=4.0,<5"
+_REQUIRED_CLIENT_METHODS = (
+    "get_all_spaces",
+    "get_all_pages_from_space",
+    "get_page_child_by_type",
+    "get_page_by_id",
+    "get_attachments_from_content",
+)
 
 
 # ── Typed errors ──────────────────────────────────────────────────
@@ -87,6 +108,72 @@ class ConfluenceAuthError(ConfluenceAPIError):
 
 
 # ── Internal helpers ──────────────────────────────────────────────
+
+
+def _as_envelope(result: object, *, start: int, limit: int) -> dict:
+    """Coerce a list-endpoint response into a ``{"results": [...]}`` envelope.
+
+    ``atlassian-python-api`` is inconsistent about what its list calls
+    return: a full envelope dict for some endpoints, a bare list of
+    result dicts for others, and — since 5.0's Cloud rewrite — a lazy
+    generator that paginates internally.  Callers here (``pages.py``)
+    share one pagination contract built on the envelope, so normalise at
+    this boundary.
+
+    Iterators are consumed with ``islice(..., limit)`` rather than
+    ``list()``: that preserves the caller's page window (so the
+    ``start += len(results)`` loop still advances correctly) and keeps a
+    ``limit=1`` auth probe from walking an entire site.  Anything that is
+    neither a mapping nor iterable raises :class:`ConfluenceAPIError` —
+    an actionable message beats an ``AttributeError`` three frames up.
+    """
+    if isinstance(result, dict):
+        return result
+    if result is None:
+        # A 204/empty body reaches us as ``None``; the endpoint simply had
+        # nothing to return, which is not an error.
+        results: list = []
+    elif isinstance(result, (list, tuple)):
+        results = list(result)
+    elif isinstance(result, abc.Iterable) and not isinstance(result, (str, bytes)):
+        results = list(islice(result, limit))
+    else:
+        raise ConfluenceAPIError(
+            "Unexpected Confluence list response of type "
+            f"{type(result).__name__!r} — expected a results envelope. "
+            f"Installed atlassian-python-api: {_library_version()} "
+            f"(mnemify requires {_SUPPORTED_LIBRARY_RANGE})."
+        )
+    return {"results": results, "start": start, "limit": limit, "size": len(results)}
+
+
+def _assert_library_compatible(client: object) -> None:
+    """Fail fast when the installed library lacks the v1 methods we call.
+
+    5.x's Cloud implementation renamed ``get_page_by_id`` →
+    ``get_content`` and ``get_attachments_from_content`` →
+    ``get_attachments``, so a harvest under it would die with an
+    ``AttributeError`` from the facade's ``__getattr__`` delegation.
+    """
+    missing = [name for name in _REQUIRED_CLIENT_METHODS if not hasattr(client, name)]
+    if not missing:
+        return
+    raise ConfluenceAPIError(
+        "Incompatible atlassian-python-api "
+        f"{_library_version()} — missing {', '.join(missing)}. "
+        f"Mnemify's Confluence client needs {_SUPPORTED_LIBRARY_RANGE}; "
+        "reinstall with: pip install 'atlassian-python-api<5'"
+    )
+
+
+def _library_version() -> str:
+    """Return the installed ``atlassian-python-api`` version, best-effort."""
+    try:
+        from importlib.metadata import version
+
+        return version("atlassian-python-api")
+    except Exception:  # noqa: BLE001 — diagnostics only
+        return "unknown"
 
 
 def _status_code(exc: BaseException) -> int | None:
@@ -191,12 +278,14 @@ class ConfluenceClient:
     def _get_client(self) -> Confluence:
         """Construct the underlying ``atlassian.Confluence`` on first use."""
         if self._confluence is None:
-            self._confluence = Confluence(
+            client = Confluence(
                 url=self.base_url,
                 username=self._email,
                 password=self._token,
                 cloud=True,
             )
+            _assert_library_compatible(client)
+            self._confluence = client
         return self._confluence
 
     # ── Retry harness ─────────────────────────────────────────────
@@ -260,9 +349,7 @@ class ConfluenceClient:
         def _call() -> dict:
             client = self._get_client()
             result = client.get_all_spaces(start=0, limit=limit)
-            if isinstance(result, list):
-                return {"results": result, "start": 0, "limit": limit, "size": len(result)}
-            return result  # type: ignore[return-value]
+            return _as_envelope(result, start=0, limit=limit)
 
         return await self._run(_call)
 
@@ -293,9 +380,7 @@ class ConfluenceClient:
             # ``atlassian-python-api`` occasionally returns a bare list
             # from this endpoint (library quirk); normalise so callers
             # can always treat the result as an envelope dict.
-            if isinstance(result, list):
-                return {"results": result, "start": start, "limit": limit, "size": len(result)}
-            return result  # type: ignore[return-value]
+            return _as_envelope(result, start=start, limit=limit)
 
         return await self._run(_call)
 
@@ -325,9 +410,7 @@ class ConfluenceClient:
                 limit=limit,
                 expand=expand_str,
             )
-            if isinstance(result, list):
-                return {"results": result, "start": start, "limit": limit, "size": len(result)}
-            return result  # type: ignore[return-value]
+            return _as_envelope(result, start=start, limit=limit)
 
         return await self._run(_call)
 
