@@ -40,7 +40,7 @@ export interface MapEmptyStateProps {
   compiled: boolean;
   /** Compile succeeded but render-data.json didn't land — needs a recompile. */
   renderFailed?: boolean;
-  /** Open the bundled sample terrain so the user can feel the payoff first. */
+  /** Open the bundled sample terrain (secondary "Explore a sample map" link). */
   onTryDemo?: () => void;
 }
 
@@ -125,12 +125,12 @@ export function MapEmptyState({
     );
   };
 
-  // Cold start = nothing connected yet (and nothing to repair). This is the
-  // state where connecting feels scariest, so the demo leads (#1) and the
-  // step path becomes the second beat. Once anything is connected/harvested/
-  // compiled, the step-progress emphasis takes back over.
-  const demoFirst =
-    Boolean(onTryDemo) && !connected && !harvested && !compiled && !renderFailed;
+  // Cold start = nothing connected yet (and nothing to repair). One job on
+  // screen: connect a source. The step path and the sample map are held back
+  // (steps would show three chores before the user has begun; the sample
+  // becomes a quiet secondary link). Once anything is connected the
+  // step-progress view takes over.
+  const coldStart = !connected && !harvested && !compiled && !renderFailed;
 
   const steps: StepConfig[] = [
     {
@@ -196,25 +196,35 @@ export function MapEmptyState({
       </svg>
 
       {/* hero: documents trickling into a hex terrain */}
-      <DocsToTerrain />
+      <DocsToTerrain compact={coldStart} />
 
 
       {/* the path forward */}
-      <div className="absolute inset-0 flex flex-col items-center justify-end pb-[8vh] px-6">
-        <div className="glass-panel rounded-2xl px-8 py-7 shadow-sm w-full max-w-4xl">
+      <div
+        className={cn(
+          "absolute inset-0 flex flex-col items-center px-6",
+          coldStart ? "justify-center pb-[6vh]" : "justify-end pb-[8vh]",
+        )}
+      >
+        <div
+          className={cn(
+            "glass-panel rounded-2xl shadow-sm w-full",
+            coldStart ? "max-w-[640px] px-8 py-8" : "max-w-4xl px-8 py-7",
+          )}
+        >
           <p className="eyebrow mb-1">Your Knowledge Map</p>
           <h1 className="font-serif text-3xl text-ink leading-tight mb-1.5">
             {renderFailed
               ? "Compiled — but the map didn't render"
-              : demoFirst
-                ? "See the payoff first"
+              : coldStart
+                ? "Bring your knowledge together."
                 : "Ready when you are"}
           </h1>
           <p className="font-sans text-sm text-muted mb-6 max-w-prose">
             {renderFailed
               ? "The last compile produced the data but the 3D layout step failed. Recompile to try again."
-              : demoFirst
-                ? "Before you connect anything, explore a bundled sample map — orbit its regions, drill into topics, click around. Nothing to sign into, nothing to set up."
+              : coldStart
+                ? "Connect your notes and documents to build a map you can explore and ask questions about."
                 : "Three steps from here to your first Knowledge Map. Each step has its own surface — start with what's next."}
           </p>
           {renderFailed ? (
@@ -226,41 +236,51 @@ export function MapEmptyState({
               Recompile
               <ArrowRight size={14} strokeWidth={1.75} aria-hidden="true" />
             </Button>
+          ) : coldStart ? (
+            <>
+              <Button type="button" variant="primary" onClick={() => setPickerOpen(true)}>
+                Connect a source
+                <ArrowRight size={14} strokeWidth={1.75} aria-hidden="true" />
+              </Button>
+              {/* Supported sources — each chip jumps straight into its wizard. */}
+              <ul className="mt-4 flex flex-wrap items-center gap-2" aria-label="Supported sources">
+                {(["notion", "obsidian", "confluence"] as const).map((src) => (
+                  <li key={src}>
+                    <button
+                      type="button"
+                      onClick={() => setConnectSource(src)}
+                      className="inline-flex items-center rounded-full border border-hair bg-bone/40 hover:bg-bone px-3 py-1.5 transition-colors"
+                    >
+                      <SourceBadge source={src} size="sm" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {onTryDemo && (
+                <p className="mt-6 font-sans text-xs text-muted">
+                  <button
+                    type="button"
+                    onClick={onTryDemo}
+                    className="text-magenta hover:underline underline-offset-2"
+                  >
+                    Explore a sample map →
+                  </button>
+                </p>
+              )}
+            </>
           ) : (
             <>
-              {demoFirst && (
-                <>
-                  <div className="flex items-center gap-4 flex-wrap mb-6">
-                    <Button type="button" variant="primary" onClick={onTryDemo}>
-                      Explore the sample map
-                      <ArrowRight size={14} strokeWidth={1.75} aria-hidden="true" />
-                    </Button>
-                    <span className="font-sans text-xs text-muted">
-                      Two minutes, read-only — it ships with the app.
-                    </span>
-                  </div>
-                  <div className="border-t border-hair pt-5 mb-4">
-                    <h2 className="font-serif text-lg text-ink mb-1">Ready to build yours?</h2>
-                    <p className="font-sans text-xs text-muted max-w-prose">
-                      Three steps — connect, harvest, compile — each runs right here.
-                    </p>
-                  </div>
-                </>
-              )}
               <ol className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5">
                 {steps.map((s) => (
                   <StepCard
                     key={s.n}
                     step={s}
                     isCurrent={s === firstIncomplete}
-                    // While the demo owns the primary CTA, step buttons stay
-                    // secondary so there's exactly one primary on screen.
-                    demoteCta={demoFirst}
                     onGo={s.action}
                   />
                 ))}
               </ol>
-              {onTryDemo && !demoFirst && (
+              {onTryDemo && (
                 <p className="mt-5 font-sans text-xs text-muted">
                   Not ready to connect?{" "}
                   <button
@@ -357,14 +377,10 @@ export function MapEmptyState({
 function StepCard({
   step,
   isCurrent,
-  demoteCta,
   onGo,
 }: {
   step: StepConfig;
   isCurrent: boolean;
-  /** Cold-start demo-first mode: keep the current-step highlight but render
-   *  the button as `secondary` so the demo CTA is the only primary. */
-  demoteCta?: boolean;
   onGo: () => void;
 }) {
   return (
@@ -406,7 +422,7 @@ function StepCard({
       </p>
       <Button
         type="button"
-        variant={isCurrent && !demoteCta ? "primary" : "secondary"}
+        variant={isCurrent ? "primary" : "secondary"}
         size="sm"
         onClick={onGo}
         disabled={step.disabled}
@@ -480,11 +496,16 @@ function ConnectOutcomeHint() {
  * `prefers-reduced-motion` is honored by the global `*::transition-duration`
  * override in theme/index.css plus an explicit `animation: none` rule below.
  */
-function DocsToTerrain() {
+function DocsToTerrain({ compact }: { compact?: boolean }) {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none absolute left-1/2 top-[42%] -translate-x-1/2 -translate-y-1/2 w-[min(520px,90vw)]"
+      className={cn(
+        "pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2",
+        // Cold start: the panel sits at center, so the art tucks into the
+        // band above it instead of hiding behind it.
+        compact ? "top-[17%] w-[min(360px,80vw)]" : "top-[42%] w-[min(520px,90vw)]",
+      )}
     >
       <svg
         viewBox="0 0 420 260"
