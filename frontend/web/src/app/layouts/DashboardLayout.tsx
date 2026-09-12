@@ -55,9 +55,12 @@ function ShellAskBubble({ isHome }: { isHome: boolean }) {
 }
 
 export function DashboardLayout() {
-  const { isLoading, error } = useMapData();
+  const { data, isLoading, error } = useMapData();
   const location = useLocation();
   const isHome = location.pathname === "/";
+  // No compiled map ⇒ nothing to ask about. Chat (launcher + dock) stays out
+  // of the way until there is a map to show, so the empty state has one job.
+  const hasMap = data !== null;
   // Callback ref, not useRef: routes render off this element, so the first
   // render must be followed by a re-render once it exists.
   const [barSlot, setBarSlot] = useState<HTMLDivElement | null>(null);
@@ -80,7 +83,7 @@ export function DashboardLayout() {
   // `position: fixed` descendant with it, so a route that anchors to the
   // viewport (DocumentsPage's two-pane layout) disappears with the column
   // instead of stranding itself under the dock.
-  const dockMaximized = useAskDockStore((s) => s.open && s.wide);
+  const dockMaximized = useAskDockStore((s) => s.open && s.wide) && hasMap;
 
   if (error) {
     return (
@@ -125,11 +128,11 @@ export function DashboardLayout() {
         <div className={cn("min-w-0 flex-1", dockMaximized && "md:hidden")}>
           <Outlet context={outletCtx} />
         </div>
-        <AskDock />
+        {hasMap && <AskDock />}
       </div>
       {/* Full-width bottom-bar row — filled by the map via a portal. */}
       {isHome && <div ref={setBarSlot} className="shrink-0" />}
-      <ShellAskBubble isHome={isHome} />
+      {hasMap && <ShellAskBubble isHome={isHome} />}
       <CommandPalette />
     </div>
   );

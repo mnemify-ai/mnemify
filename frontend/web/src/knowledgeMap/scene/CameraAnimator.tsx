@@ -30,6 +30,17 @@ type Pose = { camPos: Vector3; target: Vector3 };
 
 const ANIM_DURATION = 0.55;   // seconds; hard cap so the zoom NEVER persists
 
+/** Largest per-frame step the flight will accept.
+ *
+ *  The frameloop is `demand`, and r3f 8 feeds useFrame `clock.getDelta()` —
+ *  wall time since the LAST RENDERED frame. Nothing renders while the user is
+ *  typing in the Ask dock, so the first frame of a "Show on map" flight arrived
+ *  with dt = however long the map had sat idle (seconds, not ms). That single
+ *  frame both covered the whole distance (k → 1) and blew past ANIM_DURATION,
+ *  so the camera teleported instead of flying. Clamping the step makes the
+ *  first frame worth at most one ordinary frame. */
+const MAX_FRAME_STEP = 1 / 30;
+
 /** Apparent-space (post-yScale) units the focus camera must stay above the
  *  focused region's own summit.
  *
@@ -82,9 +93,18 @@ export function CameraAnimator({
     camPos: new Vector3(...homeCamPos),
     target: new Vector3(...homeTarget),
   });
-  // animating + an elapsed accumulator: the lerp runs only while animating, and
-  // is force-released after ANIM_DURATION regardless of distance (OrbitControls
-  // damping can otherwise keep it from ever "settling" → the stuck/snap bug).
+  // Pose at the moment the flight was requested. The flight is a time-
+  // parameterised ease from `start` to `desired`, not a per-frame exponential
+  // chase: the chase never actually arrived (it was force-released ~4% short
+  // of the destination) and its step size depended on dt, which under the
+  // demand frameloop is unbounded. See MAX_FRAME_STEP.
+  const start = useRef<Pose>({
+    camPos: new Vector3(...homeCamPos),
+    target: new Vector3(...homeTarget),
+  });
+  // animating + an elapsed accumulator: the ease runs only while animating, and
+  // is force-released at ANIM_DURATION regardless (OrbitControls damping can
+  // otherwise keep it from ever "settling" → the stuck/snap bug).
   const animating = useRef(false);
   const elapsed = useRef(0);
 
@@ -125,9 +145,18 @@ export function CameraAnimator({
       // Fit the region's footprint AND its peak height (+headroom) so the spire
       // stays in view; clamp so it never zooms OUT past the overview nor IN
       // past what OrbitControls would allow anyway.
+      //
+      // Aim at the centre of the hexes the region really owns, not at its
+      // tallest spire: a peak on the region's rim put the rest of the region
+      // off to one side (or off-screen), which read as "it jumped to a point
+      // but didn't show me the region". Size the frame from that same hex
+      // bbox — the bake's `radius` describes a footprint the layout may never
+      // have materialised.
       const peak = terr.peakOf(terrainIdx);
-      const tx = peak?.x ?? r.centroid.x;
-      const tz = peak?.z ?? r.centroid.z;
+      const foot = terr.footprintOf(terrainIdx);
+      const tx = foot?.cx ?? peak?.x ?? r.centroid.x;
+      const tz = foot?.cz ?? peak?.z ?? r.centroid.z;
+      const footExtent = foot?.halfExtent ?? r.radius;
       const peakScaledY = (peak ? peak.y : r.basePlateauHeight || 0) * ys;
       const ty = peakScaledY * 0.38;
       const FOCUS_LABEL_HEADROOM = 8;
@@ -142,7 +171,7 @@ export function CameraAnimator({
       // regions below nearby hexes. 0.5 brings that back to 2; the clearance
       // floor below covers the rest.
       const FOCUS_MIN_FRAC = 0.5;
-      const fitExtent = Math.max(r.radius, peakScaledY + FOCUS_LABEL_HEADROOM);
+      const fitExtent = Math.max(footExtent, peakScaledY + FOCUS_LABEL_HEADROOM);
       dist = fitExtent * FOCUS_MULT;
       dist = Math.min(dist, hl);
       dist = Math.max(dist, hl * FOCUS_MIN_FRAC);
@@ -160,6 +189,7 @@ export function CameraAnimator({
     camPos.y = Math.max(camPos.y, camFloorY);
 
     desired.current = { camPos, target: newTarget };
+    start.current = { camPos: camera.position.clone(), target: curTarget.clone() };
     elapsed.current = 0;
     animating.current = true;
     invalidate();   // demand frameloop: kick the first frame of the animation
@@ -179,15 +209,16 @@ export function CameraAnimator({
 
   useFrame((_, dt) => {
     if (!controls || !animating.current) return;
-    elapsed.current += dt;
-    const k = 1 - Math.exp(-dt * 6);
-    camera.position.lerp(desired.current.camPos, k);
-    controls.target.lerp(desired.current.target, k);
+    elapsed.current += Math.min(dt, MAX_FRAME_STEP);
+    const t = Math.min(elapsed.current / ANIM_DURATION, 1);
+    const e = 1 - (1 - t) ** 3;   // ease-out cubic: fast departure, soft landing
+    camera.position.lerpVectors(start.current.camPos, desired.current.camPos, e);
+    controls.target.lerpVectors(start.current.target, desired.current.target, e);
     controls.update();
-    if (elapsed.current >= ANIM_DURATION) {
+    if (t >= 1) {
       animating.current = false;   // hard release — never persists
     } else {
-      invalidate();   // sustain the demand frameloop until the lerp completes
+      invalidate();   // sustain the demand frameloop until the ease completes
     }
   });
 

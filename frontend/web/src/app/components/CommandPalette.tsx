@@ -218,13 +218,15 @@ export function CommandPalette() {
               "[&_[cmdk-group-heading]]:pb-1",
             )}
           >
-            <PaletteItem
-              value="ask chat question brain"
-              icon={<MessageSquare size={15} strokeWidth={1.5} />}
-              label="Ask your map"
-              hint="⌘J"
-              onSelect={() => run(() => useAskDockStore.getState().openDock())}
-            />
+            {data && (
+              <PaletteItem
+                value="ask chat question brain"
+                icon={<MessageSquare size={15} strokeWidth={1.5} />}
+                label="Ask your map"
+                hint="⌘J"
+                onSelect={() => run(() => useAskDockStore.getState().openDock())}
+              />
+            )}
             <PaletteItem
               value="nav home map"
               icon={<Home size={15} strokeWidth={1.5} />}

@@ -24,6 +24,10 @@ const HEX_FIELDS_PER_HEX = 5;
 
 export type RegionPeak = { x: number; y: number; z: number };
 
+/** Where a region's hexes actually sit: bbox centre and half-extent in RAW
+ *  world x/z, hex apothem included so edge hexes are inside the frame. */
+export type RegionFootprint = { cx: number; cz: number; halfExtent: number };
+
 export type RegionTerrain = {
   /** Ancestor chain INCLUDING self, nearest-first (self → parent → … → root),
    *  one entry per region. Cycle-safe: a malformed bake stops at the revisit
@@ -35,6 +39,11 @@ export type RegionTerrain = {
    *  (y un-scaled, exactly like `buildTopLevelRegions`). Null when the subtree
    *  owns no hexes. */
   peakOf: (idx: number) => RegionPeak | null;
+  /** Bbox of the hexes in this region's subtree. Null when the subtree owns no
+   *  hexes. Unlike `centroid`/`radius` from the bake, this describes terrain
+   *  the layout really materialised, so a camera aimed here lands ON the
+   *  region rather than beside its tallest spire or on empty ground. */
+  footprintOf: (idx: number) => RegionFootprint | null;
   /** `idx` itself when its subtree owns hexes; otherwise the nearest ancestor
    *  whose subtree does; otherwise null. Null/out-of-range in → null out, so a
    *  stale citation against a re-baked map can't throw. */
@@ -78,16 +87,23 @@ export function buildRegionTerrain(data: RenderData): RegionTerrain {
   const peakY = new Float64Array(regions.length);
   const peakX = new Float64Array(regions.length);
   const peakZ = new Float64Array(regions.length);
+  const minX = new Float64Array(regions.length).fill(Infinity);
+  const maxX = new Float64Array(regions.length).fill(-Infinity);
+  const minZ = new Float64Array(regions.length).fill(Infinity);
+  const maxZ = new Float64Array(regions.length).fill(-Infinity);
 
   for (let i = 0; i < hexes.length; i += HEX_FIELDS_PER_HEX) {
     const regionIdx = hexes[i + 2];
     if (regionIdx < 0 || regionIdx >= regions.length) continue;
     const h = hexes[i + 3];
-    let world: [number, number] | null = null;   // computed lazily, once per hex
+    const world = hexToWorld(hexes[i], hexes[i + 1], hexSize);
     for (const a of ancestorsOf[regionIdx]) {
       hexCount[a] += 1;
+      if (world[0] < minX[a]) minX[a] = world[0];
+      if (world[0] > maxX[a]) maxX[a] = world[0];
+      if (world[1] < minZ[a]) minZ[a] = world[1];
+      if (world[1] > maxZ[a]) maxZ[a] = world[1];
       if (!owns[a] || h > peakY[a]) {
-        if (world === null) world = hexToWorld(hexes[i], hexes[i + 1], hexSize);
         owns[a] = true;
         peakY[a] = h;
         peakX[a] = world[0];
@@ -108,6 +124,16 @@ export function buildRegionTerrain(data: RenderData): RegionTerrain {
   const peakOf = (idx: number): RegionPeak | null =>
     hasTerrain(idx) ? { x: peakX[idx], y: peakY[idx], z: peakZ[idx] } : null;
 
+  const footprintOf = (idx: number): RegionFootprint | null => {
+    if (!hasTerrain(idx)) return null;
+    const cx = (minX[idx] + maxX[idx]) / 2;
+    const cz = (minZ[idx] + maxZ[idx]) / 2;
+    // hexSize is the apothem; the bbox above is over hex CENTRES, so pad by
+    // one hex so the outermost prisms are inside the frame, not cut in half.
+    const halfExtent = Math.max(maxX[idx] - minX[idx], maxZ[idx] - minZ[idx]) / 2 + hexSize;
+    return { cx, cz, halfExtent };
+  };
+
   const resolveTerrainRegionIdx = (idx: number | null): number | null => {
     if (idx === null || !inRange(idx)) return null;
     for (const a of ancestorsOf[idx]) {
@@ -119,7 +145,7 @@ export function buildRegionTerrain(data: RenderData): RegionTerrain {
   const hexCountOf = (idx: number) => (inRange(idx) ? hexCount[idx] : 0);
   const childrenOf = (idx: number) => (inRange(idx) ? children[idx] : []);
 
-  return { ancestorsOf, hasTerrain, peakOf, resolveTerrainRegionIdx, hexCountOf, childrenOf };
+  return { ancestorsOf, hasTerrain, peakOf, footprintOf, resolveTerrainRegionIdx, hexCountOf, childrenOf };
 }
 
 // One RegionTerrain per bake. Several components (HexField, RegionLabels, the

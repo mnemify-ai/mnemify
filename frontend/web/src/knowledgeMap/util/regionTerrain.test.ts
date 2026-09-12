@@ -157,3 +157,22 @@ describe("hexCountOf / childrenOf", () => {
     expect(t.childrenOf(42)).toEqual([]);
   });
 });
+
+describe("footprintOf", () => {
+  // Fixture hexes (q,r) → world: (0,0)→(0,0), (2,0)→(4,0), (1,0)→(2,0).
+  // The peak is the hex at world x=4 — on the region's RIM. Aiming there is
+  // what made "Show on map" land beside the region instead of on it.
+  it("centres on the hex bbox, not the peak, and pads by one apothem", () => {
+    const t = buildRegionTerrain(fixture());
+    expect(t.peakOf(1)).toMatchObject({ x: 4, z: 0 });
+    expect(t.footprintOf(1)).toEqual({ cx: 2, cz: 0, halfExtent: 3 });
+  });
+
+  it("is inherited up the chain and null for phantom regions", () => {
+    const t = buildRegionTerrain(fixture());
+    expect(t.footprintOf(0)).toEqual(t.footprintOf(1));
+    expect(t.footprintOf(2)).toBeNull();
+    expect(t.footprintOf(4)).toBeNull();
+    expect(t.footprintOf(99)).toBeNull();
+  });
+});
