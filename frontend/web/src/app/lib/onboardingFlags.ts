@@ -23,3 +23,46 @@ export function markTagClicked(): void {
     /* quota exceeded or storage disabled — silently noop */
   }
 }
+
+const TODOS_VISITED_KEY = "mnemify.onboarding.todosVisited";
+const POST_COMPILE_NEXT_KEY = "mnemify.onboarding.postCompileNextDismissed";
+
+/** True once the user has opened the TODOs page at least once. */
+export function hasVisitedTodos(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(TODOS_VISITED_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+/** Record that the user has now seen the TODOs page (idempotent). */
+export function markTodosVisited(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TODOS_VISITED_KEY, "1");
+  } catch {
+    /* quota exceeded or storage disabled — silently noop */
+  }
+}
+
+/** True once the user has dismissed the post-compile "what's next" block. */
+export function hasDismissedPostCompileNext(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(POST_COMPILE_NEXT_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+/** Retire the post-compile "what's next" block for good. */
+export function markPostCompileNextDismissed(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(POST_COMPILE_NEXT_KEY, "1");
+  } catch {
+    /* quota exceeded or storage disabled — silently noop */
+  }
+}

@@ -331,6 +331,37 @@ class ConfluenceValidate(BaseModel):
     token: str
 
 
+def _confluence_auth_reason(status: int, base_url: str) -> str:
+    """Turn an Atlassian status code into something the user can act on.
+
+    A bare "Atlassian responded 403" sends people hunting for a bad token,
+    which is precisely what a 403 rules out: Basic auth was accepted and the
+    *authorization* failed. The three codes below are the ones that actually
+    show up in the wizard, and they mean very different things.
+    """
+    if status == 401:
+        return (
+            "Atlassian rejected the email or token (401). The email must be the "
+            "account that created the token, and the token must not have been revoked."
+        )
+    if status == 403:
+        return (
+            "Signed in, but this account can't read Confluence on that site (403). "
+            "Either the account has no Confluence access there, or the API token is "
+            "scoped to other Atlassian products (a Jira-only token does this). "
+            f"Check you can open {base_url}/spaces in a browser while signed in as "
+            "this account, and create the token without product restrictions."
+        )
+    if status == 404:
+        return (
+            f"No Confluence REST API at {base_url} (404). Cloud sites need the "
+            "/wiki suffix — e.g. https://yourco.atlassian.net/wiki."
+        )
+    if status == 429:
+        return "Atlassian is rate-limiting this site (429). Wait a minute and retry."
+    return f"Atlassian responded {status}."
+
+
 @router.post("/connections/confluence/validate")
 async def validate_confluence(body: ConfluenceValidate):
     base_url = (body.base_url or "").strip().rstrip("/")
@@ -343,7 +374,10 @@ async def validate_confluence(body: ConfluenceValidate):
         async with httpx.AsyncClient(timeout=10.0, auth=(email, token)) as client:
             r = await client.get(f"{base_url}/rest/api/space?limit=1")
         if r.status_code != 200:
-            return {"ok": False, "reason": f"Atlassian responded {r.status_code}"}
+            logger.warning(
+                "confluence validate: %s returned %s", base_url, r.status_code
+            )
+            return {"ok": False, "reason": _confluence_auth_reason(r.status_code, base_url)}
         size = r.json().get("size", 0)
     except _OUTBOUND_ERRORS as exc:
         logger.warning("confluence validate failed: %s", exc, exc_info=True)

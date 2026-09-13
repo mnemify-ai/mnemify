@@ -195,105 +195,118 @@ export function MapEmptyState({
         <rect width="100%" height="100%" fill="url(#glow)" />
       </svg>
 
-      {/* hero: documents trickling into a hex terrain */}
-      <DocsToTerrain compact={coldStart} />
+      {/* hero (post-connect layout only): documents trickling into a hex
+          terrain, floating above the wide three-step panel pinned at the
+          bottom. The cold-start hero is laid out in flow below instead. */}
+      {!coldStart && (
+        <DocsToTerrain className="absolute left-1/2 top-[42%] -translate-x-1/2 -translate-y-1/2" />
+      )}
 
-
-      {/* the path forward */}
-      <div
-        className={cn(
-          "absolute inset-0 flex flex-col items-center px-6",
-          coldStart ? "justify-center pb-[6vh]" : "justify-end pb-[8vh]",
-        )}
-      >
+      {/* The path forward. Inset by the TopBar's height: the bar is
+          `fixed h-16`, so it's out of flow and would otherwise paint over the
+          top of this layer — which is what clipped the hero's document glyphs.
+          The wallpaper above stays full-bleed so the translucent bar still has
+          hexes behind it. */}
+      <div className="absolute inset-x-0 top-16 bottom-0 overflow-y-auto px-6">
         <div
           className={cn(
-            "glass-panel rounded-2xl shadow-sm w-full",
-            coldStart ? "max-w-[640px] px-8 py-8" : "max-w-4xl px-8 py-7",
+            "min-h-full flex flex-col items-center",
+            // Cold start stacks hero over panel as one centered group, so the
+            // two can't collide at any viewport height (they did when both
+            // were absolutely positioned against percentages).
+            coldStart ? "justify-center gap-8 py-8" : "justify-end pb-[8vh]",
           )}
         >
-          <p className="eyebrow mb-1">Your Knowledge Map</p>
-          <h1 className="font-serif text-3xl text-ink leading-tight mb-1.5">
-            {renderFailed
-              ? "Compiled — but the map didn't render"
-              : coldStart
-                ? "Bring your knowledge together."
-                : "Ready when you are"}
-          </h1>
-          <p className="font-sans text-sm text-muted mb-6 max-w-prose">
-            {renderFailed
-              ? "The last compile produced the data but the 3D layout step failed. Recompile to try again."
-              : coldStart
-                ? "Connect your notes and documents to build a map you can explore and ask questions about."
-                : "Three steps from here to your first Knowledge Map. Each step has its own surface — start with what's next."}
-          </p>
-          {renderFailed ? (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={() => setCompileOpen(true)}
-            >
-              Recompile
-              <ArrowRight size={14} strokeWidth={1.75} aria-hidden="true" />
-            </Button>
-          ) : coldStart ? (
-            <>
-              <Button type="button" variant="primary" onClick={() => setPickerOpen(true)}>
-                Connect a source
+          {coldStart && <DocsToTerrain compact className="shrink-0" />}
+          <div
+            className={cn(
+              "glass-panel rounded-2xl shadow-sm w-full",
+              coldStart ? "max-w-[640px] px-8 py-8" : "max-w-4xl px-8 py-7",
+            )}
+          >
+            <p className="eyebrow mb-1">Your Knowledge Map</p>
+            <h1 className="font-serif text-3xl text-ink leading-tight mb-1.5">
+              {renderFailed
+                ? "Compiled — but the map didn't render"
+                : coldStart
+                  ? "Bring your knowledge together."
+                  : "Ready when you are"}
+            </h1>
+            <p className="font-sans text-sm text-muted mb-6 max-w-prose">
+              {renderFailed
+                ? "The last compile produced the data but the 3D layout step failed. Recompile to try again."
+                : coldStart
+                  ? "Connect your notes and documents to build a map you can explore and ask questions about."
+                  : "Three steps from here to your first Knowledge Map. Each step has its own surface — start with what's next."}
+            </p>
+            {renderFailed ? (
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => setCompileOpen(true)}
+              >
+                Recompile
                 <ArrowRight size={14} strokeWidth={1.75} aria-hidden="true" />
               </Button>
-              {/* Supported sources — each chip jumps straight into its wizard. */}
-              <ul className="mt-4 flex flex-wrap items-center gap-2" aria-label="Supported sources">
-                {(["notion", "obsidian", "confluence"] as const).map((src) => (
-                  <li key={src}>
+            ) : coldStart ? (
+              <>
+                <Button type="button" variant="primary" onClick={() => setPickerOpen(true)}>
+                  Connect a source
+                  <ArrowRight size={14} strokeWidth={1.75} aria-hidden="true" />
+                </Button>
+                {/* Supported sources — each chip jumps straight into its wizard. */}
+                <ul className="mt-4 flex flex-wrap items-center gap-2" aria-label="Supported sources">
+                  {(["notion", "obsidian", "confluence"] as const).map((src) => (
+                    <li key={src}>
+                      <button
+                        type="button"
+                        onClick={() => setConnectSource(src)}
+                        className="inline-flex items-center rounded-full border border-hair bg-bone/40 hover:bg-bone px-3 py-1.5 transition-colors"
+                      >
+                        <SourceBadge source={src} size="sm" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {onTryDemo && (
+                  <p className="mt-6 font-sans text-xs text-muted">
                     <button
                       type="button"
-                      onClick={() => setConnectSource(src)}
-                      className="inline-flex items-center rounded-full border border-hair bg-bone/40 hover:bg-bone px-3 py-1.5 transition-colors"
+                      onClick={onTryDemo}
+                      className="text-magenta hover:underline underline-offset-2"
                     >
-                      <SourceBadge source={src} size="sm" />
+                      Explore a sample map →
                     </button>
-                  </li>
-                ))}
-              </ul>
-              {onTryDemo && (
-                <p className="mt-6 font-sans text-xs text-muted">
-                  <button
-                    type="button"
-                    onClick={onTryDemo}
-                    className="text-magenta hover:underline underline-offset-2"
-                  >
-                    Explore a sample map →
-                  </button>
-                </p>
-              )}
-            </>
-          ) : (
-            <>
-              <ol className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5">
-                {steps.map((s) => (
-                  <StepCard
-                    key={s.n}
-                    step={s}
-                    isCurrent={s === firstIncomplete}
-                    onGo={s.action}
-                  />
-                ))}
-              </ol>
-              {onTryDemo && (
-                <p className="mt-5 font-sans text-xs text-muted">
-                  Not ready to connect?{" "}
-                  <button
-                    type="button"
-                    onClick={onTryDemo}
-                    className="text-magenta hover:underline underline-offset-2"
-                  >
-                    Explore a sample map first →
-                  </button>
-                </p>
-              )}
-            </>
-          )}
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <ol className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5">
+                  {steps.map((s) => (
+                    <StepCard
+                      key={s.n}
+                      step={s}
+                      isCurrent={s === firstIncomplete}
+                      onGo={s.action}
+                    />
+                  ))}
+                </ol>
+                {onTryDemo && (
+                  <p className="mt-5 font-sans text-xs text-muted">
+                    Not ready to connect?{" "}
+                    <button
+                      type="button"
+                      onClick={onTryDemo}
+                      className="text-magenta hover:underline underline-offset-2"
+                    >
+                      Explore a sample map first →
+                    </button>
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -496,15 +509,16 @@ function ConnectOutcomeHint() {
  * `prefers-reduced-motion` is honored by the global `*::transition-duration`
  * override in theme/index.css plus an explicit `animation: none` rule below.
  */
-function DocsToTerrain({ compact }: { compact?: boolean }) {
+function DocsToTerrain({ compact, className }: { compact?: boolean; className?: string }) {
   return (
     <div
       aria-hidden="true"
       className={cn(
-        "pointer-events-none absolute left-1/2 -translate-x-1/2 -translate-y-1/2",
-        // Cold start: the panel sits at center, so the art tucks into the
-        // band above it instead of hiding behind it.
-        compact ? "top-[17%] w-[min(360px,80vw)]" : "top-[42%] w-[min(520px,90vw)]",
+        // Positioning is the caller's business — cold start lays this out in
+        // flow above the panel, the post-connect layout floats it absolutely.
+        "pointer-events-none",
+        compact ? "w-[min(360px,80vw)]" : "w-[min(520px,90vw)]",
+        className,
       )}
     >
       <svg

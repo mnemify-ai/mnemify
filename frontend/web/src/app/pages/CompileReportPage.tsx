@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowDown, ArrowRight, RefreshCw, Sparkles, X } from "lucide-react";
+import { ArrowDown, ArrowRight, Clock, ListTodo, RefreshCw, Sparkles, X } from "lucide-react";
 import type { CompileLogEntry } from "../sse/useCompileStream";
 import { PageShell } from "../layouts/PageShell";
 import { Button } from "../components/ui/Button";
@@ -21,6 +21,12 @@ import {
 } from "../api/terrain";
 import { useCompileStream, type CompileCountsState } from "../sse/useCompileStream";
 import { useDocumentStats } from "../api/documents";
+import { useSchedules } from "../api/schedules";
+import {
+  hasDismissedPostCompileNext,
+  hasVisitedTodos,
+  markPostCompileNextDismissed,
+} from "../lib/onboardingFlags";
 import { qk } from "../api/keys";
 import { computeEtaSeconds, formatDuration, formatEta } from "../lib/formatEta";
 import {
@@ -309,6 +315,7 @@ export function CompileReportPage() {
       }
     >
       <div className="space-y-10">
+        <PostCompileNext />
         <LastRunNotice
           run={runs.data?.runs?.[0]}
           resumeReason={resumeTarget?.reason ?? null}
@@ -679,6 +686,107 @@ function LlmUsageSection({ run }: { run: TerrainRun | null | undefined }) {
  * feature, embedding, name and note as it goes, so Resume re-spends only the
  * unfinished remainder. Other failures show the message and point at Settings.
  */
+/**
+ * Post-compile "what's next" block. Two surfaces are invisible to a first-time
+ * user at exactly the moment they become useful: TODOs (the deadlines the
+ * compile just extracted from their documents) and Settings → Schedules
+ * (harvests can run on a cron, so the map refreshes itself). Neither announces
+ * itself anywhere else — TODOs is one more word in the nav, and Schedules is
+ * three clicks behind an icon-only gear.
+ *
+ * Self-retiring: the schedules row disappears once any schedule exists, the
+ * TODOs row once the user has opened that page, and the whole block once it's
+ * dismissed. Nothing here nags on a return visit.
+ */
+function PostCompileNext() {
+  const schedules = useSchedules();
+  const [dismissed, setDismissed] = useState(hasDismissedPostCompileNext);
+  const [todosSeen] = useState(hasVisitedTodos);
+
+  // Hold the block back until the schedules query resolves rather than
+  // flashing a "set up a schedule" prompt at someone who already has one.
+  if (dismissed || schedules.isLoading) return null;
+  const hasSchedule = Object.values(schedules.data?.schedules ?? {}).some((s) => s.enabled);
+  const showTodos = !todosSeen;
+  const showSchedules = !hasSchedule;
+  if (!showTodos && !showSchedules) return null;
+
+  return (
+    <Card className="border border-hair bg-bone/30">
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow mb-1">Next</p>
+            <p className="font-serif text-lg text-ink">Now that you have a map</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              markPostCompileNextDismissed();
+              setDismissed(true);
+            }}
+            aria-label="Dismiss"
+            className="shrink-0 grid h-7 w-7 place-items-center rounded-full text-muted transition-colors hover:bg-bone hover:text-ink"
+          >
+            <X size={14} strokeWidth={1.75} aria-hidden />
+          </button>
+        </div>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          {showTodos && (
+            <NextStepCard
+              icon={ListTodo}
+              title="Your TODOs"
+              body="The compile pulled deadlines, owners, and open questions out of your documents. They're collected on the TODOs page."
+              cta="Open TODOs"
+              to="/action-items"
+            />
+          )}
+          {showSchedules && (
+            <NextStepCard
+              icon={Clock}
+              title="Keep this map fresh"
+              body="Harvests can run on a schedule, so new pages land without you remembering to fetch them."
+              cta="Set up a schedule"
+              to="/settings/schedules"
+            />
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function NextStepCard({
+  icon: Icon,
+  title,
+  body,
+  cta,
+  to,
+}: {
+  icon: typeof ListTodo;
+  title: string;
+  body: string;
+  cta: string;
+  to: string;
+}) {
+  const navigate = useNavigate();
+  return (
+    <div className="rounded-xl border border-hair bg-cream/60 p-4 flex flex-col">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Icon size={15} strokeWidth={1.75} className="text-magenta shrink-0" aria-hidden />
+        <span className="font-sans text-sm font-medium text-ink">{title}</span>
+      </div>
+      <p className="font-sans text-[13px] leading-relaxed text-muted flex-1">{body}</p>
+      <div className="mt-3">
+        <Button variant="secondary" onClick={() => navigate(to)}>
+          {cta}
+          <ArrowRight size={14} strokeWidth={1.75} aria-hidden />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function LastRunNotice({
   run,
   resumeReason,
