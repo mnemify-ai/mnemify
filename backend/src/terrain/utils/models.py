@@ -35,7 +35,7 @@ class TerrainChunk(BaseModel):
     # Structural references — populated by per-source chunkers. All
     # default-empty so old persisted chunks load unchanged. Used by the
     # extractor prompt, embedding text, and the clusterer's reference-affinity
-    # blend (see Stage 2 of docs/terrain_improvements.md).
+    # blend.
     wikilinks: list[str] = Field(default_factory=list)
     urls: list[str] = Field(default_factory=list)
     mentions: list[str] = Field(default_factory=list)

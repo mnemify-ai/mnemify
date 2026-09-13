@@ -1,35 +1,38 @@
 # AGENTS.md — Mnemify Orientation
 
-> Read this before touching any code. This file is a **map to the docs and the
-> code**, not a substitute for either. It stays intentionally short. For
-> depth, follow the links below — those files are the maintained, current
-> source of truth. If anything here conflicts with `docs/` or with the code,
-> the code wins, then `docs/`, then this file.
+> Read this before touching any code. This file is a **map to the code**, not
+> a substitute for it. It stays intentionally short; the code and its module
+> docstrings are the source of truth. If anything here conflicts with the
+> code, the code wins.
 
 ---
 
-## Doc map — read in this order
+## Where things live
 
-| Doc | What it's for |
+| Area | Path | Notes |
+|---|---|---|
+| Harvester (Tier 0) | `backend/src/harvester/` | One package per source (`notion/`, `confluence/`, `jira/`, `obsidian/`, `slack/`, `github/`, `_google/`). Plugin contract is `SourcePlugin` in `harvester/__init__.py`: `health_check()`, `list_documents(since)`, `fetch_document(ref)`, optional `mark_harvested()`; register with `register_plugin(name, factory)`. |
+| Terrain compiler (Tier 1) | `backend/src/terrain/` | File map below. |
+| FastAPI + SSE (Tier 2) | `backend/src/api/` | `__init__.py` builds the app and mounts `frontend/web/dist` if present. Harvest/compile progress streams over SSE from an in-process event bus (`event_bus.py`, `compile_bus.py`) with a replay ring buffer for reconnecting tabs. Schedules (`/api/schedules`) run on an in-process APScheduler — single uvicorn worker only. |
+| Chat (`/api/ask`) | `backend/src/api/routes_ask.py`, `ask_retrieval.py`, `ask_chunks.py`, `ask_expansion.py`, `ask_providers.py`, `ask_agent.py` | Flow: `understand_query()` → embed → chunk search over `terrain.db` vectors → graph walk/rerank → bundle (≤15 items) → expand to raw chunk text → SSE `retrieval_debug → citations → delta* → citations_used → done`. The chat-LLM key arrives per request in `Authorization: Bearer` and is never persisted; query embeddings use the server's `OPENAI_API_KEY` so vectors match the compile. Frontend side: `frontend/web/src/ask/`. |
+| CLI | `backend/src/cli.py` | `mnemify harvest / terrain build / up / status / inspect / normalize / purge / debug / reset / login`. Run via `uv run mnemify …` from `backend/`. |
+| React app | `frontend/web/src/` | `brainMap/` is the self-contained R3F 3D module (`BrainMap.tsx`, `scene/`, `chrome/`, `store.ts`); `app/` is the dashboard shell (`routes.tsx`, `pages/`, `components/`, `api/`, `sse/`, `data/`). Stack: React 18 + Vite 5 + TS strict, Tailwind with CSS-var theme, React Router v6, TanStack Query v5. Vite proxies `/api/*` to `:8783`. |
+| Tests | `backend/tests/` (`uv run pytest -q`), `frontend/web/` (`npm test`, `npx tsc -b`) | Live-network harvester tests skip without credentials. |
+
+**On-disk state — everything under `.mnemify/` (gitignored):**
+
+| Path | What |
 |---|---|
-| [`docs/TECHNICAL.md`](docs/TECHNICAL.md) | Cross-cutting tour: the three tiers (Harvest → Compile → Surface), on-disk state under `.mnemify/`, the SSE/event-bus architecture. **Start here.** |
-| [`docs/BACKEND.md`](docs/BACKEND.md) | Deep backend reference: harvester internals (§1-§12), SQLite schema, plugin interface, module map. |
-| [`docs/terrain_improvements.md`](docs/terrain_improvements.md) | **The terrain pipeline's living spec.** Stage-by-stage plan (chunking → structural context → compiled notes → graph/Leiden → entities → GraphSAGE → chatbot → personal graph → graph APIs), plus an **Applied / Pending TODO log** — the most reliable signal for "is X actually built yet." |
-| [`docs/terrain_design_justification.md`](docs/terrain_design_justification.md) | *Why* the terrain design choices were made — read this before proposing to change clustering, graph, or entity architecture. |
-| [`docs/terrain_render_pipeline.md`](docs/terrain_render_pipeline.md) | How the region/tag tree becomes the 3D hex island (`_bake_v3.py`). Read before touching layout, height, or Voronoi logic. |
-| [`docs/FRONTEND.md`](docs/FRONTEND.md) | React app reference: stack, folder layout, routes, the BrainMap module, wizards, SSE wire protocol. |
-| [`docs/RECENT_CHANGES.md`](docs/RECENT_CHANGES.md) | The v0.8 recent-changes feature: `/api/changes` + the "since last compile" boundary, author attribution keys, compile nudge / auto-compile, the map's overlay modes. |
-| [`docs/ASK_PIPELINE.md`](docs/ASK_PIPELINE.md) | The `/api/ask` chatbot end-to-end: query understanding → hybrid graph retrieval → raw-chunk expansion → SSE protocol → cited-only citation chips. Read before touching `ask_*.py` or `frontend/web/src/ask/`. |
-| [`docs/frontend_improvements.md`](docs/frontend_improvements.md) | Frontend work-in-flight tiers + a "stale references — do not act on these" tombstone list. |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Product/UX roadmap — jobs-to-be-done, what's shipped, what's next. |
-| [`docs/BACKLOG.md`](docs/BACKLOG.md) | Small-to-medium engineering follow-ups, mostly backend/harvester. |
-| [`docs/TESTING.md`](docs/TESTING.md) | Manual end-to-end test walkthrough against a real backend. |
+| `raw/<source>/<shard>/<id>.<ext>` | Raw fetched bytes, byte-for-byte |
+| `normalized/<source>/<shard>/<id>.md` | Clean-markdown sidecar per document (body only; metadata lives in the manifest) |
+| `harvest-manifest.db` | SQLite: one row per document + `harvest_runs` |
+| `harvest-log.jsonl` | Append-only audit log of harvest events |
+| `terrain.json` | v2 BrainMap: region → tag tree, graph nodes/edges, entities, attention signals |
+| `mocknotes.json` | Note registry (one per source doc) for citations and panels |
+| `render-data.json` | v3 hex render-data the 3D map reads — additive-only, no graph/embedding fields |
+| `terrain.db` | SQLite cache: features, embeddings, names, positions, compiled notes, chunk vectors, compile runs |
 
-**Habit to build:** before fixing a bug or extending the terrain pipeline,
-grep `docs/terrain_improvements.md` for the relevant Stage and its Applied /
-Pending notes. A lot of "obvious bugs" here were already found and fixed
-during the v0.5 build — the TODO log records exactly what and why, so you
-don't re-discover (or re-break) the same thing.
+`mnemify.yaml` (project root) holds source config; tokens live in `.env`.
 
 ---
 
@@ -41,7 +44,7 @@ into (a) a 3D hex terrain — a spatial browse surface — and (b) a layered
 knowledge graph the chatbot retrieves over. Both are derived from the same
 compiled brain map; neither is primary over the other going forward.
 
-**The three pillars (from `terrain_design_justification.md`):**
+**The three pillars:**
 1. **Legibility** — every connection can explain *why* it exists (edge
    provenance: `extracted` vs `inferred` vs `ambiguous`).
 2. **Multi-path triangulation** — the same answer reachable through entities,
@@ -74,7 +77,7 @@ Harvest → Normalize → Chunk (per-source) → Extract → Embed → Cluster
   → Layout → Emit terrain.json → Bake v3 render-data.json
 ```
 
-Three tiers, source of truth in `docs/TECHNICAL.md`:
+Three tiers:
 
 | Tier | Package | LLM? |
 |---|---|---|
@@ -143,11 +146,10 @@ LLM naming) are **fixed** — `EmbeddingClient.embed()` calls real
 `text-embedding-3-small`/`-large`, `clusterer.py` has no keyword override
 branches, and `OpenAIClusterNamer` does real LLM naming + compiled-note
 synthesis. Don't re-diagnose these; if something in this area looks wrong,
-check `docs/terrain_improvements.md`'s "Applied" log first — it's probably a
-known, already-fixed edge case, or a *documented* pending gap (below).
+check `git log -p` on the file first — it's probably a known, already-fixed
+edge case, or a documented pending gap (below).
 
-**Pending, called out explicitly in `docs/terrain_improvements.md`** (check
-there before starting work — it may have moved):
+**Pending:**
 - Reference-affinity signals beyond wikilinks/mentions (internal URLs, Notion
   page mentions, Confluence `ac:link`, Jira issue links) — only Obsidian
   really benefits from the sparse-note clustering boost today.
@@ -159,8 +161,7 @@ there before starting work — it may have moved):
   Jaccard weight axis as a trust axis; not validated against a labeled set.
 - Citation → hex-map click-through: works for **tag** citations only; entity
   and region citations are non-clickable; note citations need frontend
-  `openDoc` wiring. See the "Pending — Citation → hex map feedback loop"
-  section for the recommended option (A: resolve entity → home tag).
+  `openDoc` wiring. Recommended approach: resolve entity → home tag.
 - Compile-time emission counters (`{stage, regions, tags, entities, edges}`)
   for observability — not yet reported over SSE.
 
@@ -168,8 +169,8 @@ there before starting work — it may have moved):
 
 ## What Not To Do
 
-- **Do not touch `_bake_v3.py` / `render_v3.py`** without reading
-  `docs/terrain_render_pipeline.md` first — the geometry has documented
+- **Do not touch `_bake_v3.py` / `render_v3.py`** without reading the
+  module and constant comments first — the geometry has documented
   failure modes (e.g. small regions annihilated by warp amplitude) that look
   like bugs but are load-bearing constants.
 - **Do not add config files or settings objects** for the clustering/bake
@@ -179,24 +180,23 @@ there before starting work — it may have moved):
   HDBSCAN cluster assignments are missing, raise loudly rather than fall back.
 - **Do not let graph/entity/embedding fields leak into `render-data.json`.**
   Stage 4+ output stays in `terrain.json`; `_bake_v3.py` explicitly strips it.
-- **Do not revive frontend items on the `frontend_improvements.md` "stale
-  references" tombstone list** (e.g. a standalone `ArcsToggle.tsx`, a
-  `Legend.tsx`, `ActivityFeed.tsx` — all removed in the V2 BrainMap redesign).
-- **Do not wholesale-adopt GraphRAG/LightRAG/graphify.** Per
-  `terrain_design_justification.md`, the strategy is cherry-pick one pattern
+- **Do not revive removed frontend components** (e.g. a standalone
+  `ArcsToggle.tsx`, a `Legend.tsx`, `ActivityFeed.tsx` — all removed in the V2
+  BrainMap redesign).
+- **Do not wholesale-adopt GraphRAG/LightRAG/graphify.** The strategy is
+  to cherry-pick one pattern
   at a time into the existing hex-terrain pipeline, never swap the pipeline.
 
 ---
 
 ## Is Claude Code actually reading this file?
 
-Yes — via `CLAUDE.md` at the repo root, which just points here. Claude Code
-auto-loads `CLAUDE.md` at session start; it does **not** auto-load
-`AGENTS.md` on its own. If you rename or move this file, update `CLAUDE.md`'s
-pointer too.
+Only if a `CLAUDE.md` at the repo root points here. Claude Code auto-loads
+`CLAUDE.md` at session start; it does **not** auto-load `AGENTS.md` on its
+own. There is no `CLAUDE.md` in the repo today — add a one-line one that
+says "Read AGENTS.md" if you want it picked up automatically.
 
 ---
 
-*Last updated: 2026-08-10. Rewritten to reflect the v0.5/v0.6 pipeline
-(agents/ split, graph + entity layer, per-source chunking) and to point at
-`docs/` as the maintained reference instead of duplicating it.*
+*Last updated: 2026-09-14. The former `docs/` folder was removed; this file
+and the per-package READMEs are the only prose docs.*

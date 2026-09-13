@@ -24,8 +24,8 @@ npm test             # Vitest
 npx tsc -b           # typecheck
 ```
 
-The dev server needs the backend running too — start it from the repo root with
-`./run.sh --dev` (brings up both), or `mnemify up` in `backend/`. With no
+The dev server needs the backend running too — start it with `uv run mnemify up`
+in `backend/` (see [Run it](../README.md#run-it) in the repo README). With no
 backend, the brain map and the connect/harvest screens just sit on a "couldn't
 reach the backend" / "nothing compiled yet" state — nothing breaks, the live bits
 are inert.
@@ -36,6 +36,4 @@ connect → harvest → compile onboarding screen.
 
 ## More
 
-- [`../docs/FRONTEND.md`](../docs/FRONTEND.md) — the architecture in depth: stack, folder layout, where data comes from, routes, the page map, the BrainMap props, the wizards, the harvest/compile SSE wire protocol, the theme system.
-- [`../docs/TECHNICAL.md`](../docs/TECHNICAL.md) — the end-to-end data flow (connect → harvest → compile → brain map) and the SSE architecture.
-- [`../docs/ROADMAP.md`](../docs/ROADMAP.md) — the product/UX menu for what's next.
+- [`../AGENTS.md`](../AGENTS.md) — code orientation: the app's folder layout, how it talks to `/api/*`, the end-to-end harvest → compile → map flow.

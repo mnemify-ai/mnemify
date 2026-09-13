@@ -104,7 +104,7 @@ RELAX_ITERS = 80              # overlap-relaxation iterations (only overlapping
 # (778 land hexes); with true footprints rendered (~2100) the same scale read
 # as islands scattered across an empty desk. 0.50 tightens the bounding box by
 # ~17% per axis on the reference corpus with no region or sub-region lost
-# (renders: scripts/bake_compare.py --png; see docs/terrain_improvements.md).
+# (renders: scripts/bake_compare.py --png).
 
 # Force-directed parameters (per §5.1, also matches mockup_layouts.py)
 FD_ITERS = 220

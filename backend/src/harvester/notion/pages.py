@@ -138,7 +138,7 @@ class PageExtractor:
         all render to canonical markdown. The long tail (tables,
         toggles-as-details, columns, equations, mentions, synced blocks)
         falls back to a plain text-content line so we never lose the
-        text — docs/BACKLOG.md tracks the full per-block backlog.
+        text.
 
         Inline ``rich_text`` annotations (bold, italic, strikethrough,
         code, links) are emitted as markdown.
