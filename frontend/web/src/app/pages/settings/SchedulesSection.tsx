@@ -12,25 +12,10 @@ import {
   type Schedule,
 } from "../../api/schedules";
 import { cn } from "../../lib/cn";
-
-// The backend scheduler runs cron in UTC, but nobody thinks in UTC — presets
-// are named in the user's local time and converted to a UTC cron on the spot.
-// (Stored crons are fixed UTC instants, so they won't shift with DST.)
-function dailyUtcCron(localHour: number): string {
-  const d = new Date();
-  d.setHours(localHour, 0, 0, 0);
-  return `${d.getUTCMinutes()} ${d.getUTCHours()} * * *`;
-}
-
-function weeklyUtcCron(localWeekday: number, localHour: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + ((localWeekday - d.getDay() + 7) % 7));
-  d.setHours(localHour, 0, 0, 0);
-  return `${d.getUTCMinutes()} ${d.getUTCHours()} * * ${d.getUTCDay()}`;
-}
+import { MORNING_HOUR_LOCAL, dailyUtcCron, weeklyUtcCron } from "../../lib/cron";
 
 const PRESETS: { label: string; cron: string }[] = [
-  { label: "Every morning at 6am", cron: dailyUtcCron(6) },
+  { label: "Every morning at 6am", cron: dailyUtcCron(MORNING_HOUR_LOCAL) },
   { label: "Every 6 hours", cron: "0 */6 * * *" },
   { label: "Every hour", cron: "0 * * * *" },
   { label: "Every Monday at 9am", cron: weeklyUtcCron(1, 9) },
