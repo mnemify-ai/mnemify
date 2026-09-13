@@ -93,6 +93,28 @@ describe("resetNav", () => {
   });
 });
 
+describe("home", () => {
+  it("emits a home nonce even when already at the root", () => {
+    const s = store();
+    s.getState().home();
+    expect(s.getState().zoomToRegion).toEqual({ idx: null, tick: 1 });
+  });
+
+  it("clears focus, tag, doc and history, and re-frames home", () => {
+    const s = store();
+    s.getState().navigate({ focusRegionIdx: 3 });
+    s.getState().navigate({ selectedTagId: "tag.a" });
+    s.getState().navigate({ docNoteId: "note.1" });
+    s.getState().home();
+    const st = s.getState();
+    expect(st.focusRegionIdx).toBeNull();
+    expect(st.selectedTagId).toBeNull();
+    expect(st.docNoteId).toBeNull();
+    expect(st.navHistory).toHaveLength(0);
+    expect(st.zoomToRegion).toEqual({ idx: null, tick: 2 });
+  });
+});
+
 describe("requestZoomToRegion", () => {
   it("emits a home nonce for null", () => {
     const s = store();

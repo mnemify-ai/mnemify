@@ -2294,7 +2294,11 @@ class TerrainCompiler:
                         ),
                     )
                 )
-                add_signal_edges(node.id, node.signals, home_region_id=top_id)
+                # A region's own signals live in THAT region — the sub-region
+                # when there is one — not its root ancestor. Stamping the root
+                # made every "Show on map" under a big parent fly to the same
+                # place.
+                add_signal_edges(node.id, node.signals, home_region_id=node.id)
                 # contains: region → child region
                 for child in node.children:
                     edges.append(
@@ -2309,12 +2313,11 @@ class TerrainCompiler:
                     )
                 # contains: region → tag, plus tag-related edges
                 for tag in node.tags:
-                    home = (
-                        next(
-                            (rw.regionId for rw in tag.regionWeights if rw.isHome),
-                            top_id,
-                        )
-                    )
+                    # The containing region is the tag's home: it is the region
+                    # whose hexes carry the tag's spire. The isHome weight is a
+                    # flat-stage artefact that names the top-level region, and
+                    # falling back to `top_id` had the same coarsening effect.
+                    home = node.id
                     nodes.append(
                         GraphNode(
                             id=tag.id,

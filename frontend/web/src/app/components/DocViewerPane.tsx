@@ -10,8 +10,8 @@
 //   - DocViewerHtml.tsx       — Confluence XHTML
 //   - DocViewerMarkdown.tsx   — pre-baked markdown (Notion fallback, Obsidian)
 
-import { useState } from "react";
-import { ChevronRight, Download, FileText, RefreshCw, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ChevronRight, Download, FileText, MoreHorizontal, RefreshCw, X } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -24,7 +24,7 @@ import {
 } from "../api/documents";
 import { ApiError, apiUrl } from "../api/client";
 import { SourceBadge } from "./SourceBadge";
-import { Button } from "./ui/Button";
+import { Popover } from "./ui/Popover";
 import { Skeleton } from "./ui/Skeleton";
 import { ErrorState } from "./ui/ErrorState";
 import { NotionRender } from "./DocViewerNotion";
@@ -38,17 +38,36 @@ import { preloadRenderer } from "./attachments/registry";
 interface DocViewerPaneProps {
   docId: string;
   onClose: () => void;
+  /** Embedded mode (knowledge-map right panel): the host already provides
+   *  its own Back/close navigation, so the pane drops its X button and lets
+   *  the host slot that navigation into the toolbar via `leading`. */
+  embedded?: boolean;
+  /** Content rendered at the start of the compact toolbar row. */
+  leading?: ReactNode;
 }
 
-export function DocViewerPane({ docId, onClose }: DocViewerPaneProps) {
+export function DocViewerPane({ docId, onClose, embedded = false, leading }: DocViewerPaneProps) {
+  const shell = embedded
+    ? "h-full flex flex-col min-w-0"
+    : "h-full flex flex-col bg-cream border-l border-hair min-w-0";
   return (
-    <aside className="h-full flex flex-col bg-cream border-l border-hair min-w-0">
-      <DocViewerBody docId={docId} onClose={onClose} />
+    <aside className={shell}>
+      <DocViewerBody docId={docId} onClose={onClose} embedded={embedded} leading={leading} />
     </aside>
   );
 }
 
-function DocViewerBody({ docId, onClose }: { docId: string; onClose: () => void }) {
+function DocViewerBody({
+  docId,
+  onClose,
+  embedded,
+  leading,
+}: {
+  docId: string;
+  onClose: () => void;
+  embedded: boolean;
+  leading?: ReactNode;
+}) {
   const doc = useDocument(docId);
   const content = useDocumentContent(docId);
   const attachments = useDocumentAttachments(docId);
@@ -99,48 +118,60 @@ function DocViewerBody({ docId, onClose }: { docId: string; onClose: () => void 
 
   const d = doc.data;
   const format = content.data?.format ?? "raw";
+  const pad = embedded ? "px-0.5" : "px-6";
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <header className="px-6 pt-5 pb-4 border-b border-hair shrink-0 flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-2 flex-wrap">
-            <span className="eyebrow">Document</span>
-            <SourceBadge source={d.source} size="sm" />
-            <span className="font-sans text-[11px] text-muted">{d.type}</span>
-          </div>
+      {/* Compact toolbar: host nav (map) · source · collapsed path · actions.
+          Everything else — title, metadata, body — scrolls together below. */}
+      <div
+        className={`${pad} ${embedded ? "pt-0 pb-2" : "pt-3 pb-2"} border-b border-hair shrink-0 flex items-center gap-2 min-w-0`}
+      >
+        {leading}
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <SourceBadge source={d.source} size="sm" />
           <DocBreadcrumb titles={d.path_titles ?? []} ids={d.path_ids ?? []} />
-          <h2 className="font-serif text-2xl text-ink leading-snug tracking-tight">{d.title}</h2>
-          <p className="font-sans text-xs text-muted mt-1.5">
-            {d.space && d.space !== "—" ? `${d.space} · ` : ""}
-            {d.harvested_at ? `harvested ${relativeTime(d.harvested_at)}` : "not harvested"}
-            {d.updated_at ? ` · updated ${relativeTime(d.updated_at)}` : ""}
-          </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleReharvest}
-            disabled={reharvest.isPending}
-            loading={reharvest.isPending}
-          >
-            {!reharvest.isPending && <RefreshCw size={14} strokeWidth={1.5} />}
-            Re-harvest
-          </Button>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close document viewer"
-            className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-bone/60 transition-colors"
-          >
-            <X size={16} strokeWidth={1.5} />
-          </button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <OverflowMenu
+            onRefresh={handleReharvest}
+            refreshing={reharvest.isPending}
+          />
+          {!embedded && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close document viewer"
+              className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-bone/60 transition-colors"
+            >
+              <X size={16} strokeWidth={1.5} />
+            </button>
+          )}
         </div>
-      </header>
+      </div>
 
-      <section className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-5">
-        <PropertiesPanel properties={d.properties} skipKeys={[d.title]} />
+      <section className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden ${pad} pt-4 pb-5`}>
+        <h2 className="font-serif text-xl text-ink leading-snug tracking-tight break-words">
+          {d.title}
+        </h2>
+        <p className="font-sans text-xs text-muted mt-1.5">
+          {d.space && d.space !== "—" ? `${d.space} · ` : ""}
+          {d.harvested_at ? `harvested ${relativeTime(d.harvested_at)}` : "not harvested"}
+        </p>
+        <DetailsDisclosure
+          rows={[
+            ["Source", `${d.source}${d.type ? ` · ${d.type}` : ""}`],
+            ["Location", <PathText key="loc" titles={d.path_titles ?? []} />],
+            ["Harvested", d.harvested_at ? new Date(d.harvested_at).toLocaleString() : ""],
+            ["Updated", d.updated_at ? new Date(d.updated_at).toLocaleString() : ""],
+            ["Size", d.size_bytes ? formatBytes(d.size_bytes) : ""],
+            ["Format", format],
+            ["ID", d.source_id ?? ""],
+          ]}
+        >
+          <PropertiesPanel properties={d.properties} skipKeys={[d.title]} />
+        </DetailsDisclosure>
+        <div className="border-t border-hair mb-6" aria-hidden />
         {content.isLoading ? (
           <div className="space-y-2" aria-busy="true">
             <Skeleton variant="line" width="92%" />
@@ -162,13 +193,122 @@ function DocViewerBody({ docId, onClose }: { docId: string; onClose: () => void 
           loading={attachments.isLoading}
         />
       </section>
-
-      <footer className="px-6 py-2.5 border-t border-hair shrink-0 flex items-center justify-between gap-3 font-sans text-[10px] text-muted uppercase tracking-eyebrow">
-        <span className="truncate">
-          {formatBytes(d.size_bytes)} · {format} · ID {d.source_id}
-        </span>
-      </footer>
     </div>
+  );
+}
+
+/** "⋯" menu holding the rarely-used document actions. */
+function OverflowMenu({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      className="min-w-[200px]"
+      trigger={
+        <button
+          type="button"
+          aria-label="Document actions"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className="p-1.5 rounded-lg text-muted hover:text-ink hover:bg-bone/60 transition-colors"
+        >
+          <MoreHorizontal size={16} strokeWidth={1.5} aria-hidden />
+        </button>
+      }
+    >
+      <ul role="menu" className="flex flex-col gap-0.5">
+        <li role="none">
+          <button
+            type="button"
+            role="menuitem"
+            disabled={refreshing}
+            onClick={() => {
+              setOpen(false);
+              onRefresh();
+            }}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[13px] text-ink hover:bg-bone/60 disabled:opacity-50 disabled:cursor-default transition-colors"
+          >
+            <RefreshCw
+              size={13}
+              strokeWidth={1.5}
+              className={refreshing ? "animate-spin" : ""}
+              aria-hidden
+            />
+            {refreshing ? "Refreshing…" : "Refresh from source"}
+          </button>
+        </li>
+      </ul>
+    </Popover>
+  );
+}
+
+/** Collapsed "Details" block under the title: the secondary metadata
+ *  (timestamps, size, format, ID, location) plus any source properties. Sits
+ *  on a slightly darker warm surface so it reads as metadata, not document. */
+function DetailsDisclosure({
+  rows,
+  children,
+}: {
+  rows: [string, ReactNode][];
+  children?: ReactNode;
+}) {
+  const filled = rows.filter(([, v]) => (typeof v === "string" ? v.trim().length > 0 : v != null));
+  return (
+    <details className="group mt-3 mb-5 rounded-lg bg-bone/60 open:bg-bone/70 transition-colors">
+      <summary className="flex items-center gap-1.5 cursor-pointer select-none px-3.5 py-2.5 font-sans text-[11px] uppercase tracking-eyebrow text-muted hover:text-ink list-none [&::-webkit-details-marker]:hidden rounded-lg">
+        <ChevronRight
+          size={11}
+          strokeWidth={1.75}
+          className="transition-transform group-open:rotate-90"
+          aria-hidden
+        />
+        Details
+      </summary>
+      <div className="px-3.5 pb-3.5 pt-0.5 font-sans">
+        <dl className={detailsGridCls}>
+          {filled.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className={detailsDtCls}>{k}</dt>
+              <dd className={detailsDdCls}>{v}</dd>
+            </div>
+          ))}
+        </dl>
+        {children}
+      </div>
+    </details>
+  );
+}
+
+// Both columns share one line-height (leading-5 = 20px) and align on the
+// baseline so an 11px uppercase label and a 12.5px value sit on the same line.
+const detailsGridCls =
+  "grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 items-baseline";
+const detailsDtCls =
+  "font-sans text-[11px] leading-5 uppercase tracking-eyebrow text-muted";
+const detailsDdCls = "font-sans text-[12.5px] leading-5 text-ink break-words";
+
+/** Ancestor chain for the Details block. Each folder name and its trailing
+ *  chevron form one unbreakable unit, so wrapping never strands a chevron at
+ *  the far right of a line. */
+function PathText({ titles }: { titles: string[] }) {
+  if (titles.length === 0) return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-y-0.5">
+      {titles.map((t, i) => (
+        <span key={`${i}-${t}`} className="inline-flex items-center whitespace-nowrap">
+          <span className="whitespace-normal">{t}</span>
+          {i < titles.length - 1 && (
+            <ChevronRight
+              size={11}
+              strokeWidth={2}
+              className="shrink-0 mx-1.5 text-muted/50"
+              aria-hidden
+            />
+          )}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -200,13 +340,11 @@ function PropertiesPanel({
   });
   if (entries.length === 0) return null;
   return (
-    <dl className="mb-5 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-sm">
+    <dl className={`${detailsGridCls} mt-2.5 pt-2.5 border-t border-line/20`}>
       {entries.map(([k, p]) => (
         <div key={k} className="contents">
-          <dt className="font-sans text-[11px] uppercase tracking-eyebrow text-muted self-center">
-            {k}
-          </dt>
-          <dd className="text-ink break-words">{formatPropertyValue(p)}</dd>
+          <dt className={detailsDtCls}>{k}</dt>
+          <dd className={detailsDdCls}>{formatPropertyValue(p)}</dd>
         </div>
       ))}
     </dl>
@@ -351,13 +489,13 @@ function RawRender({ content }: { content: string }) {
   );
 }
 
-/** Root-first ancestor breadcrumb above the doc title. Segments whose id is
- *  present (i.e. the ancestor was itself harvested) become clickable and
- *  swap the viewer to that doc; bare-title segments render plain. Wraps to
- *  multiple lines so a 7-10-deep Notion or Confluence tree doesn't cause
- *  horizontal overflow. */
+/** Root-first ancestor path shown in the toolbar. Collapsed by default to a
+ *  single line — "… › Parent" for deep trees — and expands to the full chain
+ *  on click. Segments whose id is present (i.e. the ancestor was itself
+ *  harvested) become clickable and swap the viewer to that doc. */
 function DocBreadcrumb({ titles, ids }: { titles: string[]; ids: string[] }) {
   const [, setParams] = useSearchParams();
+  const [expanded, setExpanded] = useState(false);
   if (titles.length === 0) return null;
 
   function openDoc(id: string) {
@@ -371,30 +509,52 @@ function DocBreadcrumb({ titles, ids }: { titles: string[]; ids: string[] }) {
     );
   }
 
+  const collapsed = !expanded && titles.length > 1;
+  const visible = collapsed ? titles.slice(-1) : titles;
+  const offset = titles.length - visible.length;
+
   return (
     <nav
       aria-label="Document path"
-      className="flex flex-wrap items-center gap-1 mb-2 font-sans text-[11px] text-muted"
+      className={`flex items-center gap-1 min-w-0 font-sans text-[11px] text-muted ${
+        expanded ? "flex-wrap" : "flex-nowrap overflow-hidden"
+      }`}
     >
-      {titles.map((title, i) => {
+      {collapsed && (
+        <>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="hover:text-ink shrink-0 px-0.5"
+            aria-label={`Show full path (${titles.length} levels)`}
+            title={titles.join(" › ")}
+          >
+            …
+          </button>
+          <ChevronRight size={11} strokeWidth={1.75} className="shrink-0 text-muted/60" aria-hidden />
+        </>
+      )}
+      {visible.map((title, vi) => {
+        const i = vi + offset;
         const id = ids[i] || "";
         const isLast = i === titles.length - 1;
+        const segCls = collapsed ? "truncate min-w-0" : "max-w-[18ch] truncate";
         const segment = id ? (
           <button
             type="button"
             onClick={() => openDoc(id)}
-            className="hover:text-ink hover:underline underline-offset-2 transition-colors max-w-[18ch] truncate"
+            className={`hover:text-ink hover:underline underline-offset-2 transition-colors ${segCls}`}
             title={title}
           >
             {title}
           </button>
         ) : (
-          <span className="max-w-[18ch] truncate" title={title}>
+          <span className={segCls} title={title}>
             {title}
           </span>
         );
         return (
-          <span key={`${i}-${title}`} className="inline-flex items-center gap-1">
+          <span key={`${i}-${title}`} className="inline-flex items-center gap-1 min-w-0">
             {segment}
             {!isLast && (
               <ChevronRight

@@ -1141,3 +1141,56 @@ def test_signals_cache_lines_ignore_severity():
     assert signals_digest([sig(40)]) != signals_digest([sig(55)])
     assert signals_cache_lines([sig(40)]) == signals_cache_lines([sig(55)])
     assert signals_cache_lines([sig(40)]) == ["todo: Ship it (open owner=ana)"]
+
+
+def test_graph_view_stamps_sub_region_home_on_signals_and_tags(tmp_path):
+    """Signals and tags that live in a SUB-region must carry that sub-region
+    as ``homeRegionId`` — not the root ancestor. Stamping the root made every
+    chat "Show on map" under a big parent fly to the same place. Root-level
+    owners still get the root (there is nothing finer to fall back to)."""
+    from src.terrain.pipelines.compiler import TerrainCompiler
+    from src.terrain.utils.models import (
+        AggregateCounts, AttentionSignal, Bounds, CompilerProvenance, Edges,
+        Highlights, KnowledgeMap, KnowledgeMapNotes, Offset, Owner, Position,
+        RegionWeight, Stats, Tag, TreeNode,
+    )
+
+    def sig(sid: str) -> AttentionSignal:
+        return AttentionSignal(id=sid, kind="todo", title=sid, summary="", severity=10)
+
+    tag = Tag(
+        id="tag.node_child", label="Child tag", type="concept", frequency=1,
+        recencyScore=0.5, degree=0, elevation=10, offset=Offset(dx=0.0, dz=0.0),
+        noteIds=["n-1"], signals=[sig("sig_tag")],
+        # Flat-stage artefact: the isHome weight names the ROOT region.
+        regionWeights=[RegionWeight(regionId="node_root", weight=1.0, isHome=True)],
+    )
+    child = TreeNode(
+        id="node_child", name="Child", level=1, parentId="node_root", summary="s",
+        center=Position(x=0.0, z=0.0), radius=1.0, elevation=10,
+        aggregateCounts=AggregateCounts(notes=0, sources=0, tags=1, subRegions=0),
+        tags=[tag], signals=[sig("sig_child")],
+    )
+    root = TreeNode(
+        id="node_root", name="Root", level=0, summary="s",
+        center=Position(x=0.0, z=0.0), radius=2.0, elevation=10,
+        aggregateCounts=AggregateCounts(notes=0, sources=0, tags=1, subRegions=1),
+        children=[child], signals=[sig("sig_root")],
+    )
+    knowledge_map = KnowledgeMap(
+        workspace="w", owner=Owner(name="n", role="r"), generatedAt="t",
+        compiler=CompilerProvenance(version="1", extractor="e", clusterer="c"),
+        bounds=Bounds(minX=0.0, maxX=1.0, minZ=0.0, maxZ=1.0),
+        stats=Stats(regions=2, tagsTotal=1, notes=0, sources=0, edges=0),
+        highlights=Highlights(), tree=[root], edges=Edges(),
+    )
+    notes = KnowledgeMapNotes(version=2, generatedAt="t", notes=[])
+
+    compiler = TerrainCompiler(data_dir=tmp_path, ai_mode="local")
+    compiler._build_graph_view(knowledge_map, notes, enriched=[])
+
+    home = {n.id: n.homeRegionId for n in knowledge_map.graph.nodes}
+    assert home["sig_root"] == "node_root"      # root-owned: root is the finest there is
+    assert home["sig_child"] == "node_child"    # sub-region-owned: the sub-region
+    assert home["tag.node_child"] == "node_child"
+    assert home["sig_tag"] == "node_child"
