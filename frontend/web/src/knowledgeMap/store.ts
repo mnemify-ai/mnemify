@@ -76,8 +76,14 @@ export type KnowledgeMapState = FocusState & {
   /** Pop history: restore the previous snapshot and re-frame it (a region,
    *  or the whole map when the restored scope is the map root). */
   back: () => void;
-  /** Clear to the map root (home) view. */
+  /** Clear to the map root (home) view. Escape semantics: only re-frames
+   *  the camera when a region was actually focused. */
   resetNav: () => void;
+  /** User-invoked "show me the whole map": clear nav to the root AND always
+   *  re-frame the camera to the home framing — even when already at the root,
+   *  because the user may have orbited or panned away from the overview and
+   *  there is no other way to get it back. */
+  home: () => void;
 };
 
 export type KnowledgeMapStore = ReturnType<typeof createKnowledgeMapStore>;
@@ -155,6 +161,14 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
         ...(s.focusRegionIdx !== null
           ? { zoomToRegion: { idx: null, tick: (s.zoomToRegion?.tick ?? 0) + 1 } }
           : {}),
+      })),
+    home: () =>
+      set((s) => ({
+        focusRegionIdx: null,
+        selectedTagId: null,
+        docNoteId: null,
+        navHistory: [],
+        zoomToRegion: { idx: null, tick: (s.zoomToRegion?.tick ?? 0) + 1 },
       })),
   }));
 }

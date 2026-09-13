@@ -41,6 +41,7 @@ import { HexTooltip } from './chrome/HexTooltip';
 import { RegionHoverPreview } from './chrome/RegionHoverPreview';
 import { RightPanel } from './chrome/RightPanel';
 import { BottomBar } from './chrome/BottomBar';
+import { ResetViewButton } from './chrome/ResetViewButton';
 import { useRenderData } from './data/useRenderData';
 import { recolorRegions } from './util/regionColors';
 import { Scene } from './scene/Scene';
@@ -249,6 +250,7 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
           <Scene data={data} />
           <CartographerDecorations />
           {!props.hideHeader && <Header data={data} />}
+          <ResetViewButton />
           {/* On-map breadcrumb removed — navigation now lives in the right
               panel's nav header (Back + breadcrumb). */}
           <HexTooltip

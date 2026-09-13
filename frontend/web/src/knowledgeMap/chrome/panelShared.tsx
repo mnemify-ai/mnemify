@@ -3,7 +3,7 @@
 // and small helpers. Split out of the old monolithic RightPanel.tsx.
 
 import { useMemo } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Home } from 'lucide-react';
 import { useKnowledgeMapStore } from '../store';
 import type { RenderData } from '../types';
 
@@ -51,8 +51,19 @@ export function levelColor(level?: string): string {
 
 // ── Nav header: Back + clickable breadcrumb path. Shared by every detail view.
 // Replaces the old on-map Breadcrumb so map↔panel navigation lives in one place.
-export function BackBar({ data, regionIdx }: { data: RenderData; regionIdx: number | null }) {
+// `compact` drops the bottom padding and pins the crumbs to one truncating
+// line so the bar can sit inside another toolbar row (DocDetail).
+export function BackBar({
+  data,
+  regionIdx,
+  compact = false,
+}: {
+  data: RenderData;
+  regionIdx: number | null;
+  compact?: boolean;
+}) {
   const back = useKnowledgeMapStore((s) => s.back);
+  const home = useKnowledgeMapStore((s) => s.home);
   const navigate = useKnowledgeMapStore((s) => s.navigate);
   const canGoBack = useKnowledgeMapStore((s) => s.navHistory.length > 0);
   const path = useMemo(() => (regionIdx === null ? [] : walkAncestors(data, regionIdx)), [data, regionIdx]);
@@ -63,16 +74,27 @@ export function BackBar({ data, regionIdx }: { data: RenderData; regionIdx: numb
   }, [data.regions]);
 
   return (
-    <div className="flex-none flex items-center gap-2.5 pb-2 flex-wrap">
+    <div className={`flex items-center gap-2.5 min-w-0 ${compact ? 'flex-none flex-nowrap' : 'flex-none pb-2 flex-wrap'}`}>
       <button
         type="button"
-        className="inline-flex items-center gap-0.5 border border-line/25 rounded-md bg-bone/40 text-ink/[0.85] text-[12px] py-[3px] pr-2 pl-[5px] cursor-pointer disabled:opacity-40 disabled:cursor-default"
+        className={navBtnCls}
         onClick={() => canGoBack && back()}
         disabled={!canGoBack}
       >
         <ChevronLeft size={14} strokeWidth={2.5} /> Back
       </button>
-      <div className="flex items-center gap-1 flex-wrap text-[11px] text-muted min-w-0">
+      {/* Back only pops one step; this jumps straight to the whole-map
+          overview (and re-frames the camera) no matter how deep you are. */}
+      <button
+        type="button"
+        className={navBtnCls}
+        onClick={home}
+        title="Home: show the whole map"
+        aria-label="Home: show the whole map"
+      >
+        <Home size={13} strokeWidth={2.25} /> Home
+      </button>
+      <div className={`flex items-center gap-1 text-[11px] text-muted min-w-0 ${compact ? 'flex-nowrap overflow-hidden' : 'flex-wrap'}`}>
         <button type="button" className={crumbCls} onClick={() => navigate({ focusRegionIdx: null, selectedTagId: null, docNoteId: null })}>Map</button>
         {path.map((r) => (
           <span key={r.id} className="contents">
@@ -90,6 +112,9 @@ export function BackBar({ data, regionIdx }: { data: RenderData; regionIdx: numb
     </div>
   );
 }
+
+const navBtnCls =
+  'shrink-0 inline-flex items-center gap-1 border border-line/25 rounded-md bg-bone/40 text-ink/[0.85] text-[12px] py-[3px] pr-2 pl-[5px] cursor-pointer disabled:opacity-40 disabled:cursor-default';
 
 const crumbCls =
   'border-none bg-transparent cursor-pointer text-muted text-[11px] p-0 max-w-[120px] truncate';

@@ -9,7 +9,7 @@ import { useDocIdForNote } from '../util/useDocResolver';
 import { useMapDataReady } from '../../app/data/MapDataProvider';
 import { DocViewerPane } from '../../app/components/DocViewerPane';
 import {
-  BackBar, emptyBaseCls, kickerCls, pathCls, rulerCls, summaryCls, titleCls,
+  BackBar, emptyBaseCls, pathCls, summaryCls, titleCls,
 } from './panelShared';
 
 export function DocDetail({ data, noteId }: { data: RenderData; noteId: string }) {
@@ -19,13 +19,25 @@ export function DocDetail({ data, noteId }: { data: RenderData; noteId: string }
   const note = useMemo(() => notes.notes.find((n) => n.id === noteId) ?? null, [notes.notes, noteId]);
   const { docId, loading } = useDocIdForNote(note);
 
+  if (docId) {
+    // The viewer owns the chrome: one compact toolbar row holding Back + the
+    // map crumbs (slotted in via `leading`), then title/metadata/body all
+    // scrolling together. No second header, no X (Back covers it).
+    return (
+      <DocViewerPane
+        docId={docId}
+        onClose={back}
+        embedded
+        leading={<BackBar data={data} regionIdx={focusRegionIdx} compact />}
+      />
+    );
+  }
+
   return (
     <>
       <BackBar data={data} regionIdx={focusRegionIdx} />
       <div className="flex-1 min-h-0 flex flex-col">
-        {docId ? (
-          <DocViewerPane docId={docId} onClose={back} />
-        ) : loading ? (
+        {loading ? (
           <div className={`${emptyBaseCls} p-4`}>Loading document…</div>
         ) : note ? (
           <NoteDetail note={note} data={data} />
@@ -46,8 +58,6 @@ function NoteDetail({ note, data }: { note: Note; data: RenderData }) {
   });
   return (
     <div className="flex-1 min-h-0 overflow-auto py-1 px-0.5">
-      <div className={kickerCls}>Document</div>
-      <div className={rulerCls} />
       <div className={titleCls}>{note.title}</div>
       <div className={`${pathCls} mt-1.5`}>
         {note.author} · {date} ·{' '}
