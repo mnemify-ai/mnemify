@@ -135,6 +135,7 @@ const NAV_ITEMS = [
 export function TopBar() {
   const { pathname } = useLocation();
   const isHome = pathname === "/";
+  const settingsActive = pathname.startsWith("/settings");
   const openPalette = useCommandPalette((s) => s.setOpen);
   useRefreshMapDataOnCompileComplete();
   useRefreshChangesOnHarvestComplete();
@@ -188,19 +189,24 @@ export function TopBar() {
           </button>
           <OpsPill />
           <ThemeToggle />
+          {/* Labelled rather than icon-only: a bare gear names itself nowhere,
+              and a hover tooltip only reaches people who already suspected it
+              was Settings. Takes the Search pill's shape so the right-hand
+              cluster reads as one set — including dropping the label below
+              `md`, where `aria-label` carries it instead. */}
           <NavLink
             to="/settings"
             aria-label="Settings"
-            className={({ isActive }) =>
-              cn(
-                "grid h-9 w-9 place-items-center rounded-full border border-hair transition-colors",
-                isActive
-                  ? "bg-lavender/60 text-ink"
-                  : "bg-bone/40 text-muted hover:bg-bone hover:text-ink",
-              )
-            }
+            className={cn(
+              "inline-flex items-center gap-2 h-9 rounded-full border border-hair transition-colors",
+              "pl-2.5 pr-2.5 md:pr-3.5",
+              settingsActive
+                ? "bg-lavender/60 text-ink"
+                : "bg-bone/40 text-muted hover:bg-bone hover:text-ink",
+            )}
           >
             <Settings size={15} strokeWidth={1.75} aria-hidden />
+            <span className="hidden md:inline font-sans text-[13px]">Settings</span>
           </NavLink>
         </div>
       </div>

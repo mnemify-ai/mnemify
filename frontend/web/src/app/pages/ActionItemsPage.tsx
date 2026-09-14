@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -26,6 +26,7 @@ import {
   pruneDismissed,
   saveDismissed,
 } from "../lib/actionItems";
+import { markTodosVisited } from "../lib/onboardingFlags";
 import { cn } from "../lib/cn";
 
 type SectionKey = "overdue" | "dueSoon" | "upcoming" | "noDate";
@@ -74,6 +75,9 @@ const SECTIONS: {
 export function ActionItemsPage() {
   const navigate = useNavigate();
   const { data, isLoading } = useActionItems();
+  // Retires the post-compile "Your TODOs" pointer on the compile report — the
+  // user has found this page, so it has nothing left to tell them.
+  useEffect(() => markTodosVisited(), []);
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
   const [collapsed, setCollapsed] = useState<Set<SectionKey>>(
     () => new Set(SECTIONS.filter((s) => s.collapsed).map((s) => s.key)),

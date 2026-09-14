@@ -1,8 +1,15 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Link } from "react-router-dom";
-import { ArrowRight, Flame, Sparkles, Sprout, X } from "lucide-react";
+import { ArrowRight, Check, Clock, Flame, Sparkles, Sprout, X } from "lucide-react";
 import { useStartCompile, useTerrainReport } from "../api/terrain";
 import { useStartHarvest } from "../api/harvest";
+import { useConnections } from "../api/connections";
+import { useUpsertSchedule } from "../api/schedules";
+import { qk } from "../api/keys";
+import { morningUtcCron } from "../lib/cron";
+import { Button } from "./ui/Button";
 import { totalChanges, useChanges } from "../api/changes";
 import { relativeTime } from "../lib/relativeTime";
 import { hasClickedTag } from "../lib/onboardingFlags";
@@ -78,6 +85,10 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
   const { data: changes } = useChanges();
   const startCompile = useStartCompile();
   const startHarvest = useStartHarvest();
+  const upsertSchedule = useUpsertSchedule();
+  const { data: connections } = useConnections();
+  const qc = useQueryClient();
+  const [morningEnabled, setMorningEnabled] = useState(false);
   const [ackedAt, setAckedAt] = useState<string | null>(readLastSeen);
   const [nudgeSnoozedUntil, setNudgeSnoozedUntil] = useState<number | null>(readNudgeSnooze);
   const [changesOpen, setChangesOpen] = useState(false);
@@ -120,6 +131,30 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
     setAckedAt(compiledAt);
   };
 
+  // "Enable morning harvest": one daily schedule per connected source. The
+  // backend has no bulk endpoint, so fan out and treat any failure as a whole.
+  const enableMorningHarvest = async () => {
+    const sources = (connections ?? [])
+      .filter((c) => c.status === "connected")
+      .map((c) => c.source);
+    if (sources.length === 0) {
+      toast.error("Connect a source first to schedule harvests.");
+      return;
+    }
+    const cron = morningUtcCron();
+    try {
+      await Promise.all(
+        sources.map((source) => upsertSchedule.mutateAsync({ source, cron, enabled: true })),
+      );
+      setMorningEnabled(true);
+      // schedule_enabled lives on the changes payload — refresh it so the
+      // nudge stops suggesting a schedule on the next render.
+      qc.invalidateQueries({ queryKey: qk.changes() });
+    } catch (err) {
+      toast.error("Couldn't enable morning harvest", { description: String(err) });
+    }
+  };
+
   return (
     <section
       role="region"
@@ -134,7 +169,7 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
               ? `Compiled ${relativeTime(compiledAt)}`
               : pendingLine
                 ? "Your map is behind"
-                : "Time to check your sources"}
+                : "Keep your knowledge fresh"}
           </h2>
         </div>
         {view && (
@@ -184,10 +219,14 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
         {nudge && (
           <div className="mb-1">
             <div className="flex items-start justify-between gap-2">
-              <p className="font-sans text-xs text-ink">
-                Last harvested {relativeTime(nudge.lastHarvestTime)}
-                <span className="text-muted"> — check your sources for new info?</span>
-              </p>
+              <div className="min-w-0">
+                {view && (
+                  <h3 className="font-serif text-sm text-ink">Keep your knowledge fresh</h3>
+                )}
+                <p className="font-sans text-xs text-muted">
+                  Automatically check your sources every morning.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -201,7 +240,45 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
                 <X className="h-3.5 w-3.5" aria-hidden />
               </button>
             </div>
-            <div className="flex items-center gap-2 mt-1.5">
+
+            {nudge.suggestSchedule && !morningEnabled ? (
+              <>
+                <Button
+                  type="button"
+                  size="md"
+                  onClick={enableMorningHarvest}
+                  loading={upsertSchedule.isPending}
+                  className="w-full mt-3 h-9 text-xs rounded-xl"
+                >
+                  {!upsertSchedule.isPending && (
+                    <Clock size={13} strokeWidth={1.75} aria-hidden />
+                  )}
+                  Enable morning harvest
+                </Button>
+                {/* The scheduler is in-process (backend/src/api/scheduler.py):
+                    it only fires while the local server is up. Say so rather
+                    than implying an unattended background service. */}
+                <p className="font-sans text-[11px] text-muted text-center mt-1.5">
+                  Runs while Mnemify is open, or catches up next time you open it
+                </p>
+              </>
+            ) : (
+              <div className="mt-3 flex items-center gap-2 font-sans text-xs">
+                <span className="inline-flex items-center gap-1.5 text-success">
+                  <Check size={13} strokeWidth={2} aria-hidden />
+                  {morningEnabled ? "Morning harvest enabled" : "Scheduled harvest enabled"}
+                </span>
+                <span className="text-hair">·</span>
+                <Link
+                  to="/settings/schedules"
+                  className="text-muted hover:text-ink transition-colors"
+                >
+                  Manage
+                </Link>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 mt-2.5">
               <button
                 type="button"
                 onClick={() => startHarvest.mutate({ sources: null })}
@@ -217,17 +294,10 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
                   ? "Harvesting…"
                   : "Harvest now"}
               </button>
-              {nudge.suggestSchedule && (
-                <>
-                  <span className="text-hair">·</span>
-                  <Link
-                    to="/settings/schedules"
-                    className="font-sans text-xs text-muted hover:text-ink transition-colors"
-                  >
-                    Harvest every morning →
-                  </Link>
-                </>
-              )}
+              <span className="text-hair">·</span>
+              <span className="font-sans text-xs text-muted">
+                Last harvested {relativeTime(nudge.lastHarvestTime)}
+              </span>
             </div>
           </div>
         )}

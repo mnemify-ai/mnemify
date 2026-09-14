@@ -12,11 +12,16 @@ Single-worker only — multiple uvicorn workers would double-fire.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+
+from src.harvester.manifest import HarvestManifest
 
 from . import orchestrator as orch
 from .yaml_writer import read_config
@@ -28,6 +33,17 @@ logger = logging.getLogger(__name__)
 _JOB_PREFIX = "harvest-schedule:"
 
 _scheduler: AsyncIOScheduler | None = None
+
+_DATA_DIR = Path(".mnemify")
+
+# Catch-up window. The app runs locally, so a 6am cron silently misses when
+# the laptop is closed at 6am. On startup we look for a scheduled instant that
+# fell between the source's last completed harvest and now, and run it. If a
+# source has never completed a run, only look back this far so a brand-new
+# schedule doesn't immediately fire on every restart.
+CATCHUP_LOOKBACK = timedelta(days=7)
+# Give uvicorn a moment to finish booting before kicking off a harvest.
+_CATCHUP_START_DELAY_S = 5.0
 
 
 def _job_id(source: str) -> str:
@@ -45,6 +61,95 @@ async def _fire(source: str) -> None:
         await orch.start_harvest([source])
     except Exception:  # noqa: BLE001
         logger.exception("scheduler: scheduled harvest for %s failed", source)
+
+
+def missed_fire_time(
+    cron: str,
+    last_completed: datetime | None,
+    now: datetime | None = None,
+    lookback: timedelta = CATCHUP_LOOKBACK,
+) -> datetime | None:
+    """Return the scheduled instant that was missed while the app was closed,
+    or None if the schedule is up to date.
+
+    A run counts as missed when the cron would have fired at least once after
+    ``last_completed`` (or within ``lookback`` when there is no prior run) and
+    that instant is already in the past. Returns the *earliest* such instant.
+    Invalid crons return None (the caller already logs those on registration).
+    """
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    floor = now - lookback
+    if last_completed is not None:
+        if last_completed.tzinfo is None:
+            last_completed = last_completed.replace(tzinfo=timezone.utc)
+        floor = max(floor, last_completed)
+    try:
+        trigger = CronTrigger.from_crontab(cron, timezone="UTC")
+    except ValueError:
+        return None
+    fire = trigger.get_next_fire_time(None, floor)
+    if fire is None or fire > now:
+        return None
+    return fire
+
+
+def _last_completed(source: str) -> datetime | None:
+    db = _DATA_DIR / "harvest-manifest.db"
+    if not db.exists():
+        return None
+    try:
+        return HarvestManifest(db).get_last_harvest_time(source)
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler: couldn't read last harvest time for %s", source)
+        return None
+
+
+async def catch_up_missed_runs(now: datetime | None = None) -> list[str]:
+    """Run any schedule that should have fired while the app was closed.
+
+    Returns the sources that were kicked off (for logging/tests). All missed
+    sources are passed to one ``start_harvest`` call so they run in parallel
+    like a normal multi-source harvest.
+    """
+    now = now or datetime.now(timezone.utc)
+    missed: list[str] = []
+    for source, body in list_schedules().items():
+        if not isinstance(body, dict) or not body.get("enabled"):
+            continue
+        cron = body.get("cron")
+        if not cron or not isinstance(cron, str):
+            continue
+        fire = missed_fire_time(cron, _last_completed(source), now)
+        if fire is None:
+            continue
+        logger.info(
+            "scheduler: %s missed its %s run at %s (app was closed) — catching up",
+            source,
+            cron,
+            fire.isoformat(),
+        )
+        missed.append(source)
+    if not missed:
+        return []
+    if orch.state.status == "running":
+        logger.info("scheduler: harvest already running, skipping catch-up for %s", missed)
+        return []
+    try:
+        await orch.start_harvest(missed)
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler: catch-up harvest failed for %s", missed)
+        return []
+    return missed
+
+
+async def _delayed_catch_up() -> None:
+    await asyncio.sleep(_CATCHUP_START_DELAY_S)
+    try:
+        await catch_up_missed_runs()
+    except Exception:  # noqa: BLE001
+        logger.exception("scheduler: catch-up check failed")
 
 
 def _instance() -> AsyncIOScheduler:
@@ -101,6 +206,12 @@ def start() -> None:
     if not sched.running:
         sched.start()
         logger.info("scheduler: started")
+        # Fire anything that should have run while the app was closed. Runs
+        # as a background task so startup isn't blocked on a harvest.
+        try:
+            asyncio.get_running_loop().create_task(_delayed_catch_up())
+        except RuntimeError:
+            logger.warning("scheduler: no running loop; skipping catch-up check")
 
 
 def stop() -> None:

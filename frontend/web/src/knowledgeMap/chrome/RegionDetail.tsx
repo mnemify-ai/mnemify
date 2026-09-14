@@ -18,6 +18,8 @@ import {
   notesWrapCls, rulerCls, subKickerCls, summaryCls, titleCls,
 } from './panelShared';
 
+type DetailTab = 'topics' | 'signals' | 'docs';
+
 export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
   const { indexes, attention, notes } = useMapDataReady();
   const navigate = useKnowledgeMapStore((s) => s.navigate);
@@ -82,7 +84,23 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
   );
   const signals = attentionItem?.signals ?? [];
 
-  const [tab, setTab] = useState<'topics' | 'signals' | 'docs'>('topics');
+  // A leaf region has nothing left to drill into, so Topics opens on a dead
+  // end ("No topics in this region.") right when the user has finished
+  // exploring. At a leaf the documents *are* the content, so land on Docs —
+  // unless there are none, in which case Topics may still hold tags.
+  const defaultTab: DetailTab =
+    subRegions.length === 0 && notesInside.length > 0 ? 'docs' : 'topics';
+  const [tab, setTab] = useState<DetailTab>(defaultTab);
+  // This component stays mounted across drill navigation, so the tab has to be
+  // re-defaulted per region. Keyed on the region id rather than run on every
+  // render: a tab the user picked by hand sticks while they stay put.
+  const tabRegionRef = useRef(region?.id);
+  useEffect(() => {
+    if (tabRegionRef.current === region?.id) return;
+    tabRegionRef.current = region?.id;
+    setTab(defaultTab);
+  }, [region?.id, defaultTab]);
+
   if (!region) return null;
 
   return (
@@ -115,7 +133,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
 
       <TabBar
         active={tab}
-        onChange={(k) => setTab(k as typeof tab)}
+        onChange={(k) => setTab(k as DetailTab)}
         tabs={[
           { key: 'topics', label: 'Topics', count: subRegions.length + tagsInside.length },
           { key: 'signals', label: 'Highlights', count: signals.length },
