@@ -161,9 +161,6 @@ def create_app() -> FastAPI:
     except Exception:  # noqa: BLE001
         logger.exception("terrain: fat-artifact migration failed; keeping as-is")
 
-    # Serve the built React app if it exists. `./run.sh` at the repo root builds
-    # it (and `mnemify up` runs after that build); in `./run.sh --dev` users
-    # point at the Vite server for HMR and leave this mount idle. parents[3] of
     # backend/src/api/__init__.py is the repo root; the app lives at
     # frontend/web/ so its build is frontend/web/dist (older layouts used
     # frontend/dist — accept either).
@@ -181,7 +178,7 @@ def create_app() -> FastAPI:
     else:
         logger.info(
             "frontend build not found; API-only mode. "
-            "Run ./run.sh at the repo root, or `npm run dev` in frontend/web/."
+            "Run `npm run build` (or `npm run dev`) in frontend/web/."
         )
 
     return app

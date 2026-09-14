@@ -1,8 +1,14 @@
 # Mnemify
 
-> **Build for us. Used by everyone who works like us.**
+> **Built for us. Shared with everyone who works like us.**
 
-Mnemify is **AI context infrastructure** — a portable, persistent knowledge graph built from the tools you already work in. It runs in three tiers:
+Our knowledge was scattered across Notion, Confluence, Jira, Obsidian, Google meeting notes, Slack threads, and more. We built Mnemify to bring it together into one connected, searchable map — and we use it every day to rediscover what we know and give our AI tools better context.
+
+After several months of heavy daily use, we're sharing it with you.
+
+## How it works
+
+Mnemify is **AI context infrastructure**: a portable, persistent knowledge graph built from the tools you already work in. It runs in three tiers:
 
 1. **Harvest** — pull your documents from Notion, Confluence, Jira, Obsidian, Gmail, Calendar, Slack, and GitHub into native formats, deduplicated by content hash. Deterministic; no LLM.
 2. **Compile** — chunk, tag, semantically cluster (via HDBSCAN), and lay out the harvested content into an emergent terrain: regions and peaks are based on embedding proximity, not a fixed folder taxonomy.
@@ -16,12 +22,12 @@ This repo holds the backend **and** the web app. (The marketing site lives in a 
 
 ## Run it
 
-You need **Python 3.11+** and **Node.js 18+**. These commands work the same on Windows, macOS, and Linux — from the repo root:
+You need **[uv](https://docs.astral.sh/uv/)** (it installs Python 3.11+ for you if needed) and **Node.js 18+**. These commands work the same on Windows, macOS, and Linux — from the repo root:
 
 ```bash
 cd backend
-pip install -e .
-python -m src up --port 8783 --reload --no-browser
+uv sync                                   # creates .venv/ and installs the backend + the `mnemify` CLI
+uv run mnemify up --port 8783 --reload --no-browser
 ```
 
 ```bash
@@ -32,22 +38,14 @@ npm run dev          # Vite dev server on http://localhost:5173, proxies /api/* 
 
 Open **http://localhost:5173**. Both processes need to be running side by side (two terminals); `Ctrl-C` stops each.
 
-### Shortcut for macOS / Linux / WSL / Git Bash
-
-`run.sh` wraps both of the steps above into one command. It's a bash script, so plain Windows `cmd`/PowerShell can't run it directly — use WSL, Git Bash, or a macOS/Linux terminal instead.
+To serve everything from one process instead (no HMR), build the web app once and let the backend host it:
 
 ```bash
-./run.sh                  # build the React app once and serve everything from the
-                          # backend on http://127.0.0.1:8783 — one process,
-                          # no HMR. The "run and fire" mode.
-
-./run.sh --dev            # FastAPI (auto-reload) + Vite dev server (HMR) side by
-                          # side — open http://localhost:5173, Ctrl-C stops both.
-
-./run.sh --no-browser     # don't auto-open a tab.
+cd frontend/web && npm run build          # → frontend/web/dist
+cd ../../backend && uv run mnemify up     # http://127.0.0.1:8783 serves the API + the built app
 ```
 
-The first run installs dependencies automatically (`pip install -e backend`, `npm install`).
+`uv run mnemify …` and `uv run python -m src …` are equivalent. A packaged, downloadable build is planned; for now this is the way to run it.
 
 ### Credentials
 
@@ -102,27 +100,22 @@ Chat uses the compiled terrain graph first, not raw documents first. Retrieval s
 
 ```
 mnemify/
-├── run.sh                  # macOS/Linux/WSL one-command launcher shortcut (above)
 ├── README.md               # this file
 ├── backend/                # Python — harvester + compiler + FastAPI + the `mnemify` CLI
 │   ├── src/                #   harvester/ · terrain/ (the compiler) · api/ · cli.py
 │   ├── tests/              #   pytest suite (live-network tests are opt-in via env)
 │   ├── pyproject.toml      #   deps + the `mnemify` console script
+│   ├── uv.lock             #   pinned dependency lockfile (uv sync reads this)
 │   ├── .env.template       #   copy → .env
 │   └── example_mnemify.yaml
 ├── frontend/web/           # React + Vite + TypeScript — the dashboard + 3D brain map
 │   └── src/                #   app/ (pages, components, API hooks) · brainMap/ (the R3F module)
-└── docs/                   # see below
+└── AGENTS.md               # code orientation for contributors and coding agents
 ```
 
 ## Docs
 
-- [`docs/BACKEND.md`](docs/BACKEND.md) — the backend in depth: the harvester pipeline + plugin contract, the terrain compiler, the FastAPI routes, the CLI, the SQLite schemas.
-- [`docs/FRONTEND.md`](docs/FRONTEND.md) — the React app: the page map, the 3D brain map module, how data flows from `/api/*`, the SSE wire protocol, the theme system.
-- [`docs/TECHNICAL.md`](docs/TECHNICAL.md) — the cross-cutting view: connect → harvest → compile → v2 brain-map → v3 hex render, the event-bus/SSE architecture, the on-disk `.mnemify/` layout, the schema contracts.
-- [`docs/TESTING.md`](docs/TESTING.md) — the manual end-to-end smoke test (the automated suites are `pytest -q` in `backend/` and `npm test` in `frontend/web/`).
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — the product/UX menu for what's next.
-- [`docs/BACKLOG.md`](docs/BACKLOG.md) — the engineering backlog of small follow-ups.
+[`AGENTS.md`](AGENTS.md) is the orientation guide: where each part of the code lives, the on-disk `.mnemify/` layout, the compiler file map, and the invariants to keep. Each package also has its own README (`backend/README.md`, `frontend/README.md`). Automated tests: `uv run pytest -q` in `backend/`, `npm test` in `frontend/web/`.
 
 ## License
 

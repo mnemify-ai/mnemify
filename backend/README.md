@@ -8,18 +8,18 @@ Everything Mnemify writes lives under `.mnemify/` (gitignored): `raw/`, `normali
 
 ```bash
 cd backend
-pip install -e ".[dev]"             # installs the package + the `mnemify` console script
+uv sync --extra dev                 # creates .venv/ with the package, the `mnemify` CLI, and the test tools
 cp .env.template .env               # add NOTION_TOKEN / CONFLUENCE_* / JIRA_* / SLACK_* / GITHUB_TOKEN / OPENAI_API_KEY as needed
 cp example_mnemify.yaml mnemify.yaml   # Notion is enabled by default — flip other sources on here too
 
-mnemify harvest                  # pull docs from every source enabled in mnemify.yaml
-mnemify terrain build --ai-mode local   # compile → .mnemify/{terrain,mocknotes,render-data}.json (no API key)
-mnemify up                       # start the FastAPI server (also serves the built React SPA)
+uv run mnemify harvest           # pull docs from every source enabled in mnemify.yaml
+uv run mnemify terrain build --ai-mode local   # compile → .mnemify/{terrain,mocknotes,render-data}.json (no API key)
+uv run mnemify up                # start the FastAPI server (also serves the built React SPA)
 ```
 
 > Without a `mnemify.yaml`, every source defaults to disabled and `mnemify harvest` no-ops with "No sources to harvest" — the `cp example_mnemify.yaml mnemify.yaml` step above is what turns Notion on.
 
-> The whole app (backend + the React UI) is normally launched from the repo root — see [Run it](../README.md#run-it) in the repo README for the cross-platform steps, or `./run.sh` as a macOS/Linux/WSL shortcut. `mnemify <cmd>` and `python -m src <cmd>` are equivalent.
+> The whole app (backend + the React UI) is normally launched from the repo root — see [Run it](../README.md#run-it) in the repo README for the cross-platform steps. `uv run mnemify <cmd>` and `uv run python -m src <cmd>` are equivalent (or activate `.venv/` and drop the `uv run` prefix).
 
 ## The CLI
 
@@ -39,15 +39,13 @@ mnemify up                       # start the FastAPI server (also serves the bui
 ## Tests
 
 ```bash
-pytest -q                              # the full suite (live-network tests skip without creds)
-pytest -q --ignore=tests/test_integration_harvest.py   # everything except the opt-in live-Notion module
-ruff check src/                        # lint
-pytest -q --mnemify-debug -v        # verbose with debug logging
+uv run pytest -q                       # the full suite (live-network tests skip without creds)
+uv run pytest -q --ignore=tests/test_integration_harvest.py   # everything except the opt-in live-Notion module
+uv run ruff check src/                 # lint
+uv run pytest -q --mnemify-debug -v    # verbose with debug logging
 ```
 
 ## More
 
-- [`../docs/BACKEND.md`](../docs/BACKEND.md) — the architecture in depth: the harvester pipeline + plugin contract, the terrain compiler, the FastAPI routes, the SQLite schemas.
-- [`../docs/TECHNICAL.md`](../docs/TECHNICAL.md) — the end-to-end data flow + the event-bus/SSE architecture.
-- [`../docs/TESTING.md`](../docs/TESTING.md) — the manual end-to-end smoke test.
+- [`../AGENTS.md`](../AGENTS.md) — code orientation: the harvester plugin contract, the terrain compiler file map, the API/SSE layout, the on-disk `.mnemify/` state.
 - `example_mnemify.yaml` — an annotated source-config example (copy to `mnemify.yaml`, gitignored).

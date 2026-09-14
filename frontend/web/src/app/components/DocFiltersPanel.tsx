@@ -140,7 +140,6 @@ export function DocFiltersPanel({
  *
  * This is intentionally smaller than the Tier 3 plan called for; the original
  * design assumed `DocRow` already carried tag ids, which it doesn't.
- * Tracked in `docs/BACKLOG.md` (see "Documents: expose tag mappings").
  */
 function RegionTagFilterStatus() {
   const { data, empty } = useMapData();
