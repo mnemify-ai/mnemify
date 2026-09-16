@@ -1,8 +1,8 @@
 {
   "name": "mnemify-web",
   "private": true,
-  "version": "0.1.0",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "version": "1.0.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

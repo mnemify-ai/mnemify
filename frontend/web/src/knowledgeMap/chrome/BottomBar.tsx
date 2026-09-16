@@ -3,7 +3,6 @@
 // row so drei <Html> tag labels can't overlap it.
 
 import { StatsPanel } from './StatsPanel';
-import { useConnections } from '../../app/api/connections';
 import { useDocumentStats } from '../../app/api/documents';
 import { useTerrainReport } from '../../app/api/terrain';
 import { relativeTime } from '../../app/lib/relativeTime';
@@ -67,19 +66,25 @@ function KnowledgeSummary() {
 }
 
 function SourcesStrip() {
-  const connections = useConnections();
-  const connected = (connections.data ?? []).filter((c) => c.status === 'connected');
-  if (connected.length === 0) return null;
+  // Read from the harvest manifest (same source as KnowledgeSummary's doc and
+  // source counts) rather than from /connections: a source whose config block
+  // or credentials were removed still has harvested docs on the map, and the
+  // left half of this bar already counts them. Both halves must agree.
+  const stats = useDocumentStats();
+  const bySource = Object.entries(stats.data?.by_source ?? {})
+    .filter(([, n]) => n > 0)
+    .sort(([, a], [, b]) => b - a);
+  if (bySource.length === 0) return null;
   return (
     <div
       className="flex items-center gap-[18px] font-[ui-serif,Georgia,'Times_New_Roman',serif] text-[11px] text-ink/80"
       aria-label="Harvested sources"
     >
-      {connected.map((c) => (
-        <span key={c.source} className="inline-flex items-center gap-1.5">
-          <span className={`w-2 h-2 rounded-full inline-block ${sourceMeta(c.source).dotClass}`} />
-          {sourceMeta(c.source).label}
-          <span className="text-muted">{c.doc_count} docs</span>
+      {bySource.map(([source, count]) => (
+        <span key={source} className="inline-flex items-center gap-1.5">
+          <span className={`w-2 h-2 rounded-full inline-block ${sourceMeta(source).dotClass}`} />
+          {sourceMeta(source).label}
+          <span className="text-muted">{count} docs</span>
         </span>
       ))}
     </div>

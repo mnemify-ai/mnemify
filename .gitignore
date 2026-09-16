@@ -68,5 +68,9 @@ temp_output/
 
 *.zip
 *.mnemify*
+# The committed demo dataset (see backend/.mnemify_example/README.md) is the one exception.
+!/backend/.mnemify_example/
 
 /data
+# Demo video source (hosted as a GitHub user-attachment, linked from README)
+assets/*.mp4

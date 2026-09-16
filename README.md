@@ -1,6 +1,27 @@
-# Mnemify
+<p align="center">
+  <img src="assets/logo.png" alt="Mnemify — Your knowledge. A world you can explore." width="100%">
+</p>
 
-> **Built for us. Shared with everyone who works like us.**
+<h3 align="center">Built for us. Shared with everyone who works like us.</h3>
+
+<p align="center">
+  <a href="https://mnemify.ai"><img alt="Website" src="https://img.shields.io/badge/website-mnemify.ai-8b2e4a?style=flat-square"></a>
+  <a href="https://github.com/mnemify-ai/mnemify/releases"><img alt="Version" src="https://img.shields.io/badge/version-v1.0.0-1f6feb?style=flat-square"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-6a994e?style=flat-square"></a>
+  <a href="backend/pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-%3E%3D3.11-3776ab?style=flat-square&logo=python&logoColor=white"></a>
+  <a href="frontend/web/package.json"><img alt="Node" src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white"></a>
+  <a href="https://github.com/mnemify-ai/mnemify/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/mnemify-ai/mnemify?style=flat-square&color=e0a03a"></a>
+</p>
+
+<br>
+
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/2bf6614e-cd72-4a0c-9ea2-017d22d91155">
+    <img src="assets/demo.gif" alt="Mnemify demo: navigating the 3D knowledge map and chatting over it" width="100%">
+  </a>
+</p>
+
+<p align="center"><sub>Click the preview to watch the full-resolution demo.</sub></p>
 
 Our knowledge was scattered across Notion, Confluence, Jira, Obsidian, Google meeting notes, Slack threads, and more. We built Mnemify to bring it together into one connected, searchable map — and we use it every day to rediscover what we know and give our AI tools better context.
 
@@ -11,12 +32,10 @@ After several months of heavy daily use, we're sharing it with you.
 Mnemify is **AI context infrastructure**: a portable, persistent knowledge graph built from the tools you already work in. It runs in three tiers:
 
 1. **Harvest** — pull your documents from Notion, Confluence, Jira, Obsidian, Gmail, Calendar, Slack, and GitHub into native formats, deduplicated by content hash. Deterministic; no LLM.
-2. **Compile** — chunk, tag, semantically cluster (via HDBSCAN), and lay out the harvested content into an emergent terrain: regions and peaks are based on embedding proximity, not a fixed folder taxonomy.
+2. **Compile** — chunk, tag, semantically cluster, and lay out the harvested content into an emergent terrain: regions and peaks are based on embedding proximity, not a fixed folder taxonomy.
 3. **Surface** — a FastAPI server + a React app: a 3D hex map of everything you've worked on, source-grounded attention signals, chat over the compiled terrain graph, and JSON artifacts downstream AI clients can use as compact context.
 
-Everything Mnemify generates lives under `.mnemify/` (gitignored). Nothing gets written into the repo.
-
-This repo holds the backend **and** the web app. (The marketing site lives in a separate repo.)
+Everything Mnemify generates lives in a local `.mnemify/` folder on your machine. Nothing is written back to your sources.
 
 ---
 
@@ -45,78 +64,53 @@ cd frontend/web && npm run build          # → frontend/web/dist
 cd ../../backend && uv run mnemify up     # http://127.0.0.1:8783 serves the API + the built app
 ```
 
-`uv run mnemify …` and `uv run python -m src …` are equivalent. A packaged, downloadable build is planned; for now this is the way to run it.
+`uv run mnemify …` and `uv run python -m src …` are equivalent.
 
 ### Credentials
 
-Copy the template and fill in whatever sources you want:
+Most of the setup happens in the app. Open **Build → Sources** and the connect wizard for each source walks you through pasting a token, validating it, and choosing what to harvest. Notion and Confluence tokens are saved to `backend/.env` for you; Obsidian just needs a vault path. A few sources still need a manual step:
 
 ```bash
 cp backend/.env.template backend/.env
 ```
 
-- `NOTION_TOKEN` — a Notion internal-integration token (and share the pages you want to harvest with the integration).
-- `CONFLUENCE_EMAIL` / `CONFLUENCE_API_TOKEN`, `JIRA_EMAIL` / `JIRA_API_TOKEN` — Atlassian cloud email + an [API token](https://id.atlassian.com/manage-profile/security/api-tokens).
+- `JIRA_EMAIL` / `JIRA_API_TOKEN` — your Atlassian cloud email + an [API token](https://id.atlassian.com/manage-profile/security/api-tokens).
 - `SLACK_USER_TOKEN` — a Slack user OAuth token (`xoxp-…`) from your own Slack App (steps in `.env.template`).
 - `GITHUB_TOKEN` — a fine-grained GitHub personal access token (`github_pat_…`) scoped to the repos you want to harvest.
-- **Gmail / Calendar** use Google OAuth, not a `.env` token: drop your Google Cloud `oauth_client.json` at `backend/src/harvester/_google/oauth_client.json`, then run `mnemify login --source gmail` / `--source calendar`. Full setup steps are in `.env.template`.
-- **Obsidian** needs nothing — just a vault path, set in the connect wizard.
-- `OPENAI_API_KEY` — only needed for the **Compile** step's OpenAI path. The compiler also has a deterministic `--ai-mode local` that needs no key and no network.
+- **Gmail / Calendar** use Google OAuth: drop your Google Cloud `oauth_client.json` at `backend/src/harvester/_google/oauth_client.json`, then run `mnemify login --source gmail` / `--source calendar`. Full steps are in `.env.template`.
 
-Enabled sources, scopes, and filters live in `mnemify.yaml` (copy `backend/example_mnemify.yaml` to start, or let the connect wizards in the UI write it for you). Tokens stay in `.env` — never in the YAML, never committed.
+Tokens only ever live in `.env`, never in `mnemify.yaml` and never in the repo.
+
+### AI models
+
+The **Compile** step and **Chat** need a language model. You have three options, and Mnemify picks up whichever you have:
+
+- **OpenAI** (recommended) — set `OPENAI_API_KEY` in `backend/.env`. This is the default mode and the one we run day to day.
+- **Claude Code** — if the `claude` CLI is installed and logged in, Mnemify detects it automatically and can use your Claude subscription for compile (`--ai-mode claude`) and chat, no API key needed. An Anthropic API key (`ANTHROPIC_API_KEY`, `--ai-mode anthropic`) works too.
+- **Local** — `--ai-mode local` compiles deterministically with no key and no network. Good for a first look; the map is much better with a real model.
+
+Even with Claude, keep an `OPENAI_API_KEY` set: embeddings for chunking and clustering always run through OpenAI, so every mode except local needs it. Model and mode can be changed later under **Settings → AI & Models**.
 
 ### Then
 
-Open the app → **Settings → Connections**, connect a source, run a **harvest**, then a **compile**. The home page turns into a living map of everything you've worked on. (Until you compile, it shows the connect → harvest → compile onboarding screen.)
+Open the app → **Build → Sources**, connect a source, run a **harvest**, then a **compile**. The home page turns into a living map of everything you've worked on. (Until you compile, it shows the connect → harvest → compile onboarding screen.)
 
 ---
 
-## V1 product contract
+## What it does (and doesn't)
 
-Mnemify V1 is a **read-only active knowledge terrain**. It does not edit Notion, Confluence, Jira, or source systems, and it does not create tasks or write comments back. The terrain is the semantic source of navigation truth; operational facts are overlays and panels, not folders inside the map.
+Mnemify is **read-only**. It never edits Notion, Confluence, Jira, or any other source, and it never creates tasks or writes comments back. Your source pages stay the system of record; Mnemify is the map on top of them.
 
-The compiler emits:
+On top of the semantic map, Mnemify pulls out **attention signals** straight from your content — todos, risks, decisions, open questions, owners, and recent changes — and rolls them up into an urgency score for every region and topic. Flip the map into the **Burning** overlay and the same terrain is tinted by what needs attention, without the geography changing under you. Clicking a region or tag shows its summary, active documents, and every signal behind it, each linked back to the source page.
 
-- `terrain.json` — the rich v2 knowledge terrain with regions, tags, source notes, compiled summaries, graph nodes/edges, and attention signals.
-- `render-data.json` — the compact v3 hex artifact used by the 3D map.
-- `mocknotes.json` — source-note registry for citations and panels.
-
-The V1 attention layer extracts source-grounded signals from harvested content:
-
-- `todo`
-- `risk`
-- `decision`
-- `open_question`
-- `owner`
-- `recent_change`
-
-Signals roll up into `attentionScore` and `attentionLevel` on every region and tag. The frontend can switch from the normal semantic view to a **Burning** overlay, tinting the same terrain by urgency without changing geography. Region/tag panels show summaries, active docs, todos, risks, decisions, owners, recent changes, open questions, and related source pages.
-
-Chat uses the compiled terrain graph first, not raw documents first. Retrieval seeds from regions, tags, entities, and attention signals, then only cites source notes/chunks needed for grounding. This keeps context bundles smaller and faster than dumping full documents into the model.
+**Chat** works over the compiled map rather than over raw documents: it starts from regions, topics, entities, and attention signals, then cites only the source passages it needs to ground an answer. That keeps context small and fast, and it's the same compact context Mnemify can hand to your other AI tools.
 
 ---
 
-## Repo layout
+## Contributing
 
-```
-mnemify/
-├── README.md               # this file
-├── backend/                # Python — harvester + compiler + FastAPI + the `mnemify` CLI
-│   ├── src/                #   harvester/ · terrain/ (the compiler) · api/ · cli.py
-│   ├── tests/              #   pytest suite (live-network tests are opt-in via env)
-│   ├── pyproject.toml      #   deps + the `mnemify` console script
-│   ├── uv.lock             #   pinned dependency lockfile (uv sync reads this)
-│   ├── .env.template       #   copy → .env
-│   └── example_mnemify.yaml
-├── frontend/web/           # React + Vite + TypeScript — the dashboard + 3D brain map
-│   └── src/                #   app/ (pages, components, API hooks) · brainMap/ (the R3F module)
-└── AGENTS.md               # code orientation for contributors and coding agents
-```
-
-## Docs
-
-[`AGENTS.md`](AGENTS.md) is the orientation guide: where each part of the code lives, the on-disk `.mnemify/` layout, the compiler file map, and the invariants to keep. Each package also has its own README (`backend/README.md`, `frontend/README.md`). Automated tests: `uv run pytest -q` in `backend/`, `npm test` in `frontend/web/`.
+Issues and pull requests are welcome. [`AGENTS.md`](AGENTS.md) is the orientation guide for anyone working on the code, and each package has its own README ([`backend/`](backend/README.md), [`frontend/`](frontend/README.md)) with setup, commands, and tests.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify, and redistribute for any noncommercial purpose. Commercial use requires a separate agreement with the copyright holders.
+[MIT](LICENSE) — open source. Use it at work, modify it, redistribute it, and build products on top of it. Just keep the copyright notice.
