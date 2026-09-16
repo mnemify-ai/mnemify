@@ -37,3 +37,4 @@ connect → harvest → compile onboarding screen.
 ## More
 
 - [`../AGENTS.md`](../AGENTS.md) — code orientation: the app's folder layout, how it talks to `/api/*`, the end-to-end harvest → compile → map flow.
+- [`../LICENSE`](../LICENSE) — MIT; the whole repository, including this package, is licensed under it.
