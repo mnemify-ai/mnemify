@@ -206,9 +206,9 @@ def _llm_concurrency() -> int:
     """Max concurrent LLM calls. ``TERRAIN_LLM_CONCURRENCY=1`` reproduces the
     old fully-serial behavior (a verification lever)."""
     try:
-        return max(1, int(os.getenv("TERRAIN_LLM_CONCURRENCY", "8")))
+        return max(1, int(os.getenv("TERRAIN_LLM_CONCURRENCY", "16")))
     except ValueError:
-        return 8
+        return 16
 
 
 def _note_reuse_overlap() -> float:
@@ -241,9 +241,9 @@ def _extract_batch_size() -> int:
     batching amortizes it across many chunks. ``TERRAIN_EXTRACT_BATCH_SIZE=1``
     reproduces the old one-call-per-chunk behavior."""
     try:
-        return max(1, int(os.getenv("TERRAIN_EXTRACT_BATCH_SIZE", "8")))
+        return max(1, int(os.getenv("TERRAIN_EXTRACT_BATCH_SIZE", "4")))
     except ValueError:
-        return 8
+        return 4
 
 
 # A batch is also capped by total content chars so a few huge chunks don't form
@@ -462,10 +462,10 @@ class TerrainCompiler:
         claude_name_model: str | None = None,
         embedding_model: str = "text-embedding-3-large",
         # Max concurrent LLM calls during enrich; None falls back to the
-        # TERRAIN_LLM_CONCURRENCY env var (default 8) via _llm_concurrency().
+        # TERRAIN_LLM_CONCURRENCY env var (default 16) via _llm_concurrency().
         llm_concurrency: int | None = None,
         # Chunks packed per feature-extraction call; None falls back to the
-        # TERRAIN_EXTRACT_BATCH_SIZE env var (default 8) via _extract_batch_size().
+        # TERRAIN_EXTRACT_BATCH_SIZE env var (default 4) via _extract_batch_size().
         extract_batch_size: int | None = None,
         # Reasoning effort per step ("low"/"medium"/"high"; None = provider
         # default). Applies to every LLM engine: OpenAI ``reasoning.effort``,

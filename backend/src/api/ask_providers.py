@@ -149,7 +149,7 @@ async def _complete_openai(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        max_tokens=400,
+        max_completion_tokens=400,
         response_format={"type": "json_object"},
     )
     return resp.choices[0].message.content or ""
@@ -269,7 +269,7 @@ async def _stream_openai(
     stream = await client.chat.completions.create(
         model=model,
         messages=chat_messages,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
         stream=True,
     )
     async for chunk in stream:

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from itertools import combinations
 from typing import Any, Callable
@@ -18,6 +20,15 @@ logger = logging.getLogger(__name__)
 
 CANDIDATE_THRESHOLD = 0.55
 MAX_CANDIDATE_PAIRS = 40
+
+
+def _judge_concurrency() -> int:
+    """Max concurrent pair judgments. Shares the compiler's LLM fan-out knob
+    (``TERRAIN_LLM_CONCURRENCY``, default 16); ``1`` reproduces the serial loop."""
+    try:
+        return max(1, int(os.getenv("TERRAIN_LLM_CONCURRENCY", "16")))
+    except ValueError:
+        return 16
 
 
 _SYSTEM_PROMPT = (
@@ -118,12 +129,25 @@ class RegionMerger:
             )
             return roots
 
-        verdicts = []
-        for candidate in candidates:
-            verdict = self._judge_pair(candidate, roots, chunks_by_id)
-            if on_verdict is not None:
+        # Judge candidate pairs concurrently. Each judgment reads only the
+        # static ``roots``/``chunks_by_id`` (never a prior verdict), and
+        # ``_apply_verdicts`` is order-independent (union-find), so fanning
+        # out changes wall time only. Results are collected back in candidate
+        # order so ``on_verdict`` fires — and the audit rows persist — in the
+        # same deterministic order as the previous serial loop.
+        workers = max(1, min(len(candidates), _judge_concurrency()))
+        if workers == 1:
+            verdicts = [self._judge_pair(c, roots, chunks_by_id) for c in candidates]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                verdicts = list(
+                    executor.map(
+                        lambda c: self._judge_pair(c, roots, chunks_by_id), candidates
+                    )
+                )
+        if on_verdict is not None:
+            for verdict in verdicts:
                 on_verdict(verdict)
-            verdicts.append(verdict)
         if not allow_merge:
             # Downgrade merges to keep_separate; nest verdicts still apply.
             verdicts = [

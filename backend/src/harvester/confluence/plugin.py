@@ -28,6 +28,7 @@ Design decisions from 2026-04-19:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -278,8 +279,13 @@ class ConfluenceHarvesterPlugin(SourcePlugin):
         page_id = doc_ref.source_id
         logger.debug("ConfluenceHarvesterPlugin.fetch_document: page_id=%s", page_id)
 
-        page = await self.pages.get_full_page(page_id)
-        attachments_raw = await self.pages.list_page_attachments(page_id)
+        # The page body and its attachment listing are independent calls;
+        # run them concurrently to overlap their latency (same two requests
+        # as before, just not back-to-back).
+        page, attachments_raw = await asyncio.gather(
+            self.pages.get_full_page(page_id),
+            self.pages.list_page_attachments(page_id),
+        )
 
         body_xhtml = (
             (page.get("body") or {}).get("storage", {}).get("value", "")

@@ -24,6 +24,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import mimetypes
@@ -101,15 +102,21 @@ class PageExtractor:
             f"/blocks/{page_id}/children",
         )
 
-        blocks = []
-        for raw in raw_blocks:
-            block = self._parse_block(raw)
+        blocks = [self._parse_block(raw) for raw in raw_blocks]
 
-            # Recursively fetch children if present
-            if block.has_children:
-                block.children = await self.get_page_blocks(block.block_id, depth + 1)
-
-            blocks.append(block)
+        # Fetch nested children for all sibling blocks concurrently. This
+        # issues exactly the same requests as a sequential loop (one
+        # children-listing per block with ``has_children``) but overlaps
+        # their latency; the client's shared rate limiter still bounds the
+        # total request rate, so it can't push harder on the API. Results
+        # are assigned back by position so block order is unchanged.
+        parents = [b for b in blocks if b.has_children]
+        if parents:
+            children_lists = await asyncio.gather(
+                *(self.get_page_blocks(b.block_id, depth + 1) for b in parents)
+            )
+            for block, children in zip(parents, children_lists):
+                block.children = children
 
         if depth == 0:
             logger.info(f"Fetched {self._count_blocks(blocks)} blocks for page {page_id}")
