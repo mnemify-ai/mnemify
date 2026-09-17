@@ -95,6 +95,8 @@ Even with Claude, keep an `OPENAI_API_KEY` set: embeddings for chunking and clus
 
 Open the app → **Build → Sources**, connect a source, run a **harvest**, then a **compile**. The home page turns into a living map of everything you've worked on. (Until you compile, it shows the connect → harvest → compile onboarding screen.)
 
+The first harvest and compile take a while. After that the results are cached, so later runs are much faster.
+
 ---
 
 ## What it does (and doesn't)

@@ -105,8 +105,8 @@ COMPILE_DEFAULTS: dict = {
     "claude_name_model": "opus",
     "openai_model": "gpt-5.6-luna",
     "embedding_model": "text-embedding-3-large",
-    "llm_concurrency": 8,
-    "extract_batch_size": 8,
+    "llm_concurrency": 16,
+    "extract_batch_size": 4,
     # Reasoning effort per step, for every LLM engine (OpenAI reasoning.effort,
     # Claude API output_config.effort, Claude CLI --effort). "" = provider
     # default. Extraction is high-volume + checkable → low; naming/notes are
