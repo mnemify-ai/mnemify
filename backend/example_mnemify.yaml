@@ -18,69 +18,84 @@ sources:
     space_keys: ["DOCS", "PROD"]   # which spaces to harvest
     concurrency: 3
 
-  jira:
-    enabled: false
-    base_url: "https://your-team.atlassian.net"
-    email_env: JIRA_EMAIL
-    token_env: JIRA_API_TOKEN
-    project_keys: ["PROJ"]         # REQUIRED
-    story_points_field: null       # null = auto-discover
-    concurrency: 3
-
   obsidian:
     enabled: false
     vault_path: "~/Documents/Notes"
     concurrency: 10
 
-  gmail:
-    enabled: false
-    # OAuth: drop your Google Cloud client_secret JSON at
-    #   backend/src/harvester/_google/oauth_client.json
-    # then run `mnemify login --source gmail`. See backend/.env.template
-    # for the one-time Google Cloud Console setup.
-    label_exclude: ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL"]
-    sender_allowlist: []           # empty = every sender
-    max_threads_per_run: null      # null = unbounded; set e.g. 200 for a first sample
-    concurrency: 3
-
-  calendar:
-    enabled: false
-    # Shares the same OAuth client as gmail. After Gmail's `mnemify login`,
-    # run `mnemify login --source calendar` to grant calendar.readonly.
-    calendar_ids: ["primary"]      # add shared / team calendar IDs as needed
-    past_days: 90
-    future_days: 90
-    show_deleted: false
-    concurrency: 3
-
-  slack:
-    enabled: false
-    token_env: SLACK_USER_TOKEN    # User OAuth Token (xoxp-…) — see .env.template
-    document_mode_default: thread  # thread | channel_summary | both
-    past_days: 90                  # cutoff for history walks (esp. DMs)
-    summary_window: day            # day | week (week reserved for V1.1)
-    name_cache_ttl_seconds: 3600
-    concurrency: 3
-    channels:                      # REQUIRED allowlist — no auto-discovery
-      - id: C0123456789            # #engineering (public channel)
-        mode: both                 # optional per-channel override
-      - id: C0987654321            # #standups
-        mode: channel_summary
-      - id: D0ABCDE1234            # a DM — past_days override scopes the walk
-        past_days: 30
-
-  github:
-    enabled: false
-    token_env: GITHUB_TOKEN        # Fine-grained PAT recommended — see .env.template
-    repos:                         # REQUIRED — no auto-discovery in V1
-      - "your-org/mnemify"
-      - "your-handle/notes"
-    include_issues: true
-    include_prs: true
-    include_discussions: true
-    include_readme: true
-    bot_authors_exclude:           # skip noise from the big three dependency bots
-      - "dependabot[bot]"
-      - "github-actions[bot]"
-      - "renovate[bot]"
-    concurrency: 3
+# ═══════════════════════════════════════════════════════════════════════════
+# Experimental — not enabled in this build
+# ═══════════════════════════════════════════════════════════════════════════
+# These five connectors are complete and tested but are not exposed by this
+# release (see backend/src/sources.py). Their code stays in the tree; their
+# third-party clients moved to optional extras (`uv sync --extra all-sources`).
+# To run one in a dev session, un-comment its block below — keeping the two
+# leading spaces so it nests under `sources:` — and start the server with:
+#
+#     MNEMIFY_SOURCES=notion,confluence,obsidian,jira mnemify up
+#
+# Nothing below has been changed; it is the configuration verbatim from when
+# these connectors shipped.
+# ───────────────────────────────────────────────────────────────────────────
+#
+#   jira:
+#     enabled: false
+#     base_url: "https://your-team.atlassian.net"
+#     email_env: JIRA_EMAIL
+#     token_env: JIRA_API_TOKEN
+#     project_keys: ["PROJ"]         # REQUIRED
+#     story_points_field: null       # null = auto-discover
+#     concurrency: 3
+#
+#   gmail:
+#     enabled: false
+#     # OAuth: drop your Google Cloud client_secret JSON at
+#     #   backend/src/harvester/_google/oauth_client.json
+#     # then run `mnemify login --source gmail`. See backend/.env.template
+#     # for the one-time Google Cloud Console setup.
+#     label_exclude: ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL"]
+#     sender_allowlist: []           # empty = every sender
+#     max_threads_per_run: null      # null = unbounded; set e.g. 200 for a first sample
+#     concurrency: 3
+#
+#   calendar:
+#     enabled: false
+#     # Shares the same OAuth client as gmail. After Gmail's `mnemify login`,
+#     # run `mnemify login --source calendar` to grant calendar.readonly.
+#     calendar_ids: ["primary"]      # add shared / team calendar IDs as needed
+#     past_days: 90
+#     future_days: 90
+#     show_deleted: false
+#     concurrency: 3
+#
+#   slack:
+#     enabled: false
+#     token_env: SLACK_USER_TOKEN    # User OAuth Token (xoxp-…) — see .env.template
+#     document_mode_default: thread  # thread | channel_summary | both
+#     past_days: 90                  # cutoff for history walks (esp. DMs)
+#     summary_window: day            # day | week (week reserved for V1.1)
+#     name_cache_ttl_seconds: 3600
+#     concurrency: 3
+#     channels:                      # REQUIRED allowlist — no auto-discovery
+#       - id: C0123456789            # #engineering (public channel)
+#         mode: both                 # optional per-channel override
+#       - id: C0987654321            # #standups
+#         mode: channel_summary
+#       - id: D0ABCDE1234            # a DM — past_days override scopes the walk
+#         past_days: 30
+#
+#   github:
+#     enabled: false
+#     token_env: GITHUB_TOKEN        # Fine-grained PAT recommended — see .env.template
+#     repos:                         # REQUIRED — no auto-discovery in V1
+#       - "your-org/mnemify"
+#       - "your-handle/notes"
+#     include_issues: true
+#     include_prs: true
+#     include_discussions: true
+#     include_readme: true
+#     bot_authors_exclude:           # skip noise from the big three dependency bots
+#       - "dependabot[bot]"
+#       - "github-actions[bot]"
+#       - "renovate[bot]"
+#     concurrency: 3

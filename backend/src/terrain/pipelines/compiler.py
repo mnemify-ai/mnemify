@@ -443,7 +443,7 @@ class TerrainCompiler:
 
     def __init__(
         self,
-        data_dir: str | Path = ".mnemify",
+        data_dir: str | Path | None = None,
         *,
         manifest_path: str | Path | None = None,
         store: TerrainStore | None = None,
@@ -476,6 +476,12 @@ class TerrainCompiler:
         workspace: str = "Mnemify",
         owner: Owner | None = None,
     ):
+        # Resolved here, not in the signature: a default argument would bind
+        # one path at import time and ignore later MNEMIFY_HOME changes.
+        if data_dir is None:
+            from src import paths
+
+            data_dir = paths.data_dir()
         self.data_dir = Path(data_dir)
         self.manifest_path = (
             Path(manifest_path)

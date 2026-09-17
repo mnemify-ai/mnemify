@@ -1,0 +1,198 @@
+name: install-smoke
+
+# The install path is the product for a technical user: clone (or unzip), run
+# one script, get a working app whose data lives outside the checkout. This
+# workflow runs that script on all three OSes for real - it installs uv the
+# same way a user would, builds the frontend, creates the desktop launcher,
+# starts the server, and checks where the state landed.
+#
+# Deliberately NOT pre-installing uv: "does setup install uv on a machine that
+# has none" is one of the things under test.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: install-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    # The frontend build alone is 1-3 minutes, and `npm ci` on Windows is
+    # reliably worse. 30 leaves room without letting a hang burn an hour.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      # No prompts, and setup does not launch the app at the end.
+      MNEMIFY_NONINTERACTIVE: "1"
+      MNEMIFY_SMOKE_PORT: "8789"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node is a checked prerequisite of setup.*, never installed by it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+
+      # `runner.temp` is not available in a job-level `env:` block, so the
+      # scratch locations are published through $GITHUB_ENV instead.
+      # MNEMIFY_LOG_DIR is created here on purpose: mnemify.sh/.ps1 only read
+      # it under --gui, and the artifact upload needs the directory to exist
+      # either way (the server's own stdout is written into it below).
+      - name: Scratch locations (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p "$RUNNER_TEMP/mnemify-home" "$RUNNER_TEMP/launchers" "$RUNNER_TEMP/logs"
+          {
+            echo "MNEMIFY_HOME=$RUNNER_TEMP/mnemify-home"
+            echo "MNEMIFY_LAUNCHER_DIR=$RUNNER_TEMP/launchers"
+            echo "MNEMIFY_LOG_DIR=$RUNNER_TEMP/logs"
+          } >> "$GITHUB_ENV"
+
+      - name: Scratch locations (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($d in 'mnemify-home', 'launchers', 'logs') {
+            New-Item -ItemType Directory -Force -Path (Join-Path $env:RUNNER_TEMP $d) | Out-Null
+          }
+          @(
+            "MNEMIFY_HOME=$env:RUNNER_TEMP\mnemify-home"
+            "MNEMIFY_LAUNCHER_DIR=$env:RUNNER_TEMP\launchers"
+            "MNEMIFY_LOG_DIR=$env:RUNNER_TEMP\logs"
+          ) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # ---------------------------------------------------------- install
+      - name: setup.sh --no-launch
+        if: runner.os != 'Windows'
+        run: sh setup.sh --no-launch
+
+      - name: setup.ps1 -NoLaunch
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # Invoked through Windows PowerShell 5.1 with -ExecutionPolicy Bypass:
+        # the exact command setup.bat runs when a user double-clicks it.
+        #
+        # This is also where a Windows-runner difference would show up: with no
+        # uv on the box, setup.ps1 prefers `winget install astral-sh.uv` and
+        # falls back to the official `irm https://astral.sh/uv/install.ps1`
+        # installer. GitHub's windows images do not reliably provide a usable
+        # winget in a non-interactive session, so the fallback is the path we
+        # expect to exercise here. If this step fails at "installing uv", read
+        # the log before changing the script - the failure is the finding.
+        run: |
+          $ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $ps51 -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1 -NoLaunch
+          if ($LASTEXITCODE -ne 0) { throw "setup.ps1 exited with $LASTEXITCODE" }
+
+      # ------------------------------------------------------------ start
+      - name: Start Mnemify
+        if: runner.os != 'Windows'
+        run: |
+          nohup sh mnemify.sh --no-browser --port "$MNEMIFY_SMOKE_PORT" \
+            > "$MNEMIFY_LOG_DIR/server.log" 2>&1 &
+          echo "MNEMIFY_SMOKE_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Start Mnemify
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          # The bare `--` is load-bearing. scripts\mnemify.ps1 uses
+          # [CmdletBinding()], so `--no-browser` would be parsed as a parameter
+          # *name* and fail to bind; `--` ends parameter parsing and sends the
+          # rest to ValueFromRemainingArguments. The script's own .DESCRIPTION
+          # documents the same invocation.
+          # stdout and stderr must be different files - Start-Process refuses
+          # to point both at one.
+          $p = Start-Process -FilePath $ps51 -PassThru -NoNewWindow `
+            -WorkingDirectory $env:GITHUB_WORKSPACE `
+            -RedirectStandardOutput (Join-Path $env:MNEMIFY_LOG_DIR 'server.out.log') `
+            -RedirectStandardError  (Join-Path $env:MNEMIFY_LOG_DIR 'server.err.log') `
+            -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                          '-File', 'scripts\mnemify.ps1',
+                          '--no-browser', '--port', "$env:MNEMIFY_SMOKE_PORT"
+          "MNEMIFY_SMOKE_PID=$($p.Id)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # ----------------------------------------------------------- assert
+      # Polls /api/health, checks ok / layout / version / data_dir, checks the
+      # launcher, checks that nothing was written into the checkout, then
+      # POSTs /api/system/shutdown and waits for the process to go away.
+      - name: Assert and shut down
+        if: runner.os != 'Windows'
+        run: sh .github/scripts/smoke-assert.sh --port "$MNEMIFY_SMOKE_PORT"
+
+      - name: Assert and shut down
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\.github\scripts\smoke-assert.ps1 -Port ([int]$env:MNEMIFY_SMOKE_PORT)
+
+      # ------------------------------------------------------ diagnostics
+      # An artifact you have to download is worse than the text in the job log,
+      # so print it too.
+      - name: Server log
+        if: failure() && runner.os != 'Windows'
+        continue-on-error: true
+        run: |
+          for f in "$MNEMIFY_LOG_DIR"/*; do
+            [ -f "$f" ] || continue
+            printf '\n===== %s =====\n' "$f"
+            tail -n 200 "$f"
+          done
+          printf '\n===== %s =====\n' "$MNEMIFY_HOME"
+          ls -la "$MNEMIFY_HOME" || true
+
+      - name: Server log
+        if: failure() && runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Get-ChildItem -File $env:MNEMIFY_LOG_DIR | ForEach-Object {
+            Write-Host ''
+            Write-Host ("===== " + $_.FullName + " =====")
+            Get-Content $_.FullName -Tail 200
+          }
+          Write-Host ''
+          Write-Host ("===== " + $env:MNEMIFY_HOME + " =====")
+          Get-ChildItem -Force $env:MNEMIFY_HOME -ErrorAction SilentlyContinue
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.os }}
+          path: ${{ runner.temp }}/logs
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Stop a leftover server
+        if: always() && runner.os != 'Windows'
+        continue-on-error: true
+        run: |
+          if [ -n "${MNEMIFY_SMOKE_PID:-}" ] && kill -0 "$MNEMIFY_SMOKE_PID" 2>/dev/null; then
+            kill "$MNEMIFY_SMOKE_PID" || true
+          fi
+
+      - name: Stop a leftover server
+        if: always() && runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          if ($env:MNEMIFY_SMOKE_PID) {
+            Get-Process -Id ([int]$env:MNEMIFY_SMOKE_PID) -ErrorAction SilentlyContinue |
+              Stop-Process -Force -ErrorAction SilentlyContinue
+          }

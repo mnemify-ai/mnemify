@@ -85,19 +85,17 @@ async def test_debug_obsidian_writes_output_files(tmp_path):
         ["debug", "--source", "obsidian", "--config", str(cfg_file)]
     )
 
-    # Redirect DATA_DIR to tmp_path so we don't pollute the real .mnemify/
-    import src.cli as cli_module
-    original_data_dir = cli_module.DATA_DIR
-    cli_module.DATA_DIR = tmp_path
-    try:
-        await _cmd_debug(args)
-    finally:
-        cli_module.DATA_DIR = original_data_dir
+    # The autouse ``_isolated_mnemify_home`` fixture already points
+    # MNEMIFY_HOME at tmp_path, so _cmd_debug writes under tmp_path/.mnemify/
+    # and never touches the developer's real data dir.
+    await _cmd_debug(args)
 
     # For Obsidian the raw format is "md" so debug_sample.md is the raw
     # bytes file. The normalized markdown also writes to debug_sample.md
     # (overwriting); assert it exists. The legacy debug_sample.txt is gone.
-    assert (tmp_path / "debug_sample.md").exists(), "Expected debug_sample.md to be written"
+    assert (tmp_path / ".mnemify" / "debug_sample.md").exists(), (
+        "Expected debug_sample.md under the MNEMIFY_HOME data dir"
+    )
 
 
 async def test_debug_obsidian_reports_attachments(tmp_path, capsys):
@@ -114,13 +112,9 @@ async def test_debug_obsidian_reports_attachments(tmp_path, capsys):
         ["debug", "--source", "obsidian", "--config", str(cfg_file)]
     )
 
-    import src.cli as cli_module
-    original_data_dir = cli_module.DATA_DIR
-    cli_module.DATA_DIR = tmp_path
-    try:
-        await _cmd_debug(args)
-    finally:
-        cli_module.DATA_DIR = original_data_dir
+    # MNEMIFY_HOME is tmp_path (autouse fixture) — output lands in
+    # tmp_path/.mnemify/, not the real data dir.
+    await _cmd_debug(args)
 
     captured = capsys.readouterr().out
     # The q2-planning.md note embeds diagram.png, so we should see attachment output

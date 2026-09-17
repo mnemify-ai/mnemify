@@ -48,9 +48,13 @@ def test_terrain_route_streams_compiled_file(tmp_path, monkeypatch):
 async def test_compile_start_defaults_to_openai_and_refuses_missing_key(tmp_path, monkeypatch):
     from src.api import compile_orchestrator
 
-    monkeypatch.setattr(compile_orchestrator, "DATA_DIR", tmp_path)
+    # MNEMIFY_HOME is tmp_path (autouse fixture), so the orchestrator looks
+    # for the manifest under tmp_path/.mnemify — there is no module-level
+    # DATA_DIR to patch any more.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    (tmp_path / "harvest-manifest.db").write_text("", encoding="utf-8")
+    data_dir = tmp_path / ".mnemify"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "harvest-manifest.db").write_text("", encoding="utf-8")
 
     result = await compile_orchestrator.start_compile()
 

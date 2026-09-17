@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ClaudeModelSelectors } from "./ClaudeModelSelectors";
 import { useCompileSettings, type ClaudeModel } from "../api/compileSettings";
+import { CLAUDE_CLI_UNAVAILABLE_HINT, isClaudeCliAvailable, useHealth } from "../api/system";
 import type { AiMode, CompileStartPayload } from "../api/terrain";
 import { cn } from "../lib/cn";
 import { CLAUDE_MODELS, modelOptionLabel } from "../lib/modelCatalog";
@@ -16,18 +17,28 @@ import { CLAUDE_MODELS, modelOptionLabel } from "../lib/modelCatalog";
  */
 
 const MODE_OPTIONS: ReadonlyArray<{ v: AiMode; label: string; desc: string }> = [
-  { v: "openai", label: "OpenAI", desc: "OpenAI API — needs OPENAI_API_KEY" },
+  {
+    v: "openai",
+    label: "OpenAI",
+    desc: "OpenAI API — needs OPENAI_API_KEY (set in Settings → AI & Models)",
+  },
   {
     v: "anthropic",
     label: "Claude API",
-    desc: "Anthropic API — needs ANTHROPIC_API_KEY; works anywhere, incl. Windows",
+    desc: "Anthropic API — needs ANTHROPIC_API_KEY (set in Settings → AI & Models); works anywhere, incl. Windows",
   },
   {
     v: "claude",
     label: "Claude CLI",
     desc: "Your logged-in claude CLI (subscription) — local only, no API cost",
   },
-  { v: "local", label: "Local heuristics", desc: "no LLM — near-instant, rougher clusters & names" },
+  {
+    v: "local",
+    label: "Local heuristics",
+    // The only mode that needs no key at all — every other mode still
+    // embeds through OpenAI even when its naming engine is Claude.
+    desc: "no LLM and no keys — near-instant, rougher clusters & names",
+  },
 ];
 
 const MODE_LABEL: Record<AiMode, string> = {
@@ -124,30 +135,40 @@ export function AiModePicker({
   compact?: boolean;
 }) {
   const { aiMode, setAiMode } = overrides;
+  // The claude CLI is macOS/Linux only. Disabled rather than hidden so a
+  // Windows user sees *why* the mode they read about isn't there — and so a
+  // config already saved as `claude` still renders its own button.
+  const health = useHealth();
+  const claudeCli = isClaudeCliAvailable(health.data?.platform);
   return (
     <div>
       <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-2", compact && "max-w-3xl")}>
-        {MODE_OPTIONS.map((o) => (
-          <button
-            key={o.v}
-            type="button"
-            onClick={() => setAiMode(o.v)}
-            aria-pressed={aiMode === o.v}
-            className={cn(
-              "flex flex-col items-start gap-1 px-4 py-3 rounded-xl border text-left transition-colors",
-              aiMode === o.v
-                ? "bg-ink text-cream border-ink"
-                : "bg-bone/40 text-ink border-hair hover:bg-bone",
-            )}
-          >
-            <span className="font-serif text-base">Compile with: {o.label}</span>
-            <span
-              className={cn("font-sans text-xs", aiMode === o.v ? "text-cream/70" : "text-muted")}
+        {MODE_OPTIONS.map((o) => {
+          const blocked = o.v === "claude" && !claudeCli;
+          return (
+            <button
+              key={o.v}
+              type="button"
+              disabled={blocked}
+              onClick={() => setAiMode(o.v)}
+              aria-pressed={aiMode === o.v}
+              className={cn(
+                "flex flex-col items-start gap-1 px-4 py-3 rounded-xl border text-left transition-colors",
+                aiMode === o.v
+                  ? "bg-ink text-cream border-ink"
+                  : "bg-bone/40 text-ink border-hair hover:bg-bone",
+                blocked && "opacity-disabled cursor-not-allowed hover:bg-bone/40",
+              )}
             >
-              {o.desc}
-            </span>
-          </button>
-        ))}
+              <span className="font-serif text-base">Compile with: {o.label}</span>
+              <span
+                className={cn("font-sans text-xs", aiMode === o.v ? "text-cream/70" : "text-muted")}
+              >
+                {blocked ? CLAUDE_CLI_UNAVAILABLE_HINT : o.desc}
+              </span>
+            </button>
+          );
+        })}
       </div>
       {CLAUDE_MODEL_MODES.includes(aiMode) && (
         <ClaudeModelSelectors

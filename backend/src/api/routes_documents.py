@@ -14,7 +14,7 @@ from src.harvester.manifest import HarvestManifest
 
 
 router = APIRouter()
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 
 def _attachments_dir(row: dict) -> Path | None:
@@ -41,7 +41,7 @@ def _attachments_dir(row: dict) -> Path | None:
 
 
 def _manifest() -> HarvestManifest | None:
-    db = _DATA_DIR / "harvest-manifest.db"
+    db = paths.data_dir() / "harvest-manifest.db"
     if not db.exists():
         return None
     return HarvestManifest(db)
@@ -712,12 +712,12 @@ async def reharvest_document(doc_id: str):
         orchestrator = HarvestOrchestrator(
             plugin=plugin,
             manifest=m,
-            harvest_logger=HarvestLogger(_DATA_DIR / "harvest-log.jsonl"),
+            harvest_logger=HarvestLogger(paths.data_dir() / "harvest-log.jsonl"),
             raw_store=RawStore(
-                _DATA_DIR / "raw",
+                paths.data_dir() / "raw",
                 converter_version=cfg.get("converter_version", "0.1.0"),
             ),
-            normalized_store=NormalizedStore(_DATA_DIR / "normalized"),
+            normalized_store=NormalizedStore(paths.data_dir() / "normalized"),
             max_concurrent=1,
         )
         result = await orchestrator.harvest_one(doc_ref, force_full=True)

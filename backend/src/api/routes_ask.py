@@ -10,6 +10,11 @@ BYOK contract:
 - The user's chat-LLM key arrives in the ``Authorization: Bearer …``
   header. The server forwards it to the provider and never persists or
   logs it.
+- When that header is absent, the server falls back to the key stored for
+  the provider under Settings → AI & Models (``credential_store``), so a
+  configured machine doesn't ask for the same secret a second time. The
+  header still wins when present; provider ``claude`` needs no key either
+  way (local CLI subscription).
 - The embedding for query-side similarity uses the server's
   ``OPENAI_API_KEY`` (already required for compile) when openai mode is
   active. Falls back to the local hash embedder when openai isn't
@@ -30,16 +35,19 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from src import paths
 from src.terrain.utils.embedder import EmbeddingClient, LocalHashEmbeddingClient
 from src.terrain.utils.models import KnowledgeMap
 
-from . import ask_chunks, ask_expansion, ask_providers, ask_retrieval
+from . import ask_chunks, ask_expansion, ask_providers, ask_retrieval, credential_store
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_TERRAIN_PATH = Path(".mnemify/terrain.json")
+def _terrain_path() -> Path:
+    """Resolved per request — ``MNEMIFY_HOME`` (and tests) can redirect it."""
+    return paths.data_dir() / "terrain.json"
 
 
 class AskRequest(BaseModel):
@@ -105,12 +113,15 @@ async def ask(
     Body: ``{query, provider, model, history?}``. Auth: ``Authorization:
     Bearer <user_api_key>`` (the user's BYOK key for the chat LLM).
     """
-    key = _extract_bearer(authorization)
-    # "claude" provider uses the local subscription CLI — no BYOK key needed.
-    if body.provider != "claude" and not key:
-        raise HTTPException(401, "missing bearer token")
+    key = _resolve_key(body.provider, authorization)
+    if _PROVIDER_KEY_ENV.get(body.provider) and not key:
+        raise HTTPException(
+            401,
+            f"no API key for {body.provider} — add it under Settings → AI & "
+            f"Models, or send Authorization: Bearer <key>.",
+        )
 
-    if not _TERRAIN_PATH.is_file():
+    if not _terrain_path().is_file():
         raise HTTPException(
             409,
             "no compiled terrain — run /api/terrain/build first",
@@ -325,6 +336,35 @@ async def ask(
 # ── helpers ─────────────────────────────────────────────────────────
 
 
+#: Which stored secret backs each provider. ``claude`` is absent on purpose:
+#: it drives the local `claude` CLI on the user's subscription and needs no
+#: key at all (src/api/ask_agent.py `_build_options`).
+_PROVIDER_KEY_ENV = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+}
+
+
+def _resolve_key(provider: str, header: str | None) -> str | None:
+    """The chat key for this request: browser header first, server store next.
+
+    The BYOK header stays the highest-precedence source — a user who pastes a
+    key into the chat panel gets that key, per-browser, and it is still never
+    persisted. But requiring it made the server 401 on a machine where the key
+    was already configured in Settings → AI & Models, forcing the same secret
+    to be entered twice. So an absent header now falls back to the stored key
+    for the provider.
+
+    ``claude`` resolves to ``None`` either way — the CLI carries its own
+    subscription auth.
+    """
+    bearer = _extract_bearer(header)
+    if bearer:
+        return bearer
+    env_name = _PROVIDER_KEY_ENV.get(provider)
+    return credential_store.get_secret(env_name) if env_name else None
+
+
 def _extract_bearer(header: str | None) -> str | None:
     if not header:
         return None
@@ -348,7 +388,7 @@ def _graph_embedding_dim(knowledge_map: KnowledgeMap) -> int | None:
 
 
 def _load_knowledge_map() -> KnowledgeMap:
-    raw = _TERRAIN_PATH.read_text(encoding="utf-8")
+    raw = _terrain_path().read_text(encoding="utf-8")
     data = json.loads(raw)
     knowledge_map = KnowledgeMap.model_validate(data)
     _hydrate_graph_vectors(knowledge_map)
@@ -367,7 +407,7 @@ def _hydrate_graph_vectors(knowledge_map: KnowledgeMap) -> None:
     if any(n.embedding or n.context_embedding for n in graph.nodes):
         return  # fat artifact — vectors already inline
 
-    db_path = _TERRAIN_PATH.parent / "terrain.db"
+    db_path = paths.data_dir() / "terrain.db"
     if not db_path.exists():
         logger.warning(
             "ask: terrain.json has no inline vectors and %s is missing — "
@@ -404,8 +444,9 @@ _MAP_CACHE: dict[str, tuple[float, KnowledgeMap]] = {}
 
 
 def _load_knowledge_map_cached() -> KnowledgeMap:
-    key = str(_TERRAIN_PATH.resolve())
-    mtime = _TERRAIN_PATH.stat().st_mtime
+    terrain_path = _terrain_path()
+    key = str(terrain_path.resolve())
+    mtime = terrain_path.stat().st_mtime
     cached = _MAP_CACHE.get(key)
     if cached is not None and cached[0] == mtime:
         return cached[1]

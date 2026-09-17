@@ -14,28 +14,16 @@ from pydantic import BaseModel
 
 from src.config_file import load_config_file
 from src.harvester.manifest import HarvestManifest
+from src.sources import is_enabled
 
 from .credential_store import (
     delete_secrets,
     has_secret,
-    read_secrets,
+    refresh,
     save_secret,
     write_secrets,
 )
 from .yaml_writer import disable_source, read_config, upsert_source
-
-
-def _reload_dotenv() -> None:
-    """Re-sync os.environ from the on-disk .env.
-
-    Needed because uvicorn loads the .env once at startup; after the UI
-    saves a credential, the new value is on disk but not yet in
-    os.environ. Any endpoint that depends on env-sourced tokens should
-    call this first.
-    """
-    for key, value in read_secrets().items():
-        os.environ[key] = value
-
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -43,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # ─── helpers ────────────────────────────────────────────────────────
 
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 # Exceptions that mean "the outbound call to a provider failed" rather than
 # "Mnemify has a bug" — network blips, timeouts, DNS, TLS, and the
@@ -64,7 +52,7 @@ def _outbound_reason(exc: Exception) -> str:
 
 
 def _doc_count(source: str) -> int:
-    db = _DATA_DIR / "harvest-manifest.db"
+    db = paths.data_dir() / "harvest-manifest.db"
     if not db.exists():
         return 0
     try:
@@ -75,7 +63,7 @@ def _doc_count(source: str) -> int:
 
 
 def _last_harvest_at(source: str) -> str | None:
-    db = _DATA_DIR / "harvest-manifest.db"
+    db = paths.data_dir() / "harvest-manifest.db"
     if not db.exists():
         return None
     try:
@@ -107,7 +95,7 @@ def _pending_scope_count(source: str, scope: list[str]) -> int:
     cleaned = [s for s in scope if s]
     if not cleaned:
         return 0
-    db = _DATA_DIR / "harvest-manifest.db"
+    db = paths.data_dir() / "harvest-manifest.db"
     if not db.exists():
         return len(cleaned)
     try:
@@ -126,11 +114,16 @@ def _pending_scope_count(source: str, scope: list[str]) -> int:
 
 @router.get("/connections")
 async def list_connections() -> list[dict[str, Any]]:
-    _reload_dotenv()  # pick up creds that were saved since server startup
+    refresh()  # pick up creds that were saved since server startup
     cfg = read_config()
     sources = cfg.get("sources", {}) or {}
     out: list[dict[str, Any]] = []
     for name, block in sources.items():
+        if not is_enabled(name):
+            # A connector this build doesn't ship (see src/sources.py). A
+            # stale `sources.jira:` block left in someone's mnemify.yaml must
+            # not put a card back in the UI.
+            continue
         enabled = block.get("enabled", False)
         # Status derivation: "enabled + credentials present" → connected.
         creds_ok = True
@@ -271,7 +264,7 @@ async def recover_deleted_for_source(source: str):
     """
     if source not in _SCOPE_KEY:
         raise HTTPException(400, f"unknown source {source!r}")
-    m = HarvestManifest(_DATA_DIR / "harvest-manifest.db")
+    m = HarvestManifest(paths.data_dir() / "harvest-manifest.db")
     restored = m.recover_deleted(source)
     return {"ok": True, "source": source, "restored": restored}
 
@@ -402,7 +395,7 @@ async def discover_notion(body: NotionDiscover | None = None):
     if not token:
         # Reload .env in case the user just saved (older servers may have
         # cached os.environ from startup).
-        _reload_dotenv()
+        refresh()
         cfg = load_config_file()
         src = cfg.get("sources", {}).get("notion", {})
         token_env = src.get("token_env", "NOTION_TOKEN")
@@ -500,7 +493,7 @@ async def discover_confluence(body: ConfluenceDiscover | None = None):
     email = (body.email or "").strip() if body else ""
     token = (body.token or "").strip() if body else ""
     if not (base and email and token):
-        _reload_dotenv()
+        refresh()
         cfg = load_config_file()
         src = cfg.get("sources", {}).get("confluence", {})
         base = base or (src.get("base_url") or "").rstrip("/")

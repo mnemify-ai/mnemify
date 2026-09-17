@@ -9,6 +9,7 @@ import {
   useCompileSettings,
   useUpdateCompileSettings,
 } from "../../api/compileSettings";
+import { CLAUDE_CLI_UNAVAILABLE_HINT, isClaudeCliAvailable, useHealth } from "../../api/system";
 import type { AiMode } from "../../api/terrain";
 import { SettingsSection } from "./SettingsSection";
 import { ModelSelect } from "../../components/ModelSelect";
@@ -51,6 +52,17 @@ const inputCls =
 export function CompileSettingsSection() {
   const { data, isLoading } = useCompileSettings();
   const update = useUpdateCompileSettings();
+  // The claude CLI is macOS/Linux only — on Windows the mode stays visible but
+  // unselectable, so the hint below can say what to use instead.
+  const health = useHealth();
+  const claudeCli = isClaudeCliAvailable(health.data?.platform);
+  const aiModeOptions = claudeCli
+    ? AI_MODE_OPTIONS
+    : AI_MODE_OPTIONS.map((o) =>
+        o.value === "claude"
+          ? { ...o, disabled: true, title: CLAUDE_CLI_UNAVAILABLE_HINT }
+          : o,
+      );
 
   // Local working copy. The backend PATCH requires the full object, so every
   // save sends the whole draft (one field changed at a time).
@@ -101,12 +113,16 @@ export function CompileSettingsSection() {
           {/* AI engine */}
           <Field
             label="AI engine"
-            hint="OpenAI (OPENAI_API_KEY), Claude API (ANTHROPIC_API_KEY — works anywhere), Claude CLI (your subscription, local only), or Local heuristics (no LLM). If the engine fails mid-compile, the compile stops with an error instead of degrading — switch to Local here if you want a no-LLM build."
+            hint={
+              claudeCli
+                ? "OpenAI (OPENAI_API_KEY), Claude API (ANTHROPIC_API_KEY — works anywhere), Claude CLI (your subscription, local only), or Local heuristics (no LLM). If the engine fails mid-compile, the compile stops with an error instead of degrading — switch to Local here if you want a no-LLM build."
+                : `OpenAI (OPENAI_API_KEY), Claude API (ANTHROPIC_API_KEY), or Local heuristics (no LLM). ${CLAUDE_CLI_UNAVAILABLE_HINT}. If the engine fails mid-compile, the compile stops with an error instead of degrading — switch to Local here if you want a no-LLM build.`
+            }
           >
             <Segmented<AiMode>
               value={d.ai_mode}
               onValueChange={(v) => save({ ...d, ai_mode: v })}
-              options={AI_MODE_OPTIONS}
+              options={aiModeOptions}
               ariaLabel="AI engine"
             />
           </Field>

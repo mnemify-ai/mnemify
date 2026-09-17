@@ -1,4 +1,4 @@
-"""/api/audit-log — paginated read of .mnemify/harvest-log.jsonl."""
+"""/api/audit-log — paginated read of the harvest log under the Mnemify home."""
 
 from __future__ import annotations
 
@@ -6,11 +6,16 @@ from pathlib import Path
 
 from fastapi import APIRouter, Query
 
+from src import paths
 from src.harvester.logger import HarvestLogger
 
 
 router = APIRouter()
-_LOG_PATH = Path(".mnemify") / "harvest-log.jsonl"
+
+
+def _log_path() -> Path:
+    """Resolved per request — ``MNEMIFY_HOME`` may point anywhere."""
+    return paths.data_dir() / "harvest-log.jsonl"
 
 # Known action types written by HarvestLogger.
 KNOWN_ACTIONS = (
@@ -33,11 +38,12 @@ async def audit_log(
 ) -> dict:
     """Paginated audit log. Returns newest entries first.
 
-    Reads the existing ``.mnemify/harvest-log.jsonl`` (a JSONL file the
+    Reads the existing ``<data_dir>/harvest-log.jsonl`` (a JSONL file the
     HarvestLogger appends to during every run). Filters by action and source
     are exact-match.
     """
-    if not _LOG_PATH.exists():
+    log_path = _log_path()
+    if not log_path.exists():
         return {
             "entries": [],
             "total": 0,
@@ -46,7 +52,7 @@ async def audit_log(
             "actions": list(KNOWN_ACTIONS),
         }
 
-    logger = HarvestLogger(_LOG_PATH)
+    logger = HarvestLogger(log_path)
     # HarvestLogger.read_log returns oldest-first; we want newest-first.
     all_entries = logger.read_log(action_filter=action)
 

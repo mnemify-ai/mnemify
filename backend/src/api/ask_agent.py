@@ -828,7 +828,7 @@ async def run_agent_session(
     ctx = AgentContext(
         knowledge_map=knowledge_map,
         embedder=embedder,
-        db_path=db_path or ask_expansion._TERRAIN_DB_PATH,
+        db_path=db_path or ask_expansion._terrain_db_path(),
     )
     prompt = _render_prompt(query_text, history)
     options = _build_options(ctx, provider, model, key)

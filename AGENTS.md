@@ -11,17 +11,36 @@
 
 | Area | Path | Notes |
 |---|---|---|
-| Harvester (Tier 0) | `backend/src/harvester/` | One package per source (`notion/`, `confluence/`, `jira/`, `obsidian/`, `slack/`, `github/`, `_google/`). Plugin contract is `SourcePlugin` in `harvester/__init__.py`: `health_check()`, `list_documents(since)`, `fetch_document(ref)`, optional `mark_harvested()`; register with `register_plugin(name, factory)`. |
+| Harvester (Tier 0) | `backend/src/harvester/` | One package per source (`notion/`, `confluence/`, `jira/`, `obsidian/`, `slack/`, `github/`, `_google/`). Plugin contract is `SourcePlugin` in `harvester/__init__.py`: `health_check()`, `list_documents(since)`, `fetch_document(ref)`, optional `mark_harvested()`; register with `register_plugin(name, factory)`. Only the packages in `ENABLED_SOURCES` are imported — see `src/sources.py`. |
 | Terrain compiler (Tier 1) | `backend/src/terrain/` | File map below. |
-| FastAPI + SSE (Tier 2) | `backend/src/api/` | `__init__.py` builds the app and mounts `frontend/web/dist` if present. Harvest/compile progress streams over SSE from an in-process event bus (`event_bus.py`, `compile_bus.py`) with a replay ring buffer for reconnecting tabs. Schedules (`/api/schedules`) run on an in-process APScheduler — single uvicorn worker only. |
+| FastAPI + SSE (Tier 2) | `backend/src/api/` | `__init__.py` builds the app and mounts the built frontend (`paths.web_dist_dir()`); with no build it logs a WARNING and serves a "frontend not built — run `sh setup.sh`" page at `/` rather than booting API-only. Harvest/compile progress streams over SSE from an in-process event bus (`event_bus.py`, `compile_bus.py`) with a replay ring buffer for reconnecting tabs. Schedules (`/api/schedules`) run on an in-process APScheduler — single uvicorn worker only. |
 | Chat (`/api/ask`) | `backend/src/api/routes_ask.py`, `ask_retrieval.py`, `ask_chunks.py`, `ask_expansion.py`, `ask_providers.py`, `ask_agent.py` | Flow: `understand_query()` → embed → chunk search over `terrain.db` vectors → graph walk/rerank → bundle (≤15 items) → expand to raw chunk text → SSE `retrieval_debug → citations → delta* → citations_used → done`. The chat-LLM key arrives per request in `Authorization: Bearer` and is never persisted; query embeddings use the server's `OPENAI_API_KEY` so vectors match the compile. Frontend side: `frontend/web/src/ask/`. |
-| CLI | `backend/src/cli.py` | `mnemify harvest / terrain build / up / status / inspect / normalize / purge / debug / reset / login`. Run via `uv run mnemify …` from `backend/`. |
+| CLI | `backend/src/cli.py` | `mnemify harvest / terrain build / up / stop / status / inspect / normalize / purge / debug / reset / migrate-home / login`. Run via `uv run mnemify …` from `backend/`. `up` is single-instance (an already-running server means "print the URL, open the browser, exit 0") and falls forward up to ten ports if `--port` is taken; `stop` POSTs the shutdown route using `<home>/server.port`; `migrate-home` moves a legacy `backend/` layout into the platform home. |
+| On-disk paths | `backend/src/paths.py` | **Every** path the app persists to resolves here — `home()`, `data_dir()`, `yaml_file()`, `env_file()`, `logs_dir()`, `server_pid_file()`, `server_port_file()`, `web_dist_dir()`. Home precedence: `MNEMIFY_HOME` → legacy (`backend/` already holds `.mnemify/`, `mnemify.yaml` or `.env`) → platform app-data dir. `MNEMIFY_ENV_FILE` / `MNEMIFY_YAML_FILE` still win for those two files. |
+| Shipped connectors | `backend/src/sources.py` | `ENABLED_SOURCES = ("notion", "confluence", "obsidian")` — what the release exposes. The other five plugins stay in the tree, tested, just never registered; `MNEMIFY_SOURCES=notion,jira` turns any subset back on for one process. Gates the registry's imports and `GET /api/connections`, not the plugin code. |
+| Process lifecycle | `backend/src/api/lifecycle.py`, `idle.py`, `routes_system.py` | The app quits itself. `lifecycle` holds the `uvicorn.Server` handle (`request_shutdown()`); `idle` is the ASGI activity stamp + watchdog (health and SSE reconnects don't count, the browser's 30 s heartbeat does, a running compile/harvest/ask or *any* enabled schedule blocks it); `routes_system` is `POST /api/system/heartbeat` and `/shutdown` (guarded by the `X-Mnemify-Client` header, not a token — a custom header forces a CORS preflight). |
+| Secrets | `backend/src/api/routes_secrets.py`, `credential_store.py` | `GET/PUT/DELETE /api/secrets[/{name}]` over an allowlist (`SECRET_ALLOWLIST`); values go in and never come back out — `GET` returns `set` plus a masked hint. `credential_store` owns the atomic `0600` write to `<home>/.env` and the `os.environ` refresh that makes a saved key live without a restart. |
+| Install + launch | `setup.sh` / `setup.bat`, `mnemify.sh` / `mnemify.bat`, `scripts/` | Repo-root entry points; `scripts/` holds the implementations (`setup.ps1`, `mnemify.ps1`, `install.sh`/`.ps1`, `make-launcher.sh`/`.ps1`). `setup.sh` is idempotent — re-running it *is* the update path. Icons in `assets/icons/`. |
 | React app | `frontend/web/src/` | `brainMap/` is the self-contained R3F 3D module (`BrainMap.tsx`, `scene/`, `chrome/`, `store.ts`); `app/` is the dashboard shell (`routes.tsx`, `pages/`, `components/`, `api/`, `sse/`, `data/`). Stack: React 18 + Vite 5 + TS strict, Tailwind with CSS-var theme, React Router v6, TanStack Query v5. Vite proxies `/api/*` to `:8783`. |
 | Tests | `backend/tests/` (`uv run pytest -q`), `frontend/web/` (`npm test`, `npx tsc -b`) | Live-network harvester tests skip without credentials. |
 
-**On-disk state — everything under `.mnemify/` (gitignored):**
+**On-disk state — everything under `MNEMIFY_HOME`, outside the repo:**
 
-| Path | What |
+Home is `MNEMIFY_HOME` if set, else `backend/` when that directory already
+holds state (the legacy dev layout — this is why the team's checkouts keep
+working), else the platform app-data dir: `~/Library/Application Support/Mnemify`
+· `%LOCALAPPDATA%\Mnemify` · `$XDG_DATA_HOME/mnemify`. `src/paths.py` is the
+only place that decides.
+
+| Under home | What |
+|---|---|
+| `.mnemify/` | All harvested + compiled data (table below) |
+| `mnemify.yaml` | Source config, schedules, `compile:`, `data_retention:`, `server:` — written by the wizards and Settings through `api/yaml_writer.py` (ruamel round-trip, comments preserved) |
+| `.env` | Secrets, mode `0600`, written atomically by `api/credential_store.py` |
+| `logs/` | Launcher + server logs |
+| `server.pid`, `server.port` | The running instance; written by `mnemify up`, removed on exit, read by the launcher's already-running check and by `mnemify stop` |
+
+| Inside `.mnemify/` | What |
 |---|---|
 | `raw/<source>/<shard>/<id>.<ext>` | Raw fetched bytes, byte-for-byte |
 | `normalized/<source>/<shard>/<id>.md` | Clean-markdown sidecar per document (body only; metadata lives in the manifest) |
@@ -32,14 +51,20 @@
 | `render-data.json` | v3 hex render-data the 3D map reads — additive-only, no graph/embedding fields |
 | `terrain.db` | SQLite cache: features, embeddings, names, positions, compiled notes, chunk vectors, compile runs |
 
-`mnemify.yaml` (project root) holds source config; tokens live in `.env`.
+Both SQLite stores carry a `PRAGMA user_version` (`harvester/manifest.py`,
+`terrain/utils/store.py`): set on create and on upgrade, and checked on open —
+a file written by a *newer* Mnemify fails loudly instead of corrupting
+quietly, which is what protects someone juggling two checkouts or rolling
+back a download.
 
 ---
 
 ## What This Product Is
 
 A **Knowledge Map that is becoming a grounded chatbot.** Users connect
-Notion / Confluence / Jira / Obsidian; the pipeline turns harvested documents
+Notion / Confluence / Obsidian — the three connectors this build ships; Jira,
+Slack, GitHub, Gmail and Calendar are complete and in the tree but only
+reachable via `MNEMIFY_SOURCES` (see `src/sources.py`). The pipeline turns harvested documents
 into (a) a 3D hex terrain — a spatial browse surface — and (b) a layered
 knowledge graph the chatbot retrieves over. Both are derived from the same
 compiled brain map; neither is primary over the other going forward.
@@ -65,6 +90,14 @@ compiled brain map; neither is primary over the other going forward.
   layered on top, cached by content-hash fingerprint.
 - **`render-data.json` is additive-only.** Graph/entity/embedding work
   (Stage 4+) lives in `terrain.json`, never leaks into the v3 hex bake.
+- **No module binds a data path at import.** Call `paths.data_dir()` /
+  `paths.env_file()` / … at use time. A module-level `DATA_DIR = ...` freezes
+  whatever `MNEMIFY_HOME` happened to be when the import ran, which breaks
+  test isolation and every path override.
+- **Every secret the app needs has a UI write path** — `/api/secrets`
+  (Settings → AI & Models) or a connection wizard. Never add a key whose only
+  home is a hand-edited `.env`, and never document editing that file as the
+  way to set one.
 
 ---
 
@@ -198,5 +231,5 @@ says "Read AGENTS.md" if you want it picked up automatically.
 
 ---
 
-*Last updated: 2026-09-14. The former `docs/` folder was removed; this file
+*Last updated: 2026-09-18. The former `docs/` folder was removed; this file
 and the per-package READMEs are the only prose docs.*

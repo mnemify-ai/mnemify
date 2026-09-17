@@ -34,7 +34,7 @@ _JOB_PREFIX = "harvest-schedule:"
 
 _scheduler: AsyncIOScheduler | None = None
 
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 # Catch-up window. The app runs locally, so a 6am cron silently misses when
 # the laptop is closed at 6am. On startup we look for a scheduled instant that
@@ -96,7 +96,7 @@ def missed_fire_time(
 
 
 def _last_completed(source: str) -> datetime | None:
-    db = _DATA_DIR / "harvest-manifest.db"
+    db = paths.data_dir() / "harvest-manifest.db"
     if not db.exists():
         return None
     try:
@@ -163,6 +163,20 @@ def list_schedules() -> dict[str, dict[str, Any]]:
     """Read schedules from mnemify.yaml. Returns ``{ source: {cron, enabled} }``."""
     cfg = read_config()
     return dict(cfg.get("schedules") or {})
+
+
+def has_enabled_schedules() -> bool:
+    """Whether any source has ``schedules.<source>.enabled: true`` in YAML.
+
+    Read straight from the config rather than from the live APScheduler jobs
+    so the answer is the same before ``start()`` and after ``stop()`` — the
+    idle watchdog uses it to suspend idle shutdown entirely (a scheduler that
+    kills its own host never fires).
+    """
+    for body in list_schedules().values():
+        if isinstance(body, dict) and body.get("enabled"):
+            return True
+    return False
 
 
 def reload_from_yaml() -> None:

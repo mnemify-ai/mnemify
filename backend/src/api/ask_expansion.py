@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from src import paths
 from src.terrain.utils.store import TerrainStore
 from src.utils.hashing import short_hash
 
@@ -34,7 +35,9 @@ PER_ITEM_CHAR_CAP = 4_000
 # never meaningfully grows the /api/ask SSE payload.
 SOURCE_REF_EXCERPT_CHARS = 280
 
-_TERRAIN_DB_PATH = Path(".mnemify/terrain.db")
+def _terrain_db_path() -> Path:
+    """Resolved per call so ``MNEMIFY_HOME`` (and tests) can redirect it."""
+    return paths.data_dir() / "terrain.db"
 
 
 @dataclass
@@ -50,7 +53,7 @@ def expand_bundle(
     store: TerrainStore | None = None,
     *,
     budget_chars: int = EXPANSION_BUDGET_CHARS,
-    db_path: Path = _TERRAIN_DB_PATH,
+    db_path: Path | None = None,
 ) -> ExpansionResult:
     """Attach raw source-chunk excerpts to bundle items, in bundle (score)
     order, until the character budget runs out.
@@ -64,6 +67,7 @@ def expand_bundle(
     result = ExpansionResult()
     own_store = False
     if store is None:
+        db_path = db_path or _terrain_db_path()
         if not db_path.is_file():
             return result
         try:
