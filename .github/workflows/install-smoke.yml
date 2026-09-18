@@ -90,10 +90,14 @@ jobs:
         # This is also where a Windows-runner difference would show up: with no
         # uv on the box, setup.ps1 prefers `winget install astral-sh.uv` and
         # falls back to the official `irm https://astral.sh/uv/install.ps1`
-        # installer. GitHub's windows images do not reliably provide a usable
-        # winget in a non-interactive session, so the fallback is the path we
-        # expect to exercise here. If this step fails at "installing uv", read
-        # the log before changing the script - the failure is the finding.
+        # installer. On the current windows image winget works here, so the
+        # winget branch is the one actually under test - and it is the awkward
+        # one, because winget drops uv in its own links directory and only
+        # announces it on the *registry* PATH ("restart your shell to use the
+        # new value"). Both setup.ps1 and mnemify.ps1 therefore re-read that
+        # PATH; the Start step below is what catches it if either stops.
+        # If this step fails at "installing uv", read the log before changing
+        # the script - the failure is the finding.
         run: |
           $ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
           & $ps51 -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1 -NoLaunch

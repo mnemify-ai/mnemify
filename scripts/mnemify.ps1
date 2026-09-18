@@ -43,7 +43,20 @@ Set-Location $Repo
 
 # ------------------------------------------------------------------- PATH
 # A process started from a shortcut inherits a minimal environment - none of
-# the places uv, node or the `claude` CLI actually live. Put them back.
+# the places uv, node or the `claude` CLI actually live. Put them back, from
+# two sources.
+#
+# 1. A list of the usual install directories, for the tools whose installers
+#    never touch PATH at all.
+# 2. The *registry* Path, re-read here. This half is load-bearing and easy to
+#    miss: an installer that ran during setup writes the new directory into
+#    the registry and then says "restart your shell to use the new value" -
+#    winget says exactly that after installing uv, and puts uv somewhere the
+#    list above does not name. Every process started before that keeps the
+#    stale value, Explorer included, and so does the shortcut. Without the
+#    re-read, setup.bat succeeds and the very next launch cannot find uv.
+#    setup.ps1's Update-SessionPath does the same thing for the same reason;
+#    keep the two in step.
 $extraPaths = @(
     (Join-Path $env:USERPROFILE '.local\bin'),
     (Join-Path $env:USERPROFILE '.cargo\bin'),
@@ -59,9 +72,23 @@ $prefix = @()
 foreach ($p in $extraPaths) {
     if ($p -and (Test-Path $p)) { $prefix += $p }
 }
-if ($prefix.Count -gt 0) {
-    $env:Path = ($prefix -join ';') + ';' + $env:Path
+
+# Appended, never prepended: what this process already has on PATH keeps
+# priority, and the registry only fills in what is missing. Reading the
+# registry must not be able to stop the launcher, so it is wrapped.
+$suffix = @()
+foreach ($scope in 'Machine', 'User') {
+    try {
+        $v = [Environment]::GetEnvironmentVariable('Path', $scope)
+    } catch {
+        $v = $null
+    }
+    if ($v) { $suffix += ($v -split ';') }
 }
+
+$env:Path = (@($prefix) + @($env:Path -split ';') + @($suffix) |
+    Where-Object { $_ } |
+    Select-Object -Unique) -join ';'
 
 # ------------------------------------------------------------------ logging
 $logFile = $null

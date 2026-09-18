@@ -34,6 +34,14 @@ from the repo root instead.
   and falls back to the official `astral.sh/uv/install.ps1` if it isn't.
   winget *exists* on CI runners and locked-down machines and still fails
   there, so branching on `Get-Command winget` alone strands the install.
+- **Both Windows scripts re-read the registry `Path`.** An installer that runs
+  during setup writes its directory to the registry and says "restart your
+  shell" — winget does this for `uv`. Processes started earlier, Explorer and
+  therefore the shortcut included, keep the stale value. `setup.ps1`
+  (`Update-SessionPath`) and `mnemify.ps1` both re-read `Machine` + `User`
+  `Path` for that reason. Drop it from either and setup succeeds while the
+  very next launch cannot find `uv`. A list of likely directories is not a
+  substitute: winget picks its own, and it is not on that list.
 
 ## Passing server flags on Windows
 
