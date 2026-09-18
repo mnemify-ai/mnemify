@@ -37,6 +37,11 @@ jobs:
       # No prompts, and setup does not launch the app at the end.
       MNEMIFY_NONINTERACTIVE: "1"
       MNEMIFY_SMOKE_PORT: "8789"
+      # The Windows start below runs the launcher the way the desktop
+      # shortcut does, with -Gui. Show-Failure puts up a MessageBox in that
+      # mode, and a modal dialog on a headless runner blocks the process
+      # until the job timeout. This turns those into log lines.
+      MNEMIFY_DIALOG_DRYRUN: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -169,7 +174,10 @@ jobs:
 
           # Can uv reach an interpreter at all? If not, the app probe would
           # only hang the same way for another five minutes - skip it.
-          if (-not (Invoke-Probe -Label 'interp' -LimitSec 300 -PyArgs @('-c', 'print("interp ok")'))) {
+          # print(1), not print("interp ok"): quotes and spaces do not survive
+          # Start-Process argument quoting, which turned the first version
+          # into `print(interp ok)` and a SyntaxError.
+          if (-not (Invoke-Probe -Label 'interp' -LimitSec 300 -PyArgs @('-c', 'print(1)'))) {
               Write-Host 'PROBE: uv run cannot reach an interpreter; skipping the app probe.'
               exit 0
           }
@@ -187,28 +195,56 @@ jobs:
             'create_app()'
             'print("create_app %.1fs" % (time.time() - t1), flush=True)'
           ) | Set-Content -Path $probePy -Encoding ascii
-          Invoke-Probe -Label 'app' -LimitSec 300 -PyArgs @($probePy)
+          $null = Invoke-Probe -Label 'app' -LimitSec 300 -PyArgs @($probePy)
 
       - name: Start Mnemify
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-          # The bare `--` is load-bearing. scripts\mnemify.ps1 uses
-          # [CmdletBinding()], so `--no-browser` would be parsed as a parameter
-          # *name* and fail to bind; `--` ends parameter parsing and sends the
-          # rest to ValueFromRemainingArguments. The script's own .DESCRIPTION
-          # documents the same invocation.
-          # stdout and stderr must be different files - Start-Process refuses
-          # to point both at one.
-          $p = Start-Process -FilePath $ps51 -PassThru -NoNewWindow `
+          # -WindowStyle Hidden + -Gui is exactly what the desktop shortcut
+          # runs (see scripts\make-launcher.ps1), so this now smoke-tests the
+          # path a user actually takes: the -Gui logging branch and the
+          # Show-Failure dialog path, neither of which was covered before.
+          #
+          # It also has to be a detached process. -NoNewWindow put the
+          # launcher on this step's console, and Windows tears that console
+          # down when the step's pwsh exits - which killed the server about a
+          # second in, before it could write a byte. A hidden window is its
+          # own console, so the server outlives the step.
+          #
+          # -WindowStyle and -RedirectStandard* are mutually exclusive
+          # (redirecting forces UseShellExecute=false), so there are no
+          # redirect files any more. -Gui writes MNEMIFY_LOG_DIR\launcher.log
+          # instead, and the diagnostics step prints every file in there.
+          #
+          # No bare `--`: scripts\mnemify.ps1 uses [CmdletBinding()], and
+          # PowerShell's -File hands `--` to the script as an empty parameter
+          # name that the binder rejects. `--no-browser` / `--port` bind fine
+          # on their own. The script's own .DESCRIPTION documents this.
+          $p = Start-Process -FilePath $ps51 -PassThru -WindowStyle Hidden `
             -WorkingDirectory $env:GITHUB_WORKSPACE `
-            -RedirectStandardOutput (Join-Path $env:MNEMIFY_LOG_DIR 'server.out.log') `
-            -RedirectStandardError  (Join-Path $env:MNEMIFY_LOG_DIR 'server.err.log') `
             -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                          '-File', 'scripts\mnemify.ps1',
+                          '-WindowStyle', 'Hidden',
+                          '-File', 'scripts\mnemify.ps1', '-Gui',
                           '--no-browser', '--port', "$env:MNEMIFY_SMOKE_PORT"
           "MNEMIFY_SMOKE_PID=$($p.Id)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # Deliberate 20s tax on every Windows run. Cold import measures ~10s
+          # (see the probe above), so by now a healthy launcher has logged
+          # "Mnemify up on ...". Checking liveness *inside* the step is what
+          # separates "died at the step boundary" from "died on its own": the
+          # failure step only ever sees the corpse.
+          Start-Sleep -Seconds 20
+          $alive = [bool](Get-Process -Id $p.Id -ErrorAction SilentlyContinue)
+          Write-Host ("alive in-step (pid " + $p.Id + "): " + $alive)
+          $launcherLog = Join-Path $env:MNEMIFY_LOG_DIR 'launcher.log'
+          if (Test-Path $launcherLog) {
+            Write-Host '--- launcher.log'
+            Get-Content $launcherLog -Tail 40 | ForEach-Object { Write-Host $_ }
+          } else {
+            Write-Host ('no launcher.log at ' + $launcherLog + ' yet')
+          }
 
       # ----------------------------------------------------------- assert
       # Polls /api/health, checks ok / layout / version / data_dir, checks the
