@@ -24,7 +24,7 @@ from .compile_bus import compile_bus
 
 
 router = APIRouter()
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 
 _EMPTY_MAP = {
@@ -122,7 +122,7 @@ async def get_terrain():
     Streamed straight from disk — parsing and re-serializing a multi-MB
     artifact per request bought nothing. no-store for the same reason as
     render-data: compiles rewrite the file."""
-    path = _DATA_DIR / "terrain.json"
+    path = paths.data_dir() / "terrain.json"
     if not path.exists():
         return _EMPTY_MAP
     return FileResponse(
@@ -138,7 +138,7 @@ async def terrain_render_data():
     Served no-store: this file is rewritten on every compile, so any browser
     caching makes a fresh recompile silently invisible (stale layout shown).
     """
-    path = _DATA_DIR / "render-data.json"
+    path = paths.data_dir() / "render-data.json"
     if not path.is_file():
         raise HTTPException(404, "no compiled map yet — run a compile")
     return FileResponse(
@@ -151,7 +151,7 @@ async def terrain_render_data():
 async def terrain_notes():
     """The companion notes registry (titles/authors/excerpts the map's drawer
     reads). 404 → nothing compiled yet."""
-    path = _DATA_DIR / "mocknotes.json"
+    path = paths.data_dir() / "mocknotes.json"
     if not path.is_file():
         raise HTTPException(404, "no compiled notes yet — run a compile")
     return FileResponse(
@@ -167,7 +167,7 @@ async def terrain_attention():
     The full terrain graph can be large because it contains embeddings. This
     endpoint returns only source-grounded operational facts needed by the UI.
     """
-    path = _DATA_DIR / "terrain.json"
+    path = paths.data_dir() / "terrain.json"
     if not path.is_file():
         raise HTTPException(404, "no compiled map yet — run a compile")
     try:
@@ -212,7 +212,7 @@ async def terrain_attention():
 
 @router.get("/terrain/runs")
 async def terrain_runs(limit: int = 20):
-    db_path = _DATA_DIR / "terrain.db"
+    db_path = paths.data_dir() / "terrain.db"
     # Guard: TerrainStore.__init__ calls sqlite3.connect which creates
     # the file as a side-effect. We must not create it from a GET path —
     # otherwise a wiped .mnemify/ silently grows back on the next
@@ -231,8 +231,8 @@ async def terrain_report():
     """Lightweight compile report: headline stats/highlights + the last run's
     metadata + per-source doc counts. (The /compile page renders this; it
     doesn't need the whole v2 terrain.json.)"""
-    tpath = _DATA_DIR / "terrain.json"
-    db_path = _DATA_DIR / "terrain.db"
+    tpath = paths.data_dir() / "terrain.json"
+    db_path = paths.data_dir() / "terrain.db"
     # Guard: TerrainStore.__init__ creates the DB as a side-effect of
     # sqlite3.connect. This endpoint is polled on every page (via
     # LastCompiledPill), so unconditional construction silently
@@ -269,7 +269,7 @@ async def terrain_report():
     by_source: dict[str, int] = {}
     try:
         from src.harvester.manifest import HarvestManifest
-        mdb = _DATA_DIR / "harvest-manifest.db"
+        mdb = paths.data_dir() / "harvest-manifest.db"
         if mdb.exists():
             for r in HarvestManifest(mdb).get_documents():
                 k = r.get("source_type") or "?"

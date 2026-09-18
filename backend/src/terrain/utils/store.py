@@ -145,14 +145,42 @@ class TerrainStore:
         """,
     ]
 
-    def __init__(self, db_path: str | Path = ".mnemify/terrain.db"):
+    #: On-disk schema generation — see ``HarvestManifest.SCHEMA_VERSION``.
+    #: Bump only for a change an older build would misread; plain additive
+    #: columns belong in ``_ensure_column`` and need no bump.
+    SCHEMA_VERSION = 1
+
+    def __init__(self, db_path: str | Path | None = None):
+        # Resolved here, not in the signature: a default argument would bind
+        # one path at import time and ignore later MNEMIFY_HOME changes.
+        if db_path is None:
+            from src import paths
+
+            db_path = paths.data_dir() / "terrain.db"
         self.db_path = Path(db_path)
         if self.db_path != Path(":memory:"):
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL;")
+        self._check_schema_version()
         self._init_schema()
+
+    def _check_schema_version(self) -> None:
+        """Refuse a database written by a newer Mnemify.
+
+        ``user_version`` is 0 both for a brand-new file and for every database
+        written before this stamp existed; both are handled by running the
+        normal create/ALTER path and stamping afterwards.
+        """
+        found = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+        if found > self.SCHEMA_VERSION:
+            self._conn.close()
+            raise RuntimeError(
+                f"{self.db_path} was written by a newer Mnemify "
+                f"(schema v{found}; this build understands v{self.SCHEMA_VERSION}). "
+                f"Update the code and re-run setup."
+            )
 
     def _init_schema(self) -> None:
         with self._transaction():
@@ -175,6 +203,10 @@ class TerrainStore:
             # The cache_key of the row the LLM actually produced; carried-forward
             # copies share it so ``drift`` can be bumped across the whole family.
             self._ensure_column("compiled_notes", "origin_key", "TEXT")
+            # Stamp last, in the same transaction as the ALTERs above: a crash
+            # mid-upgrade leaves user_version at its old value, so the next
+            # open re-runs the (idempotent) migrations.
+            self._conn.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
 
     def _ensure_column(self, table: str, column: str, ddl: str) -> None:
         columns = {

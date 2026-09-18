@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../app/api/client";
+import { isAskProviderKeySet, useSecrets } from "../app/api/secrets";
 import { cn } from "../app/lib/cn";
 import { PROVIDER_LABELS } from "./ModelQuickSwitch";
 import { MODEL_CATALOG } from "./models";
@@ -18,11 +19,18 @@ type ClaudeStatus = { installed: boolean; authenticated: boolean | null };
  *
  * Keys persist to localStorage; never sent anywhere except the `/api/ask`
  * request as `Authorization: Bearer <key>`.
+ *
+ * The field is an *override*. When the same provider's key is already saved
+ * server-side (Settings → AI & Models), `/api/ask` falls back to it and this
+ * form says so — one key, entered once, rather than the same secret asked for
+ * in two places. Typing one here still wins, per browser.
  */
 export function AskSettingsForm() {
   const settings = useAskSettingsStore((s) => s.settings);
   const onChange = useAskSettingsStore((s) => s.setSettings);
   const [claudeStatus, setClaudeStatus] = useState<ClaudeStatus | null>(null);
+  const secrets = useSecrets();
+  const serverKeySet = isAskProviderKeySet(secrets.data, settings.provider);
 
   // Probe for a local Claude Code install once, so the Claude option can say
   // whether the API key is actually needed.
@@ -138,10 +146,12 @@ export function AskSettingsForm() {
       <label className="block max-w-md space-y-1">
         <span className="text-xs uppercase tracking-wide text-muted">
           {settings.provider === "claude"
-            ? claudeStatus !== null && !claudeReady
+            ? claudeStatus !== null && !claudeReady && !serverKeySet
               ? "Anthropic API key"
               : "Anthropic API key (optional)"
-            : "OpenAI API key"}
+            : serverKeySet
+              ? "OpenAI API key (optional)"
+              : "OpenAI API key"}
         </span>
         <input
           type="password"
@@ -161,7 +171,9 @@ export function AskSettingsForm() {
           placeholder={
             settings.provider === "claude" && claudeReady
               ? "Empty — use the local Claude Code login"
-              : "sk-…"
+              : serverKeySet
+                ? "override (optional)"
+                : "sk-…"
           }
           autoComplete="off"
           className="w-full rounded-md border border-hair bg-cream px-3 py-1.5 outline-none focus:border-ink"
@@ -171,6 +183,12 @@ export function AskSettingsForm() {
           {settings.provider === "claude" ? " Anthropic" : " OpenAI"}. It never
           leaves this machine otherwise.
         </span>
+        {serverKeySet && (
+          <span className="block text-[11px] text-muted">
+            Using the key saved in Settings → AI &amp; Models. Leave this empty
+            unless you want a different key in this browser.
+          </span>
+        )}
       </label>
     </div>
   );

@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
+from src import paths
 from src.terrain.utils.store import TerrainStore
 from src.utils.hashing import short_hash
 
@@ -35,7 +36,9 @@ logger = logging.getLogger(__name__)
 CHUNK_SEARCH_K = 8
 MIN_CHUNK_SCORE = 0.2
 
-_TERRAIN_DB_PATH = Path(".mnemify/terrain.db")
+def _terrain_db_path() -> Path:
+    """Resolved per call so ``MNEMIFY_HOME`` (and tests) can redirect it."""
+    return paths.data_dir() / "terrain.db"
 
 
 @dataclass
@@ -67,7 +70,7 @@ _INDEX_CACHE: dict[str, tuple[float, ChunkIndex]] = {}
 def search(
     query_embedding: list[float],
     *,
-    db_path: Path = _TERRAIN_DB_PATH,
+    db_path: Path | None = None,
     k: int = CHUNK_SEARCH_K,
 ) -> list[ChunkHit]:
     """Top-k chunks by cosine against the query. Best-effort: any failure
@@ -76,7 +79,7 @@ def search(
     if not query_embedding:
         return []
     try:
-        index = _get_index(db_path)
+        index = _get_index(db_path or _terrain_db_path())
     except Exception:  # noqa: BLE001
         logger.exception("ask chunks: index build failed; skipping chunk search")
         return []

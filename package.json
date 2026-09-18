@@ -1,7 +1,0 @@
-{
-  "license": "MIT",
-  "dependencies": {
-    "pdfjs-dist": "^4.4.168",
-    "react-pdf": "^9.1.1"
-  }
-}

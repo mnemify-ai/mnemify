@@ -23,7 +23,7 @@
 
 <p align="center"><sub>Click the preview to watch the full-resolution demo.</sub></p>
 
-Our knowledge was scattered across Notion, Confluence, Jira, Obsidian, Google meeting notes, Slack threads, and more. We built Mnemify to bring it together into one connected, searchable map — and we use it every day to rediscover what we know and give our AI tools better context.
+Our knowledge was scattered across Notion, Confluence, and a pile of Obsidian vaults. We built Mnemify to bring it together into one connected, searchable map — and we use it every day to rediscover what we know and give our AI tools better context.
 
 After several months of heavy daily use, we're sharing it with you.
 
@@ -31,77 +31,78 @@ After several months of heavy daily use, we're sharing it with you.
 
 Mnemify is **AI context infrastructure**: a portable, persistent knowledge graph built from the tools you already work in. It runs in three tiers:
 
-1. **Harvest** — pull your documents from Notion, Confluence, Jira, Obsidian, Gmail, Calendar, Slack, and GitHub into native formats, deduplicated by content hash. Deterministic; no LLM.
+1. **Harvest** — pull your notes and wikis from Notion, Confluence, and Obsidian into native formats, deduplicated by content hash. Deterministic; no LLM.
 2. **Compile** — chunk, tag, semantically cluster, and lay out the harvested content into an emergent terrain: regions and peaks are based on embedding proximity, not a fixed folder taxonomy.
 3. **Surface** — a FastAPI server + a React app: a 3D hex map of everything you've worked on, source-grounded attention signals, chat over the compiled terrain graph, and JSON artifacts downstream AI clients can use as compact context.
 
-Everything Mnemify generates lives in a local `.mnemify/` folder on your machine. Nothing is written back to your sources.
+Everything Mnemify generates lives in one folder on your machine, outside this repo. Nothing is written back to your sources.
 
 ---
 
-## Run it
+## Install
 
-You need **[uv](https://docs.astral.sh/uv/)** (it installs Python 3.11+ for you if needed) and **Node.js 18+**. These commands work the same on Windows, macOS, and Linux — from the repo root:
+You need **Node.js 18 or newer**. Setup installs **[uv](https://docs.astral.sh/uv/)** for you if it's missing, and uv brings its own Python 3.11+.
 
-```bash
-cd backend
-uv sync                                   # creates .venv/ and installs the backend + the `mnemify` CLI
-uv run mnemify up --port 8783 --reload --no-browser
-```
+| | |
+|---|---|
+| **Clone** | `git clone https://github.com/mnemify-ai/mnemify && cd mnemify && sh setup.sh`<br>Windows: clone it, then double-click `setup.bat`. |
+| **Download ZIP** | [`main.zip`](https://github.com/mnemify-ai/mnemify/archive/refs/heads/main.zip) → unzip → `sh setup.sh` in the unzipped folder (Windows: double-click `setup.bat`). |
+| **Developers** | Two terminals, hot reload: `cd backend && uv sync && uv run mnemify up --reload --no-browser` and `cd frontend/web && npm install && npm run dev` → <http://localhost:5173>. |
 
-```bash
-cd frontend/web
-npm install
-npm run dev          # Vite dev server on http://localhost:5173, proxies /api/* to :8783
-```
+Setup installs the backend, builds the web app, creates a **Mnemify** icon (macOS: `~/Applications`; Linux: your app menu; Windows: Desktop + Start Menu), and opens the app on <http://127.0.0.1:8783>.
 
-Open **http://localhost:5173**. Both processes need to be running side by side (two terminals); `Ctrl-C` stops each.
+On Windows, double-clicking `setup.bat` is fine. It runs PowerShell with `-ExecutionPolicy Bypass` for that one process only — nothing in your system settings is read or changed.
 
-To serve everything from one process instead (no HMR), build the web app once and let the backend host it:
+## Start and stop
 
-```bash
-cd frontend/web && npm run build          # → frontend/web/dist
-cd ../../backend && uv run mnemify up     # http://127.0.0.1:8783 serves the API + the built app
-```
+Click the **Mnemify** icon, or run `sh mnemify.sh` (Windows: `mnemify.bat`) from the repo folder. If it's already running, it just opens the browser again.
 
-`uv run mnemify …` and `uv run python -m src …` are equivalent.
+Mnemify stops itself after 30 idle minutes — change that, or quit it now, under **Settings → General**. From a terminal: `cd backend && uv run mnemify stop`.
 
-### Credentials
+## Where your data lives
 
-Most of the setup happens in the app. Open **Build → Sources** and the connect wizard for each source walks you through pasting a token, validating it, and choosing what to harvest. Notion and Confluence tokens are saved to `backend/.env` for you; Obsidian just needs a vault path. A few sources still need a manual step:
+Your harvested documents, the compiled map, your settings and your keys live in one per-user folder **outside this repo**:
 
-```bash
-cp backend/.env.template backend/.env
-```
+| | |
+|---|---|
+| macOS | `~/Library/Application Support/Mnemify` |
+| Windows | `%LOCALAPPDATA%\Mnemify` |
+| Linux | `~/.local/share/mnemify` (or `$XDG_DATA_HOME/mnemify`) |
 
-- `JIRA_EMAIL` / `JIRA_API_TOKEN` — your Atlassian cloud email + an [API token](https://id.atlassian.com/manage-profile/security/api-tokens).
-- `SLACK_USER_TOKEN` — a Slack user OAuth token (`xoxp-…`) from your own Slack App (steps in `.env.template`).
-- `GITHUB_TOKEN` — a fine-grained GitHub personal access token (`github_pat_…`) scoped to the repos you want to harvest.
-- **Gmail / Calendar** use Google OAuth: drop your Google Cloud `oauth_client.json` at `backend/src/harvester/_google/oauth_client.json`, then run `mnemify login --source gmail` / `--source calendar`. Full steps are in `.env.template`.
+Set `MNEMIFY_HOME` to put it somewhere else. The repo folder holds nothing but code: deleting it, replacing it with a fresh download, or moving it never touches your data.
 
-Tokens only ever live in `.env`, never in `mnemify.yaml` and never in the repo.
+## Updating
 
-### AI models
+1. Get the new code — `git pull`, or unzip a fresh [`main.zip`](https://github.com/mnemify-ai/mnemify/archive/refs/heads/main.zip) over the folder.
+2. Run `sh setup.sh` again (Windows: `setup.bat`).
 
-The **Compile** step and **Chat** need a language model. You have three options, and Mnemify picks up whichever you have:
+That's the whole update story. Setup is idempotent, and your data lives elsewhere, so nothing is lost.
 
-- **OpenAI** (recommended) — set `OPENAI_API_KEY` in `backend/.env`. This is the default mode and the one we run day to day.
-- **Claude Code** — if the `claude` CLI is installed and logged in, Mnemify detects it automatically and can use your Claude subscription for compile (`--ai-mode claude`) and chat, no API key needed. An Anthropic API key (`ANTHROPIC_API_KEY`, `--ai-mode anthropic`) works too.
-- **Local** — `--ai-mode local` compiles deterministically with no key and no network. Good for a first look; the map is much better with a real model.
+## Connect your sources
 
-Even with Claude, keep an `OPENAI_API_KEY` set: embeddings for chunking and clustering always run through OpenAI, so every mode except local needs it. Model and mode can be changed later under **Settings → AI & Models**.
+Open **Build → Sources**. Mnemify harvests **Notion**, **Confluence**, and **Obsidian**, and each connect wizard walks you through pasting a token, validating it, and choosing what to harvest:
 
-### Then
+- **Notion** — an internal integration token, shared with the pages you want.
+- **Confluence** — your Atlassian email plus an [API token](https://id.atlassian.com/manage-profile/security/api-tokens).
+- **Obsidian** — the path to your vault. No token at all.
 
-Open the app → **Build → Sources**, connect a source, run a **harvest**, then a **compile**. The home page turns into a living map of everything you've worked on. (Until you compile, it shows the connect → harvest → compile onboarding screen.)
+Nothing here needs a file edited. Tokens are written to your data folder, readable only by you, and never to the repo.
 
-The first harvest and compile take a while. After that the results are cached, so later runs are much faster.
+Then run a **harvest**, then a **compile**, and the home page turns into a living map of everything you've worked on. (Until you compile, it shows the connect → harvest → compile onboarding screen.) The first harvest and compile take a while; after that results are cached and later runs are much faster.
 
----
+## AI models
+
+The **Compile** step and **Chat** need a language model. You have three options, and Mnemify picks up whichever you have. Set keys under **Settings → AI & Models**:
+
+- **OpenAI** (recommended) — set `OPENAI_API_KEY`. This is the default mode and the one we run day to day.
+- **Claude Code** — if the `claude` CLI is installed and logged in, Mnemify detects it automatically and can use your Claude subscription for compile and chat, no API key needed. An Anthropic API key (`ANTHROPIC_API_KEY`) works too.
+- **Local** — compiles deterministically with no key and no network. Good for a first look; the map is much better with a real model.
+
+Even with Claude, keep an `OPENAI_API_KEY` set: embeddings for chunking and clustering always run through OpenAI, so every mode except local needs it.
 
 ## What it does (and doesn't)
 
-Mnemify is **read-only**. It never edits Notion, Confluence, Jira, or any other source, and it never creates tasks or writes comments back. Your source pages stay the system of record; Mnemify is the map on top of them.
+Mnemify is **read-only**. It never edits Notion, Confluence, or any other source, and it never creates tasks or writes comments back. Your source pages stay the system of record; Mnemify is the map on top of them.
 
 On top of the semantic map, Mnemify pulls out **attention signals** straight from your content — todos, risks, decisions, open questions, owners, and recent changes — and rolls them up into an urgency score for every region and topic. Flip the map into the **Burning** overlay and the same terrain is tinted by what needs attention, without the geography changing under you. Clicking a region or tag shows its summary, active documents, and every signal behind it, each linked back to the source page.
 

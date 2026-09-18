@@ -1,9 +1,12 @@
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Moon, RefreshCw, Sparkles, Sun } from "lucide-react";
+import { Moon, Power, RefreshCw, Sparkles, Sun } from "lucide-react";
 import { Button } from "../../components/ui/Button";
+import { AlertDialog } from "../../components/ui/AlertDialog";
 import { useMapData } from "../../data/MapDataProvider";
 import { useTerrainReport } from "../../api/terrain";
+import { useHealth, useServerSettings, useShutdown, useUpdateServerSettings } from "../../api/system";
 import { relativeTime } from "../../lib/relativeTime";
 import { formatDuration } from "../../lib/formatEta";
 import { useThemeMode } from "../../lib/useThemeMode";
@@ -105,7 +108,163 @@ export function GeneralSection() {
           </>
         )}
       </SettingsSection>
+
+      <AppSection />
     </div>
+  );
+}
+
+// ─── Application: version, idle shutdown, quit ─────────────────────────────
+
+const IDLE_MIN = 0;
+const IDLE_MAX = 24 * 60;
+
+/** The parsed whole number of minutes, or null if the text isn't usable yet. */
+function parseIdleMinutes(text: string): number | null {
+  if (text.trim() === "") return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return null;
+  if (n < IDLE_MIN || n > IDLE_MAX) return null;
+  return n;
+}
+
+function AppSection() {
+  const health = useHealth();
+  const settings = useServerSettings();
+  const update = useUpdateServerSettings();
+  const shutdown = useShutdown();
+
+  const [minutesText, setMinutesText] = useState("30");
+  const [confirmQuit, setConfirmQuit] = useState(false);
+  const [stopped, setStopped] = useState(false);
+  const lastSavedRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (settings.data) {
+      setMinutesText(String(settings.data.idle_timeout_minutes));
+      lastSavedRef.current = settings.data.idle_timeout_minutes;
+    }
+  }, [settings.data?.idle_timeout_minutes]);
+
+  const parsed = parseIdleMinutes(minutesText);
+  const valid = parsed !== null;
+
+  function commitIdleTimeout() {
+    if (parsed === null || parsed === lastSavedRef.current) return;
+    lastSavedRef.current = parsed;
+    update.mutate(
+      { idle_timeout_minutes: parsed },
+      {
+        onSuccess: () => toast.success("Idle shutdown saved."),
+        onError: (err) => toast.error("Couldn't save", { description: String(err) }),
+      },
+    );
+  }
+
+  function quit() {
+    shutdown.mutate(undefined, {
+      onSuccess: () => {
+        setConfirmQuit(false);
+        setStopped(true);
+      },
+      onError: (err) => {
+        setConfirmQuit(false);
+        toast.error("Couldn't stop Mnemify", { description: String(err) });
+      },
+    });
+  }
+
+  if (stopped) {
+    return (
+      <SettingsSection eyebrow="Application" title="Mnemify has stopped">
+        <p className="font-sans text-sm text-muted max-w-prose">
+          You can close this tab. Start it again from the Mnemify icon, or with{" "}
+          <code className="font-mono text-xs">mnemify up</code>.
+        </p>
+      </SettingsSection>
+    );
+  }
+
+  const version = health.data?.version;
+  const commitSha = health.data?.commit;
+
+  return (
+    <SettingsSection
+      eyebrow="Application"
+      title="This copy of Mnemify"
+      help="Mnemify runs as a local server on your own machine. It can quit itself when you stop using it, and you can stop it here at any time — your harvested data and compiled map are on disk and survive a restart."
+      actions={
+        <Button variant="secondary" size="sm" onClick={() => setConfirmQuit(true)}>
+          <Power size={14} strokeWidth={1.5} />
+          Quit Mnemify
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-5">
+        <p className="font-sans text-sm text-muted tabular-nums">
+          {version ? (
+            <>
+              Mnemify v{version}
+              {commitSha ? ` (${commitSha})` : ""}
+            </>
+          ) : (
+            "Mnemify — version unavailable"
+          )}
+        </p>
+
+        <div>
+          <label className="flex flex-wrap items-center gap-2 font-sans text-sm text-muted">
+            <span className="text-ink">Idle shutdown</span>
+            <span>after</span>
+            <input
+              type="number"
+              min={IDLE_MIN}
+              max={IDLE_MAX}
+              step={1}
+              value={minutesText}
+              aria-invalid={!valid}
+              aria-label="Idle shutdown in minutes"
+              disabled={settings.isLoading}
+              onChange={(e) => setMinutesText(e.target.value)}
+              onBlur={commitIdleTimeout}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              className={cn(
+                "w-16 h-8 px-2 rounded-md border bg-bone/50 font-sans text-sm text-ink focus:outline-none transition-colors",
+                valid ? "border-hair focus:border-ink/40" : "border-rose/60 focus:border-rose",
+              )}
+            />
+            <span>minutes of inactivity</span>
+            {!valid && (
+              <span className="font-sans text-[11px] text-rose">
+                Enter a whole number from {IDLE_MIN} to {IDLE_MAX}.
+              </span>
+            )}
+          </label>
+          <p className="font-sans text-xs text-muted max-w-prose mt-2">
+            {parsed === 0
+              ? "Never quits on its own — it runs until you quit it or restart your machine."
+              : "Suspended while any harvest schedule is enabled, and never while a harvest, compile or chat is running."}
+          </p>
+        </div>
+      </div>
+
+      <AlertDialog
+        open={confirmQuit}
+        onOpenChange={setConfirmQuit}
+        title="Quit Mnemify?"
+        description="The server stops and this tab goes offline. Nothing is deleted — start it again from the Mnemify icon whenever you want."
+        confirmLabel="Quit"
+        cancelLabel="Cancel"
+        tone="destructive"
+        confirming={shutdown.isPending}
+        onConfirm={quit}
+      />
+    </SettingsSection>
   );
 }
 

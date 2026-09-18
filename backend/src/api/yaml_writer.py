@@ -15,15 +15,17 @@ from typing import Any
 from ruamel.yaml import YAML
 
 
-YAML_PATH_ENV = "MNEMIFY_YAML_FILE"
+from src import paths
+
+YAML_PATH_ENV = paths.YAML_FILE_ENV  # kept for callers that import the name
 
 
 def resolve_yaml_path() -> Path:
-    override = os.environ.get(YAML_PATH_ENV)
-    if override:
-        return Path(override).resolve()
-    here = Path(__file__).resolve()
-    return here.parents[2] / "mnemify.yaml"
+    """``mnemify.yaml`` — ``MNEMIFY_YAML_FILE`` override, else ``<home>/mnemify.yaml``.
+
+    Same resolver ``src.config_file.load_config_file`` reads from.
+    """
+    return paths.yaml_file()
 
 
 def _yaml() -> YAML:
@@ -136,6 +138,28 @@ def upsert_compile(body: dict[str, Any]) -> None:
         data = {"raw_root": ".mnemify/raw", "converter_version": "0.1.0", "sources": {}}
 
     data["compile"] = body
+
+    buffer = StringIO()
+    y.dump(data, buffer)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(buffer.getvalue(), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def upsert_server(block: dict[str, Any]) -> None:
+    """Set the top-level ``server`` block (lifecycle settings — idle shutdown).
+    Atomic file replace. Round-trip preserves the rest of the file via ruamel."""
+    path = resolve_yaml_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    y = _yaml()
+    if path.exists():
+        with path.open("r", encoding="utf-8") as f:
+            data = y.load(f) or {}
+    else:
+        data = {"raw_root": ".mnemify/raw", "converter_version": "0.1.0", "sources": {}}
+
+    data["server"] = block
 
     buffer = StringIO()
     y.dump(data, buffer)

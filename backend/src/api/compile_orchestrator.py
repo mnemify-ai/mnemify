@@ -22,7 +22,7 @@ from ._rate import _Rate
 from .compile_bus import compile_bus
 
 logger = logging.getLogger(__name__)
-DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 
 # ─── Run state ──────────────────────────────────────────────────────
@@ -57,6 +57,16 @@ def reset_state() -> None:
     state.run_id = None
     state._task = None
     state._cancel = threading.Event()
+
+
+def is_running() -> bool:
+    """Whether a compile is in flight.
+
+    The idle watchdog asks this before quitting the process — the compile
+    worker thread dies with the server and there is no resume, so a false
+    "idle" here silently throws away a long build.
+    """
+    return state.status == "running"
 
 
 def snapshot() -> dict[str, Any]:
@@ -108,7 +118,7 @@ async def start_compile(
             "ok": False,
             "reason": "a harvest is in progress — wait for it to finish before compiling",
         }
-    if not (DATA_DIR / "harvest-manifest.db").exists():
+    if not (paths.data_dir() / "harvest-manifest.db").exists():
         return {"ok": False, "reason": "no harvest manifest — run a harvest first"}
     # Saved defaults back every knob the caller didn't override.
     from src.api.routes_settings import _compile_settings_block
@@ -257,7 +267,7 @@ async def _run_compile(
         # reads it (read-only during parallel calls => no race).
         set_call_logging(claude_call_logging)
         compiler = TerrainCompiler(
-            data_dir=DATA_DIR,
+            data_dir=paths.data_dir(),
             ai_mode=ai_mode,
             llm_model=llm_model,
             claude_extract_model=claude_extract_model,

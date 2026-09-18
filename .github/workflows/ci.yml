@@ -1,0 +1,96 @@
+name: ci
+
+# Users install whatever `main` is when they download it, so `main` stays
+# green. These are the same three gates the contributing docs name:
+# pytest, tsc + vitest + vite build, and one version number for both halves.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+          # There is no .python-version in the repo; pyproject says
+          # requires-python = ">=3.11". Pin the floor so CI proves the oldest
+          # Python a user may already have, rather than whatever uv happens to
+          # pick this month.
+          python-version: "3.11"
+
+      - name: Install dependencies
+        # `dev` is an extra, not a dependency-group, so it needs --extra.
+        run: uv sync --extra dev
+
+      - name: pytest
+        # --no-sync on purpose: a bare `uv run` re-syncs without --extra dev
+        # and would uninstall pytest and ruff out from under the next step.
+        run: uv run --no-sync pytest -q
+
+      - name: ruff (non-blocking)
+        # The tree carries 509 pre-existing ruff findings (measured on
+        # feature/scripted-install, 2026-09). Reporting them without failing
+        # the build keeps the signal visible while the baseline is burned
+        # down; drop `continue-on-error` once `ruff check src tests` is clean.
+        # That burn-down is a separate piece of work, not this workflow's.
+        continue-on-error: true
+        run: uv run --no-sync ruff check src tests
+
+  frontend:
+    name: frontend (tsc + vitest + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+
+      - name: tsc -b
+        run: npx tsc -b
+
+      - name: vitest
+        run: npm test
+
+      - name: vite build
+        # `npm run build` is `tsc -b && vite build`; the type-check above is a
+        # cheap early failure, and the second tsc pass is a no-op.
+        run: npm run build
+
+  version-sync:
+    name: version sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: backend and frontend versions must match
+        run: sh .github/scripts/check-version-sync.sh
