@@ -17,11 +17,17 @@
 set -eu
 
 PORT=8789
+# How long to wait for a freshly-installed server to answer. Generous on
+# purpose: this is a cold first start, not a warm restart. Keep in step with
+# the -WaitSeconds default in smoke-assert.ps1.
+WAIT_SECONDS=180
 while [ $# -gt 0 ]; do
     case "$1" in
         --port) PORT=$2; shift 2 ;;
         --port=*) PORT=${1#--port=}; shift ;;
         --repo) REPO=$2; shift 2 ;;
+        --wait) WAIT_SECONDS=$2; shift 2 ;;
+        --wait=*) WAIT_SECONDS=${1#--wait=}; shift ;;
         *) printf 'smoke-assert: unknown option %s\n' "$1" >&2; exit 2 ;;
     esac
 done
@@ -79,22 +85,28 @@ real_path() {
 section() { printf '\n== %s\n' "$1"; }
 
 # ---------------------------------------------------------------- 1. health
-section "waiting for $BASE/api/health (up to 60s)"
+# Bound by the clock, not by a try count. `60 tries` was never 60 seconds: a
+# refused connection costs real time before --max-time applies (~2s each on
+# Windows, where the mirror of this loop advertised 60s and ran for three
+# minutes). Report the elapsed time on success too - it is the only place the
+# real cold start cost of a fresh install ever gets measured.
+section "waiting for $BASE/api/health (up to ${WAIT_SECONDS}s)"
 HEALTH=""
-i=0
-while [ "$i" -lt 60 ]; do
+STARTED=$(date +%s)
+DEADLINE=$((STARTED + WAIT_SECONDS))
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
     if HEALTH=$(curl -fsS --max-time 5 "$BASE/api/health" 2>/dev/null) && [ -n "$HEALTH" ]; then
         break
     fi
     HEALTH=""
-    i=$((i + 1))
     sleep 1
 done
+WAITED=$(( $(date +%s) - STARTED ))
 if [ -z "$HEALTH" ]; then
-    printf 'smoke-assert: the server never answered on %s/api/health after 60s.\n' "$BASE" >&2
+    printf 'smoke-assert: the server never answered on %s/api/health after %ss.\n' "$BASE" "$WAITED" >&2
     exit 1
 fi
-printf 'Answered after ~%ss.\n\n' "$i"
+printf 'Answered after ~%ss.\n\n' "$WAITED"
 printf '%s\n' "$HEALTH" | jq .
 
 section "health assertions"

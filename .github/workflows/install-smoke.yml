@@ -111,6 +111,84 @@ jobs:
             > "$MNEMIFY_LOG_DIR/server.log" 2>&1 &
           echo "MNEMIFY_SMOKE_PID=$!" >> "$GITHUB_ENV"
 
+      # Diagnostic, Windows only. The background start below tells you nothing
+      # when it goes wrong - a hung launcher and a launcher that died on its
+      # first line both leave two empty redirect files. These two bounded
+      # probes split that: whether `uv run` can reach a Python interpreter at
+      # all, and how long importing the app actually costs on a cold install
+      # (96 packages copied rather than hardlinked, with Defender reading each
+      # one). Never fails the job - it is evidence, not an assertion.
+      - name: Probe the toolchain
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 12
+        run: |
+          # This step has the job's original PATH, from before setup installed
+          # uv - the same staleness mnemify.ps1 works around. Refresh it here
+          # too, or `uv` is simply not found and the probe measures nothing.
+          $env:Path = ((@([Environment]::GetEnvironmentVariable('Path', 'Machine'),
+                          [Environment]::GetEnvironmentVariable('Path', 'User'),
+                          $env:Path) -join ';') -split ';' |
+                       Where-Object { $_ } | Select-Object -Unique) -join ';'
+
+          $uv = Get-Command uv -ErrorAction SilentlyContinue
+          if (-not $uv) { Write-Host 'PROBE: uv is not on PATH even after the refresh.'; exit 0 }
+          Write-Host ('PROBE: uv at ' + $uv.Source)
+          & uv --version
+
+          $backend = Join-Path $env:GITHUB_WORKSPACE 'backend'
+
+          function Invoke-Probe {
+              param([string]$Label, [string[]]$PyArgs, [int]$LimitSec)
+              $out = Join-Path $env:MNEMIFY_LOG_DIR ("probe-" + $Label + ".log")
+              $err = Join-Path $env:MNEMIFY_LOG_DIR ("probe-" + $Label + ".err.log")
+              $sw = [Diagnostics.Stopwatch]::StartNew()
+              $proc = Start-Process -FilePath $uv.Source -PassThru -NoNewWindow `
+                  -WorkingDirectory $backend `
+                  -RedirectStandardOutput $out -RedirectStandardError $err `
+                  -ArgumentList (@('run', '--no-sync', 'python') + $PyArgs)
+              $finished = $proc.WaitForExit($LimitSec * 1000)
+              if (-not $finished) {
+                  try { $proc.Kill() } catch { $null = $_ }
+                  Write-Host ("PROBE " + $Label + ": STILL RUNNING after " + $LimitSec + "s - it hangs.")
+              } else {
+                  Write-Host ("PROBE " + $Label + ": exit " + $proc.ExitCode +
+                              " after " + [int]$sw.Elapsed.TotalSeconds + "s")
+              }
+              foreach ($f in @($out, $err)) {
+                  if ((Test-Path $f) -and (Get-Item $f).Length -gt 0) {
+                      Write-Host ("--- " + (Split-Path -Leaf $f))
+                      # Write-Host, not bare output: this function returns a
+                      # bool, and Get-Content would land in that return value.
+                      Get-Content $f -Tail 40 | ForEach-Object { Write-Host $_ }
+                  }
+              }
+              return $finished
+          }
+
+          # Can uv reach an interpreter at all? If not, the app probe would
+          # only hang the same way for another five minutes - skip it.
+          if (-not (Invoke-Probe -Label 'interp' -LimitSec 300 -PyArgs @('-c', 'print("interp ok")'))) {
+              Write-Host 'PROBE: uv run cannot reach an interpreter; skipping the app probe.'
+              exit 0
+          }
+
+          # Where does the cold start actually go - importing, or building the
+          # app? Written to a file, not passed with -c: an argument with
+          # embedded newlines does not survive Start-Process quoting.
+          $probePy = Join-Path $env:RUNNER_TEMP 'probe_app.py'
+          @(
+            'import time'
+            't0 = time.time()'
+            'from src.api import create_app'
+            'print("import %.1fs" % (time.time() - t0), flush=True)'
+            't1 = time.time()'
+            'create_app()'
+            'print("create_app %.1fs" % (time.time() - t1), flush=True)'
+          ) | Set-Content -Path $probePy -Encoding ascii
+          Invoke-Probe -Label 'app' -LimitSec 300 -PyArgs @($probePy)
+
       - name: Start Mnemify
         if: runner.os == 'Windows'
         shell: pwsh
@@ -173,6 +251,24 @@ jobs:
           Write-Host ''
           Write-Host ("===== " + $env:MNEMIFY_HOME + " =====")
           Get-ChildItem -Force $env:MNEMIFY_HOME -ErrorAction SilentlyContinue
+
+          # Two empty redirect files mean either "hung" or "died on line one",
+          # and those want opposite fixes. Alive with CPU time burnt says it is
+          # working; alive with none says it is blocked; gone says it exited
+          # before writing a byte.
+          Write-Host ''
+          Write-Host '===== launcher process ====='
+          if ($env:MNEMIFY_SMOKE_PID) {
+            $proc = Get-Process -Id ([int]$env:MNEMIFY_SMOKE_PID) -ErrorAction SilentlyContinue
+            if ($proc) {
+              $proc | Select-Object Id, ProcessName, StartTime, CPU | Format-List
+              Get-CimInstance Win32_Process -Filter ("ParentProcessId=" + $proc.Id) -ErrorAction SilentlyContinue |
+                Select-Object ProcessId, Name, CommandLine | Format-List
+            } else {
+              Write-Host ("pid " + $env:MNEMIFY_SMOKE_PID + " is gone - it exited without writing anything.")
+            }
+          }
+          Write-Host ("uv resolves to: " + (Get-Command uv -ErrorAction SilentlyContinue).Source)
 
       - name: Upload logs
         if: always()

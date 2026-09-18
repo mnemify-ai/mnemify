@@ -19,7 +19,10 @@
 [CmdletBinding()]
 param(
     [int]$Port = 8789,
-    [string]$Repo
+    [string]$Repo,
+    # How long to wait for a freshly-installed server to answer. Generous on
+    # purpose: this is a cold first start, not a warm restart.
+    [int]$WaitSeconds = 180
 )
 
 $ErrorActionPreference = 'Stop'
@@ -69,9 +72,16 @@ function Test-ServerUp {
 }
 
 # ---------------------------------------------------------------- 1. health
-Write-Section "waiting for $base/api/health (up to 60s)"
+# Bound by the clock, not by a try count. `60 tries` was never 60 seconds: a
+# refused connection costs real time before -TimeoutSec applies (~2s each on
+# Windows), so the old loop advertised 60s and actually ran for three minutes.
+# Report the elapsed time on success too - it is the only place the real cold
+# start cost of a fresh install ever gets measured.
+Write-Section "waiting for $base/api/health (up to ${WaitSeconds}s)"
 $health = $null
-for ($i = 0; $i -lt 60; $i++) {
+$started = Get-Date
+$deadline = $started.AddSeconds($WaitSeconds)
+while ((Get-Date) -lt $deadline) {
     try {
         $health = Invoke-RestMethod -Uri "$base/api/health" -TimeoutSec 5
         if ($health) { break }
@@ -80,10 +90,11 @@ for ($i = 0; $i -lt 60; $i++) {
     }
     Start-Sleep -Seconds 1
 }
+$waited = [int]((Get-Date) - $started).TotalSeconds
 if (-not $health) {
-    throw "smoke-assert: the server never answered on $base/api/health after 60s."
+    throw "smoke-assert: the server never answered on $base/api/health after ${waited}s."
 }
-Write-Host ("Answered after ~" + $i + "s.")
+Write-Host ("Answered after ~" + $waited + "s.")
 Write-Host ''
 $health | ConvertTo-Json -Depth 6 | Write-Host
 
