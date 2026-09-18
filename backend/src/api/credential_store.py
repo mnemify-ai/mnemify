@@ -108,8 +108,9 @@ def save_secret(name: str, value: str) -> None:
 
 def write_secrets(pairs: dict[str, str]) -> None:
     """Upsert a batch of env keys in a single atomic rewrite."""
-    for k in pairs:
+    for k, v in pairs.items():
         _validate_key(k)
+        _validate_value(v)
     path = resolve_env_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -187,3 +188,9 @@ def _atomic_write(path: Path, lines: list[str]) -> None:
 def _validate_key(name: str) -> None:
     if not _KEY_RE.match(f"{name}="):
         raise ValueError(f"invalid env key name: {name!r}")
+
+
+def _validate_value(value: str) -> None:
+    """One value is one line. A line break would smuggle in a second ``KEY=``."""
+    if "\n" in value or "\r" in value:
+        raise ValueError("secret values must not contain line breaks")

@@ -37,6 +37,9 @@ def _isolated_mnemify_home(tmp_path, monkeypatch):
     the same ``tmp_path/.mnemify`` they always did.
     """
     monkeypatch.setenv("MNEMIFY_HOME", str(tmp_path))
+    # Starlette's TestClient sends ``Host: testserver``; the Host guard in
+    # ``create_app`` would otherwise 403 every request in the suite.
+    monkeypatch.setenv("MNEMIFY_ALLOWED_HOSTS", "testserver")
 
 
 #: Every name ``/api/secrets`` can read or write. Kept as a literal so this

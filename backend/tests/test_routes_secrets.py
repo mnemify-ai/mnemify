@@ -126,6 +126,26 @@ def test_put_rejects_an_empty_value(client, value):
     assert client.put("/api/secrets/OPENAI_API_KEY", json={"value": value}).status_code == 400
 
 
+def test_put_rejects_line_breaks(client, tmp_path):
+    """A newline would write a second KEY=value line into .env — and
+    ``refresh()`` would load it into the running process (MNEMIFY_HOME, say)."""
+    resp = client.put(
+        "/api/secrets/OPENAI_API_KEY",
+        json={"value": "sk-abc\nMNEMIFY_HOME=/evil"},
+    )
+    assert resp.status_code == 400
+    assert "control character" in resp.json()["detail"]
+    env = tmp_path / ".env"
+    assert not env.exists() or "evil" not in env.read_text()
+    import os
+    assert os.environ.get("MNEMIFY_HOME") != "/evil"
+
+
+def test_write_secrets_refuses_line_breaks():
+    with pytest.raises(ValueError):
+        credential_store.write_secrets({"OPENAI_API_KEY": "a\nB=c"})
+
+
 def test_put_rejects_non_ascii(client):
     # Smart quotes from a styled doc make httpx raise UnicodeEncodeError deep
     # in the request — catch it at the door with a reason the user can act on.

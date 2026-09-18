@@ -123,6 +123,14 @@ def _clean(value: str) -> str:
     cleaned = value.strip()
     if not cleaned:
         raise HTTPException(400, "value must not be empty")
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in cleaned):
+        # A newline here would let ``PUT /secrets/OPENAI_API_KEY`` write a
+        # second ``KEY=value`` line into .env — MNEMIFY_HOME, say — and
+        # ``refresh()`` would load it into the running process. That is the
+        # exact thing the allowlist exists to prevent.
+        raise HTTPException(
+            400, "Value contains a control character (newline?) — re-copy it."
+        )
     if not cleaned.isascii():
         raise HTTPException(
             400,

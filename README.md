@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://mnemify.ai"><img alt="Website" src="https://img.shields.io/badge/website-mnemify.ai-8b2e4a?style=flat-square"></a>
-  <a href="https://github.com/mnemify-ai/mnemify/releases"><img alt="Version" src="https://img.shields.io/badge/version-v1.0.0-1f6feb?style=flat-square"></a>
+  <a href="backend/pyproject.toml"><img alt="Version" src="https://img.shields.io/badge/version-v1.0.0-1f6feb?style=flat-square"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-6a994e?style=flat-square"></a>
   <a href="backend/pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-%3E%3D3.11-3776ab?style=flat-square&logo=python&logoColor=white"></a>
   <a href="frontend/web/package.json"><img alt="Node" src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white"></a>

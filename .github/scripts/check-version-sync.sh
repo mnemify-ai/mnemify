@@ -41,7 +41,7 @@ if [ -z "$js_version" ]; then
 fi
 if [ "$py_version" != "$js_version" ]; then
     printf '\nVersion mismatch: backend %s != frontend %s\n' "$py_version" "$js_version" >&2
-    printf 'Set both to the same value (see RELEASING.md), then re-run.\n' >&2
+    printf 'Bump both to the same value together, then re-run.\n' >&2
     exit 1
 fi
 

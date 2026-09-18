@@ -1,9 +1,8 @@
 # scripts/
 
 Implementation behind the four entry points at the repo root. Nothing in here
-is meant to be run directly (except `install.sh` / `install.ps1`, which are
-served from a URL) — run `setup.sh` / `setup.bat` or `mnemify.sh` / `mnemify.bat`
-from the repo root instead.
+is meant to be run directly — run `setup.sh` / `setup.bat` or `mnemify.sh` /
+`mnemify.bat` from the repo root instead.
 
 | File | What it is |
 |---|---|
@@ -11,8 +10,6 @@ from the repo root instead.
 | `mnemify.ps1` | Windows mirror of `mnemify.sh`. Called by `mnemify.bat` and by the shortcut. |
 | `make-launcher.sh` | Creates `Mnemify.app` (macOS) or `mnemify.desktop` (Linux). |
 | `make-launcher.ps1` | Creates `Mnemify.lnk` on the Desktop and in the Start Menu. |
-| `install.sh` | What `curl -fsSL …/scripts/install.sh \| sh` runs: clone or pull, then `setup.sh`. |
-| `install.ps1` | What `irm …/scripts/install.ps1 \| iex` runs: clone or pull, then `setup.ps1`. |
 
 ## Rules these files live by
 
@@ -69,11 +66,9 @@ hosts that pass it through rather than rejecting it.)
 | `MNEMIFY_LAUNCHER_DIR` | Where `make-launcher` writes, instead of `~/Applications` / Desktop + Start Menu. |
 | `MNEMIFY_LOG_DIR` | Where `--gui` / `-Gui` writes `launcher.log`. |
 | `MNEMIFY_DIALOG_DRYRUN=1` | Log the error dialog instead of showing it (nothing to click in CI). |
-| `MNEMIFY_INSTALL_DIR` | Where `install.sh` / `install.ps1` clones to. Default `~/Mnemify`. |
-| `MNEMIFY_REPO_URL` | Clone from a fork instead of `mnemify-ai/mnemify`. |
 
-`MNEMIFY_HOME`, `MNEMIFY_ENV_FILE`, `MNEMIFY_YAML_FILE` and `MNEMIFY_WEB_DIST`
-are read by the app itself (`backend/src/paths.py`), not by these scripts.
+`MNEMIFY_HOME`, `MNEMIFY_ENV_FILE`, `MNEMIFY_YAML_FILE`, `MNEMIFY_WEB_DIST` and
+`MNEMIFY_ALLOWED_HOSTS` are read by the app itself (`backend/src/paths.py`), not by these scripts.
 
 ## Default log locations
 

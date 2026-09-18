@@ -151,10 +151,70 @@ async def _lifespan(_app: FastAPI):
             logger.exception("scheduler: failed to stop cleanly")
 
 
+#: Hostnames a request's ``Host`` header may carry. Mnemify binds loopback, so
+#: a browser reaches it only as one of these. Extra names (a ``--host`` that is
+#: not loopback, a test client's ``testserver``) come from this env var,
+#: comma-separated.
+ALLOWED_HOSTS_ENV = "MNEMIFY_ALLOWED_HOSTS"
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0", "::"})
+
+
+def _allowed_hosts() -> frozenset[str]:
+    extra = {
+        h.strip().lower()
+        for h in os.environ.get(ALLOWED_HOSTS_ENV, "").split(",")
+        if h.strip()
+    }
+    return _LOOPBACK_HOSTS | extra
+
+
+def _host_of(headers: list[tuple[bytes, bytes]]) -> str:
+    """The ``Host`` header without its port, lower-cased. ``""`` if absent."""
+    raw = ""
+    for k, v in headers:
+        if k == b"host":
+            raw = v.decode("latin-1").strip()
+            break
+    if raw.startswith("["):  # [::1]:8783
+        return raw[1 : raw.find("]")].lower() if "]" in raw else raw.lower()
+    return raw.rsplit(":", 1)[0].lower() if ":" in raw else raw.lower()
+
+
+class HostGuardMiddleware:
+    """Refuse requests whose ``Host`` is not this machine.
+
+    Everything mutating in this API — quit, secrets, settings reset, harvest
+    reset — is reachable by any page the browser considers same-origin. A page
+    on ``attacker.example`` whose DNS answer flips to ``127.0.0.1`` (DNS
+    rebinding) *is* same-origin to ``http://attacker.example:8783`` and can
+    send any header, so the ``X-Mnemify-Client`` guard alone is not enough.
+    The one thing that page cannot forge is the ``Host`` header the browser
+    sets, so a request that does not name localhost is not from our UI.
+
+    Pure ASGI: SSE streams pass through untouched.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket") and (
+            _host_of(scope.get("headers") or []) not in _allowed_hosts()
+        ):
+            response = JSONResponse({"error": "forbidden host"}, status_code=403)
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Mnemify Harvester API", version=__version__, lifespan=_lifespan)
 
-    # Outermost middleware: stamps the idle clock on real /api traffic and
+    # Outermost: a request that is not addressed to this machine never
+    # reaches a route, the idle clock or CORS.
+    app.add_middleware(HostGuardMiddleware)
+
+    # Stamps the idle clock on real /api traffic and
     # counts in-flight /api/ask streams. Pure ASGI, so SSE isn't buffered.
     app.add_middleware(idle.IdleMiddleware)
 
@@ -279,7 +339,17 @@ def _mount_spa(app: FastAPI, dist: Path) -> None:
         if path.startswith("api/"):
             # A bare tuple here would serialize as 200 + a 2-element array.
             return JSONResponse({"error": "not found"}, status_code=404)
-        candidate = dist / path if path else dist / "index.html"
-        if candidate.is_file():
+        index = dist / "index.html"
+        if not path:
+            return FileResponse(index)
+        # uvicorn does not normalise dot-segments, so ``dist / path`` can
+        # point above ``dist`` (``/../../backend/.env``). Resolve and insist
+        # the result is still inside the bundle before serving it.
+        try:
+            candidate = (dist / path).resolve()
+            inside = candidate.is_relative_to(dist.resolve())
+        except (OSError, ValueError):
+            inside = False
+        if inside and candidate.is_file():
             return FileResponse(candidate)
-        return FileResponse(dist / "index.html")
+        return FileResponse(index)
