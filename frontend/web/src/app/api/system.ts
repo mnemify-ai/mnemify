@@ -84,12 +84,30 @@ export function useUpdateServerSettings() {
   });
 }
 
+/** `POST /api/system/shutdown`. `stopping` is false when no server process
+ *  is registered to stop — the `mnemify up --reload` dev path, where the
+ *  reloader owns the process and only Ctrl+C in the terminal ends it. */
+export interface ShutdownResponse {
+  ok: boolean;
+  stopping: boolean;
+}
+
+/** Shown when a shutdown request succeeded but nothing is stopping. */
+export const SHUTDOWN_NOT_STOPPING_HINT =
+  "The server didn't stop — in --reload mode use Ctrl+C in the terminal.";
+
+/** Did the shutdown actually begin? A 200 with `stopping: false` is not a
+ *  stop, and the UI must not tell the user the app is gone. Pure — tested. */
+export function isShuttingDown(res: ShutdownResponse | null | undefined): boolean {
+  return res?.ok === true && res.stopping === true;
+}
+
 /** Quit Mnemify. The server answers *before* it stops, so a resolved promise
- *  means "it's on its way down", not "it's down". */
+ *  means "it's on its way down" (when `stopping` is true), not "it's down". */
 export function useShutdown() {
   return useMutation({
     mutationFn: () =>
-      apiFetch<{ ok: boolean; stopping: boolean }>("/api/system/shutdown", {
+      apiFetch<ShutdownResponse>("/api/system/shutdown", {
         method: "POST",
         headers: { [CLIENT_HEADER]: "web" },
         body: "{}",

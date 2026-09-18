@@ -72,15 +72,25 @@ function Invoke-Step {
 
 function Update-SessionPath {
     # Pick up PATH changes a just-finished installer made, without a new shell.
-    $parts = @()
+    # Appended, never replaced: what this process already has on PATH keeps
+    # priority (fnm/nvm/Volta node, CI setup-node, ...), and the registry only
+    # fills in what is missing. Reading the registry must not be able to stop
+    # setup, so it is wrapped.
+    $suffix = @()
     foreach ($scope in 'Machine', 'User') {
-        $v = [Environment]::GetEnvironmentVariable('Path', $scope)
-        if ($v) { $parts += $v }
+        try {
+            $v = [Environment]::GetEnvironmentVariable('Path', $scope)
+        } catch {
+            $v = $null
+        }
+        if ($v) { $suffix += ($v -split ';') }
     }
-    $parts += (Join-Path $env:USERPROFILE '.local\bin')
-    $parts += (Join-Path $env:USERPROFILE '.cargo\bin')
-    $parts += (Join-Path $env:LOCALAPPDATA 'Programs\uv')
-    $env:Path = ($parts -join ';')
+    $suffix += (Join-Path $env:USERPROFILE '.local\bin')
+    $suffix += (Join-Path $env:USERPROFILE '.cargo\bin')
+    $suffix += (Join-Path $env:LOCALAPPDATA 'Programs\uv')
+    $env:Path = (@($env:Path -split ';') + @($suffix) |
+        Where-Object { $_ } |
+        Select-Object -Unique) -join ';'
 }
 
 if ($PSVersionTable.PSVersion.Major -lt 5) {

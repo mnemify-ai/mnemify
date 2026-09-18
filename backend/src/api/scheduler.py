@@ -22,6 +22,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.harvester.manifest import HarvestManifest
+from src.sources import is_enabled
 
 from . import orchestrator as orch
 from .yaml_writer import read_config
@@ -118,6 +119,8 @@ async def catch_up_missed_runs(now: datetime | None = None) -> list[str]:
     for source, body in list_schedules().items():
         if not isinstance(body, dict) or not body.get("enabled"):
             continue
+        if not is_enabled(source):
+            continue
         cron = body.get("cron")
         if not cron or not isinstance(cron, str):
             continue
@@ -166,15 +169,17 @@ def list_schedules() -> dict[str, dict[str, Any]]:
 
 
 def has_enabled_schedules() -> bool:
-    """Whether any source has ``schedules.<source>.enabled: true`` in YAML.
+    """Whether any *available* source has ``schedules.<source>.enabled: true``.
 
     Read straight from the config rather than from the live APScheduler jobs
     so the answer is the same before ``start()`` and after ``stop()`` — the
     idle watchdog uses it to suspend idle shutdown entirely (a scheduler that
-    kills its own host never fires).
+    kills its own host never fires). A schedule for a connector this build
+    hides (``src.sources.is_enabled``) never registers a job, so it must not
+    count either — otherwise it would pin the server up forever.
     """
-    for body in list_schedules().values():
-        if isinstance(body, dict) and body.get("enabled"):
+    for source, body in list_schedules().items():
+        if isinstance(body, dict) and body.get("enabled") and is_enabled(source):
             return True
     return False
 
@@ -192,6 +197,11 @@ def reload_from_yaml() -> None:
         if not isinstance(body, dict):
             continue
         if not body.get("enabled"):
+            continue
+        if not is_enabled(source):
+            logger.info(
+                "scheduler: %s is not enabled in this build, skipping its schedule", source
+            )
             continue
         cron = body.get("cron")
         if not cron or not isinstance(cron, str):

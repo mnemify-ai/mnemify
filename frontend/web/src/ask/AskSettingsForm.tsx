@@ -20,10 +20,13 @@ type ClaudeStatus = { installed: boolean; authenticated: boolean | null };
  * Keys persist to localStorage; never sent anywhere except the `/api/ask`
  * request as `Authorization: Bearer <key>`.
  *
- * The field is an *override*. When the same provider's key is already saved
+ * The field is an *override*. For OpenAI, when the key is already saved
  * server-side (Settings → AI & Models), `/api/ask` falls back to it and this
  * form says so — one key, entered once, rather than the same secret asked for
- * in two places. Typing one here still wins, per browser.
+ * in two places. Typing one here still wins, per browser. The Claude engine
+ * has no such fallback: without a browser key it drives the local Claude
+ * Code login, so `serverKeySet` is always false for it and the form shows
+ * the CLI-login explanation instead.
  */
 export function AskSettingsForm() {
   const settings = useAskSettingsStore((s) => s.settings);
@@ -146,7 +149,7 @@ export function AskSettingsForm() {
       <label className="block max-w-md space-y-1">
         <span className="text-xs uppercase tracking-wide text-muted">
           {settings.provider === "claude"
-            ? claudeStatus !== null && !claudeReady && !serverKeySet
+            ? claudeStatus !== null && !claudeReady
               ? "Anthropic API key"
               : "Anthropic API key (optional)"
             : serverKeySet
@@ -184,6 +187,8 @@ export function AskSettingsForm() {
           leaves this machine otherwise.
         </span>
         {serverKeySet && (
+          // Only ever true for OpenAI — `isAskProviderKeySet` is false for the
+          // Claude engine, which has no server-key fallback.
           <span className="block text-[11px] text-muted">
             Using the key saved in Settings → AI &amp; Models. Leave this empty
             unless you want a different key in this browser.

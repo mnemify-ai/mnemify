@@ -6,7 +6,14 @@ import { Button } from "../../components/ui/Button";
 import { AlertDialog } from "../../components/ui/AlertDialog";
 import { useMapData } from "../../data/MapDataProvider";
 import { useTerrainReport } from "../../api/terrain";
-import { useHealth, useServerSettings, useShutdown, useUpdateServerSettings } from "../../api/system";
+import {
+  SHUTDOWN_NOT_STOPPING_HINT,
+  isShuttingDown,
+  useHealth,
+  useServerSettings,
+  useShutdown,
+  useUpdateServerSettings,
+} from "../../api/system";
 import { relativeTime } from "../../lib/relativeTime";
 import { formatDuration } from "../../lib/formatEta";
 import { useThemeMode } from "../../lib/useThemeMode";
@@ -151,11 +158,17 @@ function AppSection() {
 
   function commitIdleTimeout() {
     if (parsed === null || parsed === lastSavedRef.current) return;
-    lastSavedRef.current = parsed;
+    if (update.isPending) return;
     update.mutate(
       { idle_timeout_minutes: parsed },
       {
-        onSuccess: () => toast.success("Idle shutdown saved."),
+        // Record the saved value only once the server has it — marking it
+        // before the request meant a failed save could never be retried
+        // with the same number (the early return above would swallow it).
+        onSuccess: () => {
+          lastSavedRef.current = parsed;
+          toast.success("Idle shutdown saved.");
+        },
         onError: (err) => toast.error("Couldn't save", { description: String(err) }),
       },
     );
@@ -163,9 +176,15 @@ function AppSection() {
 
   function quit() {
     shutdown.mutate(undefined, {
-      onSuccess: () => {
+      onSuccess: (res) => {
         setConfirmQuit(false);
-        setStopped(true);
+        if (isShuttingDown(res)) {
+          setStopped(true);
+        } else {
+          // `mnemify up --reload`: the reloader owns the process, so there is
+          // no registered server to stop and nothing actually went down.
+          toast.warning("Mnemify is still running", { description: SHUTDOWN_NOT_STOPPING_HINT });
+        }
       },
       onError: (err) => {
         setConfirmQuit(false);

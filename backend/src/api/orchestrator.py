@@ -43,6 +43,7 @@ from src.harvester.orchestrator import (
     _is_unreliable_modified_at,
 )
 from src.harvester.retention import purge_deleted
+from src.sources import is_enabled
 
 from ._rate import _BytesRate, _Rate
 from .event_bus import bus
@@ -430,7 +431,25 @@ async def start_harvest(
     include_databases; Obsidian: watch_folders; Jira: project keys).
     """
     cfg = load_config_file()
-    enabled = [s for s, v in (cfg.get("sources") or {}).items() if v.get("enabled")]
+    configured = [s for s, v in (cfg.get("sources") or {}).items() if v.get("enabled")]
+    # A ``sources.jira`` block left over in someone's yaml must not run: the
+    # build decides which connectors exist (``src.sources``), not the config.
+    hidden = [s for s in configured if not is_enabled(s)]
+    if hidden:
+        logger.info(
+            "harvest: ignoring %s — not enabled in this build (MNEMIFY_SOURCES)",
+            ", ".join(hidden),
+        )
+    enabled = [s for s in configured if is_enabled(s)]
+    if sources:
+        rejected = [s for s in sources if not is_enabled(s)]
+        if rejected:
+            return {
+                "ok": False,
+                "reason": (
+                    f"source(s) not available in this build: {', '.join(rejected)}"
+                ),
+            }
     requested = [s for s in (sources or enabled) if s in enabled]
     if not requested:
         return {"ok": False, "reason": "no enabled sources to harvest"}

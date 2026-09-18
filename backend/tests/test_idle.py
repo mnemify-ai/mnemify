@@ -153,7 +153,10 @@ def test_ask_counter_is_released_when_the_handler_raises():
 
 # ─── check_once (the tick) ──────────────────────────────────────────
 
-def _stub(monkeypatch, *, timeout=30.0, schedules=False, compile_=False, harvest=False):
+def _stub(
+    monkeypatch, *, timeout=30.0, schedules=False, compile_=False, harvest=False, server=True
+):
+    monkeypatch.setattr("src.api.lifecycle.has_server", lambda: server)
     monkeypatch.setattr(idle, "_timeout_minutes", lambda: timeout)
     monkeypatch.setattr(idle, "_schedules_enabled", lambda: schedules)
     monkeypatch.setattr(idle, "_running_flags", lambda: (compile_, harvest))
@@ -253,3 +256,31 @@ async def test_start_and_stop_are_clean():
     assert task.cancelled() or task.done()
     # Stopping "no task" is allowed (the lifespan may never have started one).
     await idle.stop(None)
+
+
+def test_check_once_without_a_registered_server_skips_and_logs_once(monkeypatch, caplog):
+    import logging
+
+    asked = _stub(monkeypatch, server=False)
+    idle.touch(0.0)
+    logging.disable(logging.NOTSET)
+    with caplog.at_level(logging.INFO, logger="src.api.idle"):
+        # Way past the window, tick after tick: never asks, never spams.
+        assert idle.check_once(now=31 * 60) is False
+        assert idle.check_once(now=32 * 60) is False
+        assert idle.check_once(now=10**6) is False
+    assert asked == []
+    notices = [r for r in caplog.records if "no server registered" in r.getMessage()]
+    assert len(notices) == 1
+    assert notices[0].levelno == logging.INFO
+
+
+def test_check_once_asks_again_once_a_server_is_registered(monkeypatch):
+    from src.api import lifecycle
+
+    asked = _stub(monkeypatch, server=False)
+    idle.touch(0.0)
+    assert idle.check_once(now=31 * 60) is False
+    monkeypatch.setattr(lifecycle, "has_server", lambda: True)
+    assert idle.check_once(now=31 * 60) is True
+    assert asked == ["idle"]

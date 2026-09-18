@@ -30,6 +30,7 @@ import asyncio
 import json
 import logging
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from src import paths
@@ -1023,20 +1024,112 @@ def _probe_health(port: int, host: str = "127.0.0.1", timeout: float = 1.5) -> d
         return None
 
 
-def _live_instance(host: str = "127.0.0.1") -> tuple[int, dict] | None:
-    """``(port, health)`` of the already-running Mnemify, or ``None``.
+#: How long ``_inspect_instance`` keeps re-probing ``/api/health`` while the
+#: recorded pid is alive but not answering yet. ``server.pid`` is written
+#: before uvicorn listens, so a freshly launched server has a window of a
+#: second or two in which "alive pid, no health" is *starting*, not stale.
+HEALTH_WAIT_S = 5.0
+#: Pause between two health probes inside that window.
+HEALTH_RETRY_INTERVAL_S = 0.25
 
-    "Running" means both halves agree: the recorded pid is alive *and* the
-    recorded port answers a healthy ``/api/health``. Either half alone is a
-    stale file (a killed process, or a port some other app now owns).
+
+@dataclass(frozen=True)
+class InstanceState:
+    """What ``server.pid`` + ``server.port`` say about the recorded process.
+
+    ``status`` is ``"running"`` (pid alive, ``/api/health`` answered ``ok``)
+    or ``"starting"`` (pid alive, health still silent after the wait window).
+    A dead pid is not a state at all: ``_inspect_instance`` returns ``None``
+    and the files are stale.
     """
+
+    status: str
+    pid: int
+    port: int
+    health: dict | None = None
+
+    @property
+    def running(self) -> bool:
+        return self.status == "running"
+
+
+def _inspect_instance(
+    host: str = "127.0.0.1",
+    *,
+    wait: float | None = None,
+    sleep=None,
+    clock=None,
+) -> InstanceState | None:
+    """Classify the recorded server as running, starting, or gone (``None``).
+
+    A live pid whose port does not answer is re-probed for up to ``wait``
+    seconds (default :data:`HEALTH_WAIT_S`): a double-clicked icon or a
+    ``mnemify stop`` issued right after ``up`` must not mistake a server that
+    is still binding its socket for a crashed one and wipe its files — or
+    start a second copy on top of it. If the pid dies during the wait the
+    answer is ``None``; if it is still alive and still silent, ``"starting"``.
+    """
+    import time
+
+    sleep = time.sleep if sleep is None else sleep
+    clock = time.monotonic if clock is None else clock
+    wait = HEALTH_WAIT_S if wait is None else wait
+
     pid, port = _read_runtime_files()
     if pid is None or port is None or not _pid_alive(pid):
         return None
-    health = _probe_health(port, host)
-    if not health or not health.get("ok"):
+
+    deadline = clock() + wait
+    while True:
+        health = _probe_health(port, host)
+        if health and health.get("ok"):
+            return InstanceState("running", pid, port, health)
+        if clock() >= deadline:
+            break
+        sleep(HEALTH_RETRY_INTERVAL_S)
+        if not _pid_alive(pid):
+            return None
+    if not _pid_alive(pid):
         return None
-    return port, health
+    return InstanceState("starting", pid, port, None)
+
+
+def _live_instance(host: str = "127.0.0.1", **kw) -> tuple[int, dict] | None:
+    """``(port, health)`` of the already-running Mnemify, or ``None``.
+
+    "Running" means both halves agree: the recorded pid is alive *and* the
+    recorded port answers a healthy ``/api/health`` (after the startup grace
+    of :func:`_inspect_instance`). A server that is still *starting* is not
+    "live" for callers that want to talk to it — use ``_inspect_instance``
+    to tell it apart from stale files.
+    """
+    inst = _inspect_instance(host, **kw)
+    if inst is None or not inst.running:
+        return None
+    return inst.port, inst.health or {}
+
+
+def _terminate_pid(pid: int, *, wait: float = 3.0, sleep=None, clock=None) -> bool:
+    """SIGTERM ``pid`` (TerminateProcess on Windows) and wait for it to exit."""
+    import os
+    import signal
+    import time
+
+    sleep = time.sleep if sleep is None else sleep
+    clock = time.monotonic if clock is None else clock
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        logger.debug("could not signal pid %s", pid, exc_info=True)
+        return False
+    deadline = clock() + wait
+    while _pid_alive(pid):
+        if clock() >= deadline:
+            return False
+        sleep(0.1)
+    return True
 
 
 def _clear_runtime_files() -> None:
@@ -1113,6 +1206,18 @@ def _cmd_up(args: argparse.Namespace) -> None:
 
     import uvicorn
 
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        # The app refuses any request whose Host header is not loopback (DNS
+        # rebinding guard in src/api). Bound elsewhere, the browser's Host is
+        # this machine's LAN name or address, which only the user knows.
+        allowed = os.environ.get("MNEMIFY_ALLOWED_HOSTS", "")
+        print(
+            f"\n  --host {args.host}: requests must carry a Host header in "
+            f"MNEMIFY_ALLOWED_HOSTS (currently {allowed!r}) or they get 403. "
+            f"Set it to the name or address you will open in the browser.\n",
+            flush=True,
+        )
+
     if args.reload:
         # Dev path only. The reloader supervises a child process, so it needs
         # the import string (an app object can't cross the fork) — and with it
@@ -1135,13 +1240,21 @@ def _cmd_up(args: argparse.Namespace) -> None:
 
     # ── Single instance ────────────────────────────────────────────
     loopback = _loopback(args.host)
-    live = _live_instance(loopback)
-    if live is not None:
-        running_port, _health = live
-        url = f"http://{loopback}:{running_port}"
-        print(f"\n  Mnemify is already running at {url}\n", flush=True)
-        if not args.no_browser:
-            _open_browser(url)
+    inst = _inspect_instance(loopback)
+    if inst is not None:
+        url = f"http://{loopback}:{inst.port}"
+        if inst.running:
+            print(f"\n  Mnemify is already running at {url}\n", flush=True)
+            if not args.no_browser:
+                _open_browser(url)
+        else:
+            # A live pid that has not started listening yet: it is ours (a
+            # double-clicked icon, most likely). Leave its files alone.
+            print(
+                f"\n  Mnemify is already starting (pid {inst.pid}) — "
+                f"it will be at {url} in a moment.\n",
+                flush=True,
+            )
         sys.exit(0)
     # Files that survived a crash or a kill -9 — nobody is listening on them.
     if any(f.exists() for f in (paths.server_pid_file(), paths.server_port_file())):
@@ -1191,13 +1304,27 @@ def _cmd_stop(args: argparse.Namespace) -> None:
     """Ask a running server to quit, via the API (no signals — Windows works)."""
     import urllib.request
 
-    live = _live_instance()
-    if live is None:
+    inst = _inspect_instance()
+    if inst is None:
+        # Only a *dead* pid makes the files stale enough to remove.
         _clear_runtime_files()
         print("Mnemify is not running.")
         return
 
-    port, _health = live
+    if not inst.running:
+        # Alive but not yet answering: it has no API to ask, so signal it.
+        print(f"Mnemify (pid {inst.pid}) is still starting — stopping it.")
+        if _terminate_pid(inst.pid):
+            _clear_runtime_files()
+            print(f"Mnemify (pid {inst.pid}) stopped.")
+            return
+        print(
+            f"Could not stop pid {inst.pid}. It is still running; try `mnemify stop` again "
+            "in a moment."
+        )
+        sys.exit(1)
+
+    port = inst.port
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/api/system/shutdown",
         data=b"{}",
@@ -1295,6 +1422,23 @@ def _cmd_reset(args: argparse.Namespace) -> None:
     print("\nMemory wiped. Ready when you are.")
 
 
+def _migration_clashes(dest_dir: Path, names: list[str]) -> list[str]:
+    """Names in ``names`` that already exist under ``dest_dir``."""
+    return [name for name in names if (dest_dir / name).exists()]
+
+
+def _rollback_migration(source_dir: Path, dest_dir: Path, moved: list[str]) -> None:
+    """Move already-migrated items back, newest first. Reports, never raises."""
+    import shutil
+
+    for name in reversed(moved):
+        try:
+            shutil.move(str(dest_dir / name), str(source_dir / name))
+            print(f"  ↩ moved {name} back")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ✗ could not move {name} back: {e} — it is now in {dest_dir}")
+
+
 def _cmd_migrate_home(args: argparse.Namespace) -> None:
     """Move a legacy ``backend/`` state layout into the platform app-data home.
 
@@ -1305,6 +1449,14 @@ def _cmd_migrate_home(args: argparse.Namespace) -> None:
     """
     import os
     import shutil
+
+    # A server that is up (or still coming up) holds the manifest/terrain DBs
+    # open and would keep writing into the old home mid-move.
+    inst = _inspect_instance()
+    if inst is not None:
+        state = "running" if inst.running else "starting"
+        print(f"Mnemify is {state} (pid {inst.pid}). Run `mnemify stop` first, then retry.")
+        sys.exit(1)
 
     source_dir = paths.backend_dir()
     dest_dir = paths.platform_default()
@@ -1317,7 +1469,7 @@ def _cmd_migrate_home(args: argparse.Namespace) -> None:
         print(f"Nothing to migrate — no .mnemify/, mnemify.yaml or .env in {source_dir}.")
         return
 
-    clashes = [name for name in movable if (dest_dir / name).exists()]
+    clashes = _migration_clashes(dest_dir, movable)
     if clashes:
         print(f"Refusing to migrate: {dest_dir} already holds {', '.join(clashes)}.")
         print("Move or remove those first — Mnemify will not merge two homes.")
@@ -1339,9 +1491,30 @@ def _cmd_migrate_home(args: argparse.Namespace) -> None:
             print("Aborted. Nothing moved.")
             return
 
+    # Re-check right before touching anything: the prompt may have sat open.
+    problems = [f"{name} is gone from {source_dir}" for name in movable
+                if not (source_dir / name).exists()]
+    problems += [f"{dest_dir / name} now exists" for name in _migration_clashes(dest_dir, movable)]
+    if problems:
+        print("Refusing to migrate — the layout changed while waiting:")
+        for problem in problems:
+            print(f"  • {problem}")
+        sys.exit(1)
+
+    # ``paths._legacy_home`` treats *any* marker left in backend/ as "legacy",
+    # so a half-done move would leave Mnemify reading one home and writing
+    # another. Ordering cannot help with that; rolling back can.
     dest_dir.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
     for name in movable:
-        shutil.move(str(source_dir / name), str(dest_dir / name))
+        try:
+            shutil.move(str(source_dir / name), str(dest_dir / name))
+        except Exception as e:  # noqa: BLE001 — permissions, cross-device, locks…
+            print(f"  ✗ could not move {name}: {e}")
+            _rollback_migration(source_dir, dest_dir, moved)
+            print("\nMigration aborted; the legacy layout was left as it was.")
+            sys.exit(1)
+        moved.append(name)
         print(f"  ✓ moved {name}")
 
     print("\nMnemify now reads and writes:")

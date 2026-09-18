@@ -37,11 +37,14 @@ export type TestSecretResult = { ok: true } | { ok: false; reason: string };
 
 // ─── Pure helpers (unit-tested) ─────────────────────────────────────────
 
-/** The server-side key name backing an Ask engine, or null when the engine
- *  needs none. `claude` drives the local CLI on the user's subscription. */
+/** The server-side key name `/api/ask` falls back to for a wire provider, or
+ *  null when it has no server-key fallback. Mirrors the backend's
+ *  `_PROVIDER_KEY_ENV` (routes_ask.py): `openai` and `anthropic` are BYOK;
+ *  `claude` drives the local Claude Code CLI on the user's subscription and
+ *  never reads a stored key — so the chat form must not claim one is used. */
 export function secretNameForAskProvider(provider: string): string | null {
   if (provider === "openai") return "OPENAI_API_KEY";
-  if (provider === "claude" || provider === "anthropic") return "ANTHROPIC_API_KEY";
+  if (provider === "anthropic") return "ANTHROPIC_API_KEY";
   return null;
 }
 

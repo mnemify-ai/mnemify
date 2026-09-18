@@ -173,12 +173,19 @@ if ($ServerArgs) {
     $upArgs += @($ServerArgs | Where-Object { $_ -ne '--' })
 }
 
+# Windows PowerShell 5.1 turns a native command's first stderr line into a
+# terminating NativeCommandError when stderr is redirected under
+# ErrorActionPreference = 'Stop', and uvicorn logs to stderr. Relax it for the
+# server run only; the exit code is still read from $LASTEXITCODE below.
+$savedEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 if ($Gui -and $logFile) {
     & uv @upArgs 2>&1 | Out-File -FilePath $logFile -Append -Encoding utf8
 } else {
     & uv @upArgs
 }
 $status = $LASTEXITCODE
+$ErrorActionPreference = $savedEap
 if ($null -eq $status) { $status = 0 }
 
 # 130 = SIGINT, 143 = SIGTERM: somebody stopped the server on purpose. That is

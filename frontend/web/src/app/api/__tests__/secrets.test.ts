@@ -30,10 +30,15 @@ describe("secretNameForAskProvider", () => {
     expect(secretNameForAskProvider("openai")).toBe("OPENAI_API_KEY");
   });
 
-  it("maps both Claude engines to the Anthropic key", () => {
-    // The chat UI exposes "claude"; the API also accepts "anthropic".
-    expect(secretNameForAskProvider("claude")).toBe("ANTHROPIC_API_KEY");
+  it("maps the BYOK Anthropic wire provider to the Anthropic key", () => {
     expect(secretNameForAskProvider("anthropic")).toBe("ANTHROPIC_API_KEY");
+  });
+
+  it("gives the Claude-CLI engine no server key at all", () => {
+    // The backend's `_PROVIDER_KEY_ENV` deliberately omits "claude": it runs
+    // the local CLI on the user's subscription and never falls back to a
+    // stored ANTHROPIC_API_KEY, so the form must not say one is in use.
+    expect(secretNameForAskProvider("claude")).toBeNull();
   });
 
   it("returns null for an engine it doesn't know", () => {
@@ -55,7 +60,15 @@ describe("findSecret", () => {
 describe("isAskProviderKeySet", () => {
   it("is true only when the matching key is actually stored", () => {
     expect(isAskProviderKeySet(ROWS, "openai")).toBe(true);
-    expect(isAskProviderKeySet(ROWS, "claude")).toBe(false);
+    expect(isAskProviderKeySet(ROWS, "anthropic")).toBe(false);
+  });
+
+  it("is false for the Claude-CLI engine even with an Anthropic key stored", () => {
+    const withAnthropic = ROWS.map((r) =>
+      r.name === "ANTHROPIC_API_KEY" ? { ...r, set: true, hint: "…abcd" } : r,
+    );
+    expect(isAskProviderKeySet(withAnthropic, "anthropic")).toBe(true);
+    expect(isAskProviderKeySet(withAnthropic, "claude")).toBe(false);
   });
 
   it("is false before the rows load, so the hint never flashes wrongly", () => {

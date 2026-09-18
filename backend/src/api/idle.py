@@ -57,6 +57,7 @@ DEFAULT_CHECK_INTERVAL_S = 60.0
 _last_activity: float = time.monotonic()
 _ask_in_flight: int = 0
 _schedule_suppression_logged = False
+_no_server_logged = False
 
 
 # ─── Activity tracking ──────────────────────────────────────────────
@@ -176,9 +177,20 @@ def _running_flags() -> tuple[bool, bool]:
 
 def check_once(now: float | None = None) -> bool:
     """One watchdog tick. Requests a shutdown and returns whether it did."""
-    global _schedule_suppression_logged
+    global _schedule_suppression_logged, _no_server_logged
     timeout = _timeout_minutes()
     if timeout <= 0:
+        return False
+
+    from . import lifecycle
+
+    if not lifecycle.has_server():
+        # ``--reload`` and ``TestClient`` never register a ``uvicorn.Server``:
+        # there is nothing to stop, so say so once instead of asking every
+        # tick forever.
+        if not _no_server_logged:
+            logger.info("idle: no server registered — idle shutdown is disabled")
+            _no_server_logged = True
         return False
 
     now = time.monotonic() if now is None else now
@@ -209,8 +221,6 @@ def check_once(now: float | None = None) -> bool:
     ):
         return False
 
-    from . import lifecycle
-
     logger.info("idle: no activity for %.0f min — shutting down", (now - _last_activity) / 60.0)
     lifecycle.request_shutdown("idle")
     return True
@@ -236,9 +246,10 @@ async def watchdog_loop(
 
 def start(interval: float = DEFAULT_CHECK_INTERVAL_S) -> asyncio.Task:
     """Reset the clock and start the watchdog. Returns the task to cancel."""
-    global _schedule_suppression_logged
+    global _schedule_suppression_logged, _no_server_logged
     touch()
     _schedule_suppression_logged = False
+    _no_server_logged = False
     return asyncio.create_task(watchdog_loop(interval=interval))
 
 
@@ -257,7 +268,8 @@ async def stop(task: asyncio.Task | None) -> None:
 
 def reset_for_tests() -> None:
     """Return module state to a clean slate (tests only)."""
-    global _ask_in_flight, _schedule_suppression_logged
+    global _ask_in_flight, _schedule_suppression_logged, _no_server_logged
     _ask_in_flight = 0
     _schedule_suppression_logged = False
+    _no_server_logged = False
     touch()

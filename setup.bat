@@ -12,5 +12,9 @@ if not "%MNEMIFY_EXIT%"=="0" (
     echo.
     echo Setup did not finish. The message above says why.
     pause
+) else (
+    REM Double-clicked: keep the summary on screen. Scripted runs set
+    REM MNEMIFY_NONINTERACTIVE and must not block on a keypress.
+    if not defined MNEMIFY_NONINTERACTIVE pause
 )
 exit /b %MNEMIFY_EXIT%
