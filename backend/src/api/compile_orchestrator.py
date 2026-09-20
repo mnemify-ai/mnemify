@@ -83,6 +83,20 @@ def snapshot() -> dict[str, Any]:
     }
 
 
+def _suggest_claude_engine() -> str | None:
+    """Which Claude engine could replace a keyless OpenAI engine right now:
+    ``"claude"`` (subscription CLI on PATH, not Windows), ``"anthropic"``
+    (ANTHROPIC_API_KEY set), or None."""
+    import shutil
+    import sys
+
+    if not sys.platform.startswith("win") and shutil.which("claude"):
+        return "claude"
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    return None
+
+
 # ─── Public entrypoints ─────────────────────────────────────────────
 
 async def start_compile(
@@ -138,21 +152,61 @@ async def start_compile(
         load_config()
     except Exception:  # noqa: BLE001
         pass
-    # Every non-local mode needs OPENAI_API_KEY: openai for everything, claude/
-    # anthropic for embeddings only (Anthropic has no embeddings API).
+    embedding_model = embedding_model or defaults["embedding_model"]
+    # OPENAI_API_KEY: the openai engine needs it for everything; the Claude
+    # engines only for OpenAI embeddings (Anthropic has no embeddings API).
+    # Without it, a Claude engine can still compile with the on-device model —
+    # but that's the user's call, so we return a typed refusal the UI turns
+    # into a consent dialog (frontend LocalEmbeddingsDialog) instead of
+    # silently switching embedding spaces.
+    from src.terrain.utils.local_embedder import is_local_embedding_model, local_model_status
+    needs_openai_embeddings = not is_local_embedding_model(embedding_model)
     if ai_mode in ("openai", "anthropic", "claude") and not os.getenv("OPENAI_API_KEY"):
-        return {
-            "ok": False,
-            "reason": (
-                "OPENAI_API_KEY not set — required for embeddings"
-                + (
-                    f" ({ai_mode} mode uses Claude for text, OpenAI for embeddings)"
-                    if ai_mode in ("claude", "anthropic")
-                    else ""
-                )
-                + ". Add the key to .env and restart, or explicitly request ai_mode='local' for offline tests"
-            ),
-        }
+        if ai_mode == "openai":
+            # The default engine on a fresh install. Without the key the LLM
+            # steps can't run either — but if this machine has a Claude path
+            # (logged-in `claude` CLI, or ANTHROPIC_API_KEY), the user can
+            # switch engine and embed on-device in one click. The dialog
+            # offers exactly that via ``suggested_ai_mode``.
+            suggested = _suggest_claude_engine()
+            return {
+                "ok": False,
+                "code": "openai_key_missing",
+                "local_embeddings_eligible": suggested is not None,
+                "suggested_ai_mode": suggested,
+                "local_embeddings": local_model_status() if suggested else None,
+                "reason": (
+                    "OPENAI_API_KEY not set — the OpenAI engine needs it for chunk "
+                    "analysis and naming. Add it under Settings → AI & Models"
+                    + (", or compile with Claude and the on-device embedding model." if suggested
+                       else ", or switch the engine to Claude.")
+                ),
+            }
+        if needs_openai_embeddings:
+            return {
+                "ok": False,
+                "code": "openai_key_missing",
+                "local_embeddings_eligible": True,
+                "local_embeddings": local_model_status(),
+                "reason": (
+                    "OPENAI_API_KEY not set — the Claude engines use OpenAI only for "
+                    "embeddings. Add the key under Settings → AI & Models, or compile "
+                    "with the on-device embedding model instead."
+                ),
+            }
+    if is_local_embedding_model(embedding_model) and ai_mode != "local":
+        status = local_model_status()
+        if not status["downloaded"]:
+            return {
+                "ok": False,
+                "code": "local_model_missing",
+                "local_embeddings_eligible": True,
+                "local_embeddings": status,
+                "reason": (
+                    "The on-device embedding model is not downloaded yet. Download "
+                    "it under Settings → AI & Models (about 67 MB), then compile."
+                ),
+            }
     if ai_mode == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
         return {
             "ok": False,
@@ -166,7 +220,6 @@ async def start_compile(
     # Resolve every remaining knob: per-run override OR saved default.
     if source is None:
         source = defaults["default_source"]
-    embedding_model = embedding_model or defaults["embedding_model"]
     llm_concurrency = llm_concurrency or defaults["llm_concurrency"]
     extract_batch_size = extract_batch_size or defaults["extract_batch_size"]
     # Effort: per-run override OR saved default; "" means provider default.

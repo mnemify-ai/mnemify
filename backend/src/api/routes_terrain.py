@@ -18,6 +18,8 @@ from sse_starlette.sse import EventSourceResponse
 from src.terrain.utils.store import TerrainStore
 from src.terrain.agents.anthropic_clients import CLAUDE_MODEL_PATTERN
 
+from .routes_settings import EmbeddingModelName
+
 from . import compile_orchestrator as compile_orch
 from ._sse import _json
 from .compile_bus import compile_bus
@@ -56,7 +58,7 @@ class CompileStart(BaseModel):
     claude_extract_model: str | None = Field(default=None, pattern=CLAUDE_MODEL_PATTERN, max_length=100)
     claude_name_model: str | None = Field(default=None, pattern=CLAUDE_MODEL_PATTERN, max_length=100)
     openai_model: str | None = Field(default=None, max_length=100)
-    embedding_model: Literal["text-embedding-3-small", "text-embedding-3-large"] | None = None
+    embedding_model: EmbeddingModelName | None = None
     llm_concurrency: int | None = Field(default=None, ge=1, le=32)
     extract_batch_size: int | None = Field(default=None, ge=1, le=64)
 

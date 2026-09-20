@@ -455,16 +455,48 @@ def _load_knowledge_map_cached() -> KnowledgeMap:
     return knowledge_map
 
 
+def _compiled_embedding_model() -> str:
+    """The embedding model the current map was compiled with. Prefer what the
+    store says the vectors are (survives a settings change that hasn't been
+    followed by a recompile); fall back to the saved compile setting."""
+    from src.api.routes_settings import _compile_settings_block
+
+    db_path = paths.data_dir() / "terrain.db"
+    if db_path.exists():
+        try:
+            from src.terrain.utils.store import TerrainStore
+
+            store = TerrainStore(db_path)
+            try:
+                stored = store.graph_vector_model()
+            finally:
+                store.close()
+            if stored:
+                return stored
+        except Exception:  # noqa: BLE001 - fall through to settings
+            logger.debug("ask: could not read the compiled embedding model", exc_info=True)
+    return _compile_settings_block()["embedding_model"]
+
+
 def _embedder_for_query() -> EmbeddingClient:
-    if os.getenv("OPENAI_API_KEY"):
-        # Use the SAME embedding model the compile pass used, so the query
-        # vector is directly comparable to the stored graph-node vectors
-        # (model + dimensions must match or cosine search breaks). Read it from
-        # the saved compile settings rather than hardcoding a default.
-        from src.api.routes_settings import _compile_settings_block
+    # The query vector must land in the SAME space as the stored vectors
+    # (model + dimensions must match or cosine search breaks), so pick the
+    # client by the model the compile actually used.
+    from src.terrain.utils.local_embedder import (
+        LocalEmbeddingClient,
+        is_local_embedding_model,
+        is_model_downloaded,
+    )
+
+    model = _compiled_embedding_model()
+    if is_local_embedding_model(model):
+        if is_model_downloaded():
+            return LocalEmbeddingClient()
+    elif os.getenv("OPENAI_API_KEY"):
         from src.terrain.agents.openai_clients import OpenAIEmbeddingClient
 
-        return OpenAIEmbeddingClient(model=_compile_settings_block()["embedding_model"])
-    # Local hash embeddings (low quality but functional — useful for tests
-    # and offline demos).
+        return OpenAIEmbeddingClient(model=model)
+    # No usable client for the compiled space (key removed, or local model
+    # deleted): hash embeddings keep Ask functional — the chunk index's
+    # dimension guard skips them, graph/tag scoring degrades gracefully.
     return LocalHashEmbeddingClient()

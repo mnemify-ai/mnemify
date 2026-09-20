@@ -6,7 +6,9 @@ import type { AiMode } from "./terrain";
  *  legacy aliases ("opus" | "sonnet" | "haiku") still present in older configs.
  *  Pick from CLAUDE_MODELS in app/lib/modelCatalog. */
 export type ClaudeModel = string;
-export type EmbeddingModel = "text-embedding-3-small" | "text-embedding-3-large";
+/** OpenAI text-embedding-3-* (needs OPENAI_API_KEY) or the on-device
+ *  bge-small (no key, English; see api/embeddings.ts). */
+export type EmbeddingModel = "text-embedding-3-small" | "text-embedding-3-large" | "bge-small-en-v1.5";
 /** Reasoning effort for a compile step. "" = the provider's default. Applies
  *  to every LLM engine (OpenAI reasoning.effort, Claude API output_config.effort,
  *  Claude CLI --effort). Not part of any cache key. */

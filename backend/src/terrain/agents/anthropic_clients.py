@@ -11,8 +11,9 @@ Unlike ``ai_mode="claude"`` (the locally-installed `claude` CLI, subscription
 auth), this is a metered API path keyed by ``ANTHROPIC_API_KEY`` — the right
 choice for servers with no CLI login (Windows boxes, headless deploys, CI).
 
-Embeddings stay on OpenAI (``OpenAIEmbeddingClient``) — Anthropic has no
-embeddings API — so anthropic mode still needs ``OPENAI_API_KEY`` too.
+Embeddings are OpenAI (``OpenAIEmbeddingClient``, needs ``OPENAI_API_KEY``) or
+the on-device bge-small (``utils/local_embedder.py``, no key) — Anthropic has
+no embeddings API.
 Caches are kept separate from the OpenAI/claude paths via a backend tag in the
 feature cache key and an ``an_`` prefix on name fingerprints.
 """

@@ -37,6 +37,7 @@ from src.terrain.utils.clusterer import (
     TerrainClusterer,
 )
 from src.terrain.utils.embedder import EmbeddingClient, LocalHashEmbeddingClient
+from src.terrain.utils.local_embedder import LocalEmbeddingClient, is_local_embedding_model
 from src.terrain.utils.emitter import KnowledgeMapEmitter
 from src.terrain.utils.layout import TerrainLayout
 from src.terrain.utils.models import (
@@ -445,6 +446,13 @@ _PALETTE: list[tuple[str, str]] = [
 ]
 
 
+def _make_embedder(embedding_model: str) -> EmbeddingClient:
+    """OpenAI ``text-embedding-3-*`` or the on-device bge-small, by name."""
+    if is_local_embedding_model(embedding_model):
+        return LocalEmbeddingClient()
+    return OpenAIEmbeddingClient(model=embedding_model)
+
+
 class TerrainCompiler:
     version = "0.2.0"
 
@@ -504,12 +512,17 @@ class TerrainCompiler:
         self._extract_batch_size = extract_batch_size
         self.extract_effort = extract_effort or None
         self.name_effort = name_effort or None
+        # Embeddings are chosen by model, not by engine: every LLM engine pairs
+        # with either OpenAI text-embedding-3-* (needs OPENAI_API_KEY) or the
+        # on-device bge-small (no key; see utils/local_embedder.py).
+        if embedder is None and ai_mode != "local":
+            embedder = _make_embedder(embedding_model)
         if ai_mode == "openai":
             openai_model = llm_model or "gpt-5.6-luna"
             self.extractor = extractor or OpenAIFeatureExtractor(
                 model=openai_model, effort=self.extract_effort
             )
-            self.embedder = embedder or OpenAIEmbeddingClient(model=embedding_model)
+            self.embedder = embedder
             self.namer = namer or OpenAIClusterNamer(
                 self.store, model=openai_model, effort=self.name_effort
             )
@@ -524,7 +537,7 @@ class TerrainCompiler:
             self.extractor = extractor or AnthropicFeatureExtractor(
                 model=extractor_model, effort=self.extract_effort
             )
-            self.embedder = embedder or OpenAIEmbeddingClient(model=embedding_model)
+            self.embedder = embedder
             self.namer = namer or AnthropicClusterNamer(
                 self.store, model=namer_model, effort=self.name_effort
             )
@@ -547,7 +560,7 @@ class TerrainCompiler:
             self.extractor = extractor or ClaudeFeatureExtractor(
                 model=extractor_model, effort=self.extract_effort
             )
-            self.embedder = embedder or OpenAIEmbeddingClient(model=embedding_model)
+            self.embedder = embedder
             self.namer = namer or ClaudeClusterNamer(
                 self.store, model=namer_model, effort=self.name_effort
             )
@@ -597,6 +610,7 @@ class TerrainCompiler:
         run_id = self.store.start_run(
             {
                 "source": source, "ai_mode": self.ai_mode, "fresh": fresh,
+                "embedding_model": self.embedder.model,
                 "extract_effort": self.extract_effort, "name_effort": self.name_effort,
             }
         )

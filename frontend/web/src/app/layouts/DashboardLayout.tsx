@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { useMapData } from "../data/MapDataProvider";
 import { TopBar } from "../components/TopBar";
 import { CommandPalette } from "../components/CommandPalette";
+import { LocalEmbeddingsDialog } from "../components/LocalEmbeddingsDialog";
 import { AskDock } from "../../ask/AskDock";
 import { AskBubble } from "../../ask/AskBubble";
 import { useAskDockStore } from "../../ask/askDockStore";
@@ -140,6 +141,8 @@ export function DashboardLayout() {
       {isHome && <div ref={setBarSlot} className="shrink-0" />}
       {hasMap && <ShellAskBubble isHome={isHome} />}
       <CommandPalette />
+      {/* Consent step for compiles without an OpenAI key (see useStartCompile). */}
+      <LocalEmbeddingsDialog />
     </div>
   );
 }

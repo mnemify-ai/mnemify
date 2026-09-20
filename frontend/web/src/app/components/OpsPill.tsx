@@ -132,7 +132,7 @@ export function OpsPill() {
       {
         onSuccess: (res) => {
           if (res.ok) toastSuccess("Compiling your map…");
-          else toastError("Couldn't start compile", { description: res.reason });
+          else if (!res.dismissed) toastError("Couldn't start compile", { description: res.reason });
         },
         onError: (err) => toastError("Couldn't start compile", { description: String(err) }),
       },

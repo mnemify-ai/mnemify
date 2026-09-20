@@ -341,6 +341,19 @@ class TerrainStore:
                 ],
             )
 
+    def graph_vector_model(self) -> str | None:
+        """The embedding model that produced the stored graph-node vectors
+        (most common ``model`` value), or None when there are none. The Ask
+        path uses it to embed queries in the same space the compile used."""
+        row = self._conn.execute(
+            """
+            SELECT model FROM graph_node_vectors
+            WHERE model IS NOT NULL
+            GROUP BY model ORDER BY COUNT(*) DESC LIMIT 1
+            """
+        ).fetchone()
+        return row["model"] if row else None
+
     def load_graph_node_vectors(self) -> dict[str, list[float]]:
         rows = self._conn.execute(
             "SELECT node_id, vector FROM graph_node_vectors"

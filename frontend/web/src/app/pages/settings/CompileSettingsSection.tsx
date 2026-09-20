@@ -15,6 +15,8 @@ import { SettingsSection } from "./SettingsSection";
 import { ModelSelect } from "../../components/ModelSelect";
 import { CLAUDE_MODELS, OPENAI_MODELS } from "../../lib/modelCatalog";
 import { cn } from "../../lib/cn";
+import { LOCAL_EMBEDDING_MODEL, prepareLocalEmbeddings, useLocalEmbeddings } from "../../api/embeddings";
+import { Pill } from "../../components/ui/Pill";
 
 const AI_MODE_OPTIONS: ReadonlyArray<{ value: AiMode; label: string }> = [
   { value: "openai", label: "OpenAI" },
@@ -27,8 +29,9 @@ const AI_MODE_OPTIONS: ReadonlyArray<{ value: AiMode; label: string }> = [
 const CLAUDE_MODEL_MODES: ReadonlyArray<AiMode> = ["claude", "anthropic"];
 
 const EMBEDDING_OPTIONS: ReadonlyArray<{ value: EmbeddingModel; label: string }> = [
-  { value: "text-embedding-3-large", label: "3-large" },
-  { value: "text-embedding-3-small", label: "3-small" },
+  { value: "text-embedding-3-large", label: "OpenAI 3-large" },
+  { value: "text-embedding-3-small", label: "OpenAI 3-small" },
+  { value: LOCAL_EMBEDDING_MODEL, label: "On-device" },
 ];
 
 const EFFORT_OPTIONS: ReadonlyArray<{ value: EffortLevel; label: string }> = [
@@ -212,16 +215,19 @@ export function CompileSettingsSection() {
           {/* Embedding model — confirm before change (recompile required) */}
           <Field
             label="Embedding model"
-            hint="Drives clustering / region structure. Always OpenAI (Claude has no embeddings)."
+            hint="Drives clustering / region structure. The OpenAI models need OPENAI_API_KEY and are multilingual. On-device (bge-small, 384-d) runs on this computer with no key — English only, and regions group a little more coarsely."
           >
-            <Segmented<EmbeddingModel>
-              value={d.embedding_model}
-              onValueChange={(v) => {
-                if (v !== d.embedding_model) setPendingEmbedding(v);
-              }}
-              options={EMBEDDING_OPTIONS}
-              ariaLabel="Embedding model"
-            />
+            <div className="flex flex-col gap-2">
+              <Segmented<EmbeddingModel>
+                value={d.embedding_model}
+                onValueChange={(v) => {
+                  if (v !== d.embedding_model) setPendingEmbedding(v);
+                }}
+                options={EMBEDDING_OPTIONS}
+                ariaLabel="Embedding model"
+              />
+              <LocalModelStatus selected={d.embedding_model === LOCAL_EMBEDDING_MODEL} />
+            </div>
           </Field>
 
           {/* Parallel LLM calls */}
@@ -279,15 +285,68 @@ export function CompileSettingsSection() {
           if (!open) setPendingEmbedding(null); // cancel → Segmented stays on saved value
         }}
         title="Change the embedding model?"
-        description="This changes how notes cluster into regions. It only takes effect after a fresh recompile (Compile → Recompile from scratch) — the embedding cache and the Ask search index both key on the model + dimensions. Until you recompile, search and the existing map keep using the old model."
-        confirmLabel="Change & save"
+        description={
+          pendingEmbedding === LOCAL_EMBEDDING_MODEL
+            ? "The on-device model runs on this computer with no API key. It is English-only and groups notes a little more coarsely than OpenAI's models; the ~67 MB model downloads once into your Mnemify data folder. The change takes effect after a fresh recompile (Compile → Recompile from scratch)."
+            : "This changes how notes cluster into regions. It only takes effect after a fresh recompile (Compile → Recompile from scratch) — the embedding cache and the Ask search index both key on the model + dimensions. Until you recompile, search and the existing map keep using the old model."
+        }
+        confirmLabel={pendingEmbedding === LOCAL_EMBEDDING_MODEL ? "Download & save" : "Change & save"}
         cancelLabel="Cancel"
         confirming={update.isPending}
         onConfirm={() => {
-          if (pendingEmbedding) save({ ...d, embedding_model: pendingEmbedding });
+          if (pendingEmbedding) {
+            save({ ...d, embedding_model: pendingEmbedding });
+            if (pendingEmbedding === LOCAL_EMBEDDING_MODEL) {
+              // Fetch the model now so the next compile doesn't stall on it.
+              prepareLocalEmbeddings().catch((err) =>
+                toast.error("Couldn't start the model download", { description: String(err) }),
+              );
+            }
+          }
           setPendingEmbedding(null);
         }}
       />
+    </div>
+  );
+}
+
+/** Download state of the on-device embedding model. Polls while downloading;
+ *  quiet (one line) otherwise so the field doesn't shout when OpenAI is used. */
+function LocalModelStatus({ selected }: { selected: boolean }) {
+  const { data } = useLocalEmbeddings();
+  if (!data) return null;
+  const tone =
+    data.status === "ready" ? "success" : data.status === "failed" ? "danger" : "neutral";
+  const label =
+    data.status === "ready"
+      ? "On-device model downloaded"
+      : data.status === "downloading"
+        ? "Downloading on-device model…"
+        : data.status === "failed"
+          ? "On-device model download failed"
+          : "On-device model not downloaded";
+  if (!selected && data.status !== "downloading") return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Pill tone={tone} dot>
+        {label}
+      </Pill>
+      {data.status === "failed" && data.error && (
+        <span className="font-sans text-xs text-danger">{data.error}</span>
+      )}
+      {(data.status === "idle" || data.status === "failed") && (
+        <button
+          type="button"
+          onClick={() =>
+            prepareLocalEmbeddings().catch((err) =>
+              toast.error("Couldn't start the model download", { description: String(err) }),
+            )
+          }
+          className="font-sans text-xs text-magenta hover:underline"
+        >
+          {data.status === "failed" ? "Retry download" : `Download (${data.size_mb} MB)`}
+        </button>
+      )}
     </div>
   );
 }

@@ -57,7 +57,7 @@ const SERVER_KEYS = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const;
 const KEY_COPY: Record<(typeof SERVER_KEYS)[number], { blurb: string; where: string }> = {
   OPENAI_API_KEY: {
     blurb:
-      "Required for embeddings in every compile mode except Local — including the Claude modes, because Anthropic has no embedding endpoint. Also used by the OpenAI chat engine.",
+      "Needed by the OpenAI compile engine and chat engine, and for OpenAI embeddings (multilingual, the best map quality). Without it, the Claude engines can compile with the on-device embedding model instead — English only; pick it under Embedding model below.",
     where: "platform.openai.com/api-keys",
   },
   ANTHROPIC_API_KEY: {

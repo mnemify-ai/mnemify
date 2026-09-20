@@ -52,6 +52,9 @@ async def test_compile_start_defaults_to_openai_and_refuses_missing_key(tmp_path
     # for the manifest under tmp_path/.mnemify — there is no module-level
     # DATA_DIR to patch any more.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # No Claude path on this "machine" either, so the refusal offers nothing.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr("shutil.which", lambda name: None)
     data_dir = tmp_path / ".mnemify"
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "harvest-manifest.db").write_text("", encoding="utf-8")
@@ -60,7 +63,11 @@ async def test_compile_start_defaults_to_openai_and_refuses_missing_key(tmp_path
 
     assert result["ok"] is False
     assert "OPENAI_API_KEY not set" in result["reason"]
-    assert "explicitly request ai_mode='local'" in result["reason"]
+    # Typed refusal the UI turns into a consent dialog. The OpenAI engine needs
+    # the key for the LLM itself, so the on-device embedder is no way out here.
+    assert result["code"] == "openai_key_missing"
+    assert result["local_embeddings_eligible"] is False
+    assert "Settings" in result["reason"]
 
 
 @pytest.fixture

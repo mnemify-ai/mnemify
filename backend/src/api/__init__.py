@@ -39,6 +39,7 @@ from . import (
     routes_schedules,
     routes_secrets,
     routes_settings,
+    routes_embeddings,
     routes_system,
     routes_terrain,
     scheduler,
@@ -302,6 +303,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_action_items.router, prefix="/api")
     app.include_router(routes_secrets.router, prefix="/api")
     app.include_router(routes_system.router, prefix="/api")
+    app.include_router(routes_embeddings.router, prefix="/api")
 
     @app.get("/api/health")
     async def health():

@@ -107,11 +107,11 @@ Then run a **harvest**, then a **compile**, and the home page turns into a livin
 
 The **Compile** step and **Chat** need a language model. You have three options, and Mnemify picks up whichever you have. Set keys under **Settings → AI & Models**:
 
-- **OpenAI** (recommended) — set `OPENAI_API_KEY`. This is the default mode and the one we run day to day. (Used for embeddings as well)
-- **Claude Code** — if the `claude` CLI is installed and logged in, Mnemify detects it automatically and can use your Claude subscription for compile and chat, no API key needed. An Anthropic API key (`ANTHROPIC_API_KEY`) works too. (Unfortunatelly we cannot use Claude for embedding)
+- **OpenAI** (recommended) — set `OPENAI_API_KEY`. This is the default mode and the one we run day to day. Also provides the embeddings (multilingual, best map quality).
+- **Claude Code** — if the `claude` CLI is installed and logged in, Mnemify detects it automatically and can use your Claude subscription for compile and chat, no API key needed. An Anthropic API key (`ANTHROPIC_API_KEY`) works too. Anthropic has no embeddings API, so with no OpenAI key Mnemify asks before your first compile whether to run a small embedding model on your computer instead (a one-time ~67 MB download, English-only, regions group a little more coarsely).
 - **Local** — compiles deterministically with no key and no network. Good for a first look; the map is much better with a real model.
 
-Even with Claude, keep an `OPENAI_API_KEY` set: embeddings for chunking and clustering always run through OpenAI, so every mode except local needs it.
+Embeddings (what groups notes into regions) come from OpenAI when an `OPENAI_API_KEY` is set, and otherwise from the on-device model once you agree to the download. Switch between them any time under **Settings → AI & Models → Embedding model**; a change takes effect on the next recompile from scratch.
 
 ## What it does (and doesn't)
 
