@@ -53,7 +53,7 @@ def test_claim_runtime_files_writes_pid_and_port(tmp_path):
     from src import cli
 
     release = cli._claim_runtime_files(8795)
-    assert paths.server_pid_file().read_text().strip() == str(os.getpid())
+    assert paths.server_pid_file().read_text().split()[0] == str(os.getpid())
     assert paths.server_port_file().read_text().strip() == "8795"
     assert cli._read_runtime_files() == (os.getpid(), 8795)
 
@@ -125,9 +125,21 @@ def test_live_instance_is_none_when_health_does_not_answer(tmp_path, monkeypatch
 
 # ─── CLI: the startup window (alive pid, health not yet answering) ──
 
-def _write_runtime_files(pid: int | None = None, port: int = 8795) -> None:
+def _write_runtime_files(pid: int | None = None, port: int = 8795, token: str | None = "") -> None:
+    """Write the two runtime files the way ``_claim_runtime_files`` does.
+
+    ``token=""`` (default) records the *real* start token of ``pid`` (or of
+    this process), i.e. a file our own server would have written.
+    ``token=None`` writes a pre-token file (pid only).
+    """
+    from src import cli
+
     paths.ensure_home()
-    paths.server_pid_file().write_text(f"{os.getpid() if pid is None else pid}\n")
+    pid = os.getpid() if pid is None else pid
+    if token == "":
+        token = cli._pid_start_token(pid) or ""
+    line = f"{pid} {token}".rstrip() if token else str(pid)
+    paths.server_pid_file().write_text(line + "\n")
     paths.server_port_file().write_text(f"{port}\n")
 
 
@@ -215,6 +227,58 @@ def test_inspect_instance_does_not_sleep_when_health_answers_first_time(tmp_path
     inst = cli._inspect_instance(wait=5.0, sleep=clock.sleep, clock=clock)
     assert inst is not None and inst.running
     assert clock.slept == []
+
+
+def test_pid_start_token_is_stable_for_self_and_none_for_a_free_pid():
+    from src import cli
+
+    mine = cli._pid_start_token(os.getpid())
+    assert mine  # every supported platform answers for a live process
+    assert cli._pid_start_token(os.getpid()) == mine
+    assert cli._pid_start_token(0) is None
+    assert cli._pid_start_token(-1) is None
+
+
+def test_claim_records_a_start_token_next_to_the_pid(tmp_path):
+    from src import cli
+
+    release = cli._claim_runtime_files(8795)
+    try:
+        assert cli._read_runtime_files() == (os.getpid(), 8795)
+        assert cli._read_runtime_token() == cli._pid_start_token(os.getpid())
+    finally:
+        release()
+
+
+def test_inspect_instance_is_none_when_the_pid_was_recycled(tmp_path, monkeypatch):
+    """A live pid with a *different* start token is another program: stale files."""
+    from src import cli
+
+    _write_runtime_files(token="not-the-real-token")
+    monkeypatch.setattr(cli, "_pid_alive", lambda pid: True)
+    probes = []
+    monkeypatch.setattr(cli, "_probe_health", lambda *a, **k: probes.append(1) or None)
+
+    assert cli._inspect_instance(wait=0) is None
+    # We never even probe the port — the pid was proven foreign first.
+    assert probes == []
+
+
+def test_inspect_instance_never_reports_starting_for_an_unverified_pid(tmp_path, monkeypatch):
+    """A pre-token file (or a platform with no start-time answer) plus a silent
+    port must not become "starting" — that path ends in SIGTERM in `stop`."""
+    from src import cli
+
+    _write_runtime_files(token=None)
+    monkeypatch.setattr(cli, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(cli, "_probe_health", lambda *a, **k: None)
+    clock = _FakeClock()
+    assert cli._inspect_instance(wait=1.0, sleep=clock.sleep, clock=clock) is None
+
+    # ...but a pre-token file whose port *answers* is still a running server.
+    monkeypatch.setattr(cli, "_probe_health", lambda *a, **k: {"ok": True})
+    inst = cli._inspect_instance(wait=0)
+    assert inst is not None and inst.running
 
 
 def test_inspect_instance_is_none_without_files_or_with_a_dead_pid(tmp_path, monkeypatch):

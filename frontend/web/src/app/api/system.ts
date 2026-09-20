@@ -3,12 +3,12 @@
  * lifecycle: how long it waits before quitting itself, and quitting on demand.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "./client";
+import { apiFetch, CLIENT_HEADER } from "./client";
 
-/** Every shutdown request carries this. A custom header forces a CORS
- *  preflight, and the server allows no cross-origin requests in a normal run —
- *  so a page open in another tab can't quit your Mnemify. */
-export const CLIENT_HEADER = "X-Mnemify-Client";
+/** Re-exported for callers that imported it from here. Every `apiFetch`
+ *  call now sends it (see client.ts); the server requires it on anything
+ *  that mutates, not just shutdown. */
+export { CLIENT_HEADER };
 
 export interface Health {
   ok: boolean;

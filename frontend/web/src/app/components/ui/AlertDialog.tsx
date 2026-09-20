@@ -14,6 +14,11 @@ interface AlertDialogProps {
   tone?: "destructive" | "default";
   onConfirm: () => void;
   confirming?: boolean;
+  /** Extra content between the description and the buttons (e.g. a
+   *  type-to-confirm field). */
+  children?: ReactNode;
+  /** Keep the confirm button disabled until some condition is met. */
+  confirmDisabled?: boolean;
 }
 
 export function AlertDialog({
@@ -26,6 +31,8 @@ export function AlertDialog({
   tone = "default",
   onConfirm,
   confirming,
+  children,
+  confirmDisabled = false,
 }: AlertDialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -58,6 +65,7 @@ export function AlertDialog({
                 </div>
               </RadixDialog.Description>
             )}
+            {children}
             <div className="flex items-center justify-end gap-2 mt-6">
               <Button
                 variant="ghost"
@@ -71,7 +79,7 @@ export function AlertDialog({
                 variant={tone === "destructive" ? "primary" : "primary"}
                 size="md"
                 onClick={onConfirm}
-                disabled={confirming}
+                disabled={confirming || confirmDisabled}
                 className={
                   tone === "destructive"
                     ? "!bg-rose hover:!bg-rose/90 !text-cream"

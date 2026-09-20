@@ -51,7 +51,9 @@ class FeatureExtractor:
 
     @property
     def schema_version(self) -> str:
-        return SCHEMA_VERSION + products_schema_suffix(self.cache_products)
+        # ``local:`` keeps heuristic features apart from every LLM extractor's
+        # in the per-chunk feature cache (see the OpenAI/Claude variants).
+        return f"local:{SCHEMA_VERSION}{products_schema_suffix(self.cache_products)}"
 
     def extract_batch(self, chunks: list[TerrainChunk]) -> list[ChunkFeatures | None]:
         # No network — a plain loop keeps the batch interface uniform with the

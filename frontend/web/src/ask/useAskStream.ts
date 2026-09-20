@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { apiUrl } from "../app/api/client";
+import { apiUrl, CLIENT_HEADER, CLIENT_NAME } from "../app/api/client";
 import { newLocalId, useActiveThreadMessages, useAskThreadStore } from "./askThreadStore";
 import type { AgentStep, AskMessage, AskSettings, Citation } from "./types";
 import { activeKey, wireProvider } from "./types";
@@ -81,6 +81,7 @@ export function useAskStream(settings: AskSettings) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            [CLIENT_HEADER]: CLIENT_NAME,
             ...(key ? { Authorization: `Bearer ${key}` } : {}),
           },
           body: JSON.stringify({

@@ -323,12 +323,26 @@ _RESET_FILES = (
 _RESET_DIRS = ("raw", "normalized")
 
 
+#: What the caller has to type to confirm a full reset.
+RESET_CONFIRM_PHRASE = "RESET"
+
+
+class ResetConfirm(BaseModel):
+    confirm: str = Field(max_length=32)
+
+
 @router.post("/reset")
-async def reset():
+async def reset(body: ResetConfirm):
     """Hard reset: clear harvested data + the compiled map, disable every
     source, and remove first-party credentials. Refused while a harvest or
     compile is running. (For "wipe data but keep my connections", use
-    ``POST /api/harvest/reset``.)"""
+    ``POST /api/harvest/reset``.)
+
+    Irreversible, so it is deliberately hard to call by accident: the body
+    must carry ``{"confirm": "RESET"}`` — the UI asks the user to type it.
+    """
+    if body.confirm.strip() != RESET_CONFIRM_PHRASE:
+        raise HTTPException(400, f'type "{RESET_CONFIRM_PHRASE}" to confirm a full reset')
     if orch.state.status == "running":
         raise HTTPException(409, "a harvest is in progress; cancel it first")
     if compile_orch.state.status == "running":

@@ -29,6 +29,7 @@ import argparse
 import asyncio
 import json
 import logging
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -974,14 +975,97 @@ def _loopback(host: str) -> str:
 
 
 def _read_runtime_files() -> tuple[int | None, int | None]:
-    """``(pid, port)`` from ``<home>/server.pid`` + ``server.port``."""
+    """``(pid, port)`` from ``<home>/server.pid`` + ``server.port``.
+
+    ``server.pid`` holds ``"<pid> <start-token>"``; only the pid is returned
+    here — see :func:`_read_runtime_token` for the second field.
+    """
     def _read_int(path) -> int | None:
         try:
-            return int(path.read_text(encoding="utf-8").strip())
+            return int(path.read_text(encoding="utf-8").split()[0])
         except Exception:  # noqa: BLE001 — missing, empty or garbage: same answer
             return None
 
     return _read_int(paths.server_pid_file()), _read_int(paths.server_port_file())
+
+
+def _read_runtime_token() -> str | None:
+    """The process-identity token recorded next to the pid, or ``None``.
+
+    Files written by an older Mnemify carry only the pid; they return
+    ``None`` and are treated as unverifiable (see :func:`_inspect_instance`).
+    """
+    try:
+        parts = paths.server_pid_file().read_text(encoding="utf-8").split()
+    except OSError:
+        return None
+    return parts[1] if len(parts) > 1 else None
+
+
+def _pid_start_token(pid: int) -> str | None:
+    """An opaque string identifying *this incarnation* of ``pid``.
+
+    Operating systems recycle pids, so "the pid in ``server.pid`` is alive"
+    does not mean "our server is alive": after a crash or a reboot the number
+    can belong to the user's editor. The process start time changes with
+    every incarnation, so it is recorded alongside the pid and compared
+    before the pid is trusted — or signalled. ``None`` means this platform
+    gave no answer; :func:`_inspect_instance` then believes the pid only if
+    its port answers ``/api/health``, never on liveness alone.
+    """
+    if pid <= 0:
+        return None
+    try:
+        if sys.platform.startswith("linux"):
+            # /proc/<pid>/stat: "pid (comm) state ppid ... starttime ..."; the
+            # comm may contain spaces or ')' so split after the last ')'.
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+            fields = stat[stat.rfind(")") + 2 :].split()
+            return fields[19]  # field 22 overall, 20th after (comm) state
+        if sys.platform.startswith("win"):
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.windll.kernel32
+            # Declare the signatures: HANDLE is pointer-sized, and the default
+            # c_int return would truncate it on 64-bit Windows.
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.GetProcessTimes.restype = wintypes.BOOL
+            kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+            if not handle:
+                return None
+            try:
+                created = wintypes.FILETIME()
+                exited = wintypes.FILETIME()
+                kern = wintypes.FILETIME()
+                user = wintypes.FILETIME()
+                ok = kernel32.GetProcessTimes(
+                    handle,
+                    ctypes.byref(created),
+                    ctypes.byref(exited),
+                    ctypes.byref(kern),
+                    ctypes.byref(user),
+                )
+                if not ok:
+                    return None
+                return str((created.dwHighDateTime << 32) | created.dwLowDateTime)
+            finally:
+                kernel32.CloseHandle(handle)
+        # macOS / other Unix: ``ps`` is the portable answer.
+        out = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        token = "-".join(out.stdout.split())
+        return token or None
+    except Exception:  # noqa: BLE001 — gone mid-read, no permission, odd platform
+        return None
 
 
 def _pid_alive(pid: int) -> bool:
@@ -1079,6 +1163,15 @@ def _inspect_instance(
     if pid is None or port is None or not _pid_alive(pid):
         return None
 
+    # A live pid is only *ours* if it is the same incarnation that wrote the
+    # file. After a crash or a reboot the number may now be someone else's
+    # process; that is stale files, not a starting server.
+    recorded = _read_runtime_token()
+    current = _pid_start_token(pid)
+    verified = recorded is not None and current is not None and recorded == current
+    if recorded is not None and current is not None and recorded != current:
+        return None
+
     deadline = clock() + wait
     while True:
         health = _probe_health(port, host)
@@ -1090,6 +1183,11 @@ def _inspect_instance(
         if not _pid_alive(pid):
             return None
     if not _pid_alive(pid):
+        return None
+    if not verified:
+        # Alive, silent, and we cannot prove it is Mnemify (a pre-token
+        # ``server.pid`` or a platform with no start-time answer): never
+        # report — or later signal — a process we have not identified.
         return None
     return InstanceState("starting", pid, port, None)
 
@@ -1153,12 +1251,17 @@ def _claim_runtime_files(port: int):
     pid_file = paths.server_pid_file()
     port_file = paths.server_port_file()
     mypid = os.getpid()
-    pid_file.write_text(f"{mypid}\n", encoding="utf-8")
+    token = _pid_start_token(mypid) or ""
+    pid_file.write_text(f"{mypid} {token}".rstrip() + "\n", encoding="utf-8")
     port_file.write_text(f"{port}\n", encoding="utf-8")
+
+    def _recorded_pid() -> str:
+        parts = pid_file.read_text(encoding="utf-8").split()
+        return parts[0] if parts else ""
 
     def release() -> None:
         try:
-            if pid_file.exists() and pid_file.read_text(encoding="utf-8").strip() == str(mypid):
+            if pid_file.exists() and _recorded_pid() == str(mypid):
                 pid_file.unlink(missing_ok=True)
                 port_file.unlink(missing_ok=True)
         except OSError:
@@ -1320,7 +1423,8 @@ def _cmd_stop(args: argparse.Namespace) -> None:
             return
         print(
             f"Could not stop pid {inst.pid}. It is still running; try `mnemify stop` again "
-            "in a moment."
+            f"in a moment. If Mnemify is not actually running, delete "
+            f"{paths.server_pid_file()} and {paths.server_port_file()}."
         )
         sys.exit(1)
 

@@ -22,6 +22,10 @@ import type { DocAttachment } from "../../api/documents";
 import { pickRenderer, type ChromeState } from "./registry";
 import { RendererFrame } from "./RendererFrame";
 
+/** Renderer ids whose bytes the browser can show directly in a tab. */
+const INLINE_OK: ReadonlySet<string> = new Set(["pdf", "video"]);
+const entryIdOf = (att: DocAttachment): string => pickRenderer(att).id;
+
 interface AttachmentViewerProps {
   attachment: DocAttachment | null;
   onClose: () => void;
@@ -64,6 +68,12 @@ function ViewerBody({
 }) {
   const inlineUrl = apiUrl(`${attachment.url}?inline=1`);
   const downloadUrl = apiUrl(attachment.url);
+  // "Open in new tab" navigates the browser straight to the bytes. That is
+  // only sensible for types the browser renders passively (PDF, video); for
+  // anything else — an .html or .svg attachment above all — the server
+  // refuses inline anyway, so hand out the download URL and keep the
+  // attachment from ever being rendered as a document on the API origin.
+  const openInTabUrl = INLINE_OK.has(entryIdOf(attachment)) ? inlineUrl : downloadUrl;
 
   const [chrome, setChrome] = useState<ChromeState>({});
   // Renderers call `onChrome` from effects; wrap in a stable callback so they
@@ -210,7 +220,7 @@ function ViewerBody({
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <a
-            href={inlineUrl}
+            href={openInTabUrl}
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Open in new tab"

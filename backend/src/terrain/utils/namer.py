@@ -118,7 +118,11 @@ class ClusterNamer:
             values.extend(f.products[:2] + f.customers[:2] + f.entities[:4] + f.tags[:4])
         values.extend(context or [])
         top = [v.lower() for v, _ in Counter(values).most_common(12)]
-        key = f"{kind}|" + "|".join(sorted(top))
+        # The namer's model is part of the key: a name produced by one model
+        # is not a cache hit for another (nor for the local heuristics, which
+        # have no ``model``). Mode prefixes ("cl_"/"an_") stay in the subclasses.
+        model = getattr(self, "model", None) or "local"
+        key = f"{model}|{kind}|" + "|".join(sorted(top))
         if extra:
             key += "|extra:" + "|".join(sorted(e.casefold() for e in extra))
         return f"fp_{kind}_" + short_hash(key or "empty", 16)

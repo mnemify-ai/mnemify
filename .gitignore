@@ -72,3 +72,6 @@ temp_output/
 /data
 # Demo video source (hosted as a GitHub user-attachment, linked from README)
 assets/*.mp4
+
+# Local dev changelog (not committed)
+UPDATES.md

@@ -261,8 +261,12 @@ $logHint = $env:MNEMIFY_LOG_DIR
 if (-not $logHint) { $logHint = Join-Path $env:LOCALAPPDATA 'Mnemify\logs' }
 Write-Host ("If nothing happens, look in " + (Join-Path $logHint 'launcher.log') + '.')
 $pwshExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-Start-Process -FilePath $pwshExe -WorkingDirectory $Repo -WindowStyle Hidden -ArgumentList @(
-    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
-    '-File', (Join-Path $PSScriptRoot 'mnemify.ps1'), '-Gui'
+# One pre-quoted string, not an array: Start-Process joins array elements
+# with spaces and does not quote them, so a repo under "C:\Users\Jane Doe\..."
+# would be split at the space and the hidden window would die silently.
+# Same shape as the .lnk arguments in make-launcher.ps1.
+$launch = Join-Path $PSScriptRoot 'mnemify.ps1'
+Start-Process -FilePath $pwshExe -WorkingDirectory $Repo -WindowStyle Hidden -ArgumentList (
+    '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launch + '" -Gui'
 )
 exit 0

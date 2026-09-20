@@ -17,6 +17,9 @@ import {
 import { SettingsSection } from "./SettingsSection";
 import { cn } from "../../lib/cn";
 
+/** What the server expects in the body of `POST /api/reset` (`RESET_CONFIRM_PHRASE`). */
+const RESET_PHRASE = "RESET";
+
 /** Returns the parsed integer if the text is a whole number in range, else null. */
 function parseGrace(text: string): number | null {
   if (text.trim() === "") return null;
@@ -30,7 +33,11 @@ export function DataSection() {
   const qc = useQueryClient();
   const resetHarvest = useResetHarvest();
   const resetAll = useMutation({
-    mutationFn: () => apiFetch<{ ok: boolean }>("/api/reset", { method: "POST" }),
+    mutationFn: () =>
+      apiFetch<{ ok: boolean }>("/api/reset", {
+        method: "POST",
+        body: JSON.stringify({ confirm: RESET_PHRASE }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries(); // everything
       toastReset();
@@ -39,6 +46,15 @@ export function DataSection() {
   });
   const [openHarvestReset, setOpenHarvestReset] = useState(false);
   const [openFullReset, setOpenFullReset] = useState(false);
+  // "Reset everything" is irreversible and also drops credentials, so one
+  // click is not enough: the user types the phrase, and the server checks
+  // for the same phrase in the body.
+  const [resetTyped, setResetTyped] = useState("");
+  const resetPhraseOk = resetTyped.trim() === RESET_PHRASE;
+  const openFull = (open: boolean) => {
+    setOpenFullReset(open);
+    if (!open) setResetTyped("");
+  };
 
   return (
     <div className="max-w-3xl">
@@ -103,15 +119,44 @@ export function DataSection() {
       />
       <AlertDialog
         open={openFullReset}
-        onOpenChange={setOpenFullReset}
+        onOpenChange={openFull}
         title="Reset everything?"
         description="Wipes all harvested data + the compiled map, AND disconnects every source and removes its credentials. You'll need to re-add your tokens. This can't be undone."
         confirmLabel="Reset everything"
         cancelLabel="Cancel"
         tone="destructive"
         confirming={resetAll.isPending}
-        onConfirm={() => resetAll.mutate(undefined, { onSuccess: () => setOpenFullReset(false) })}
-      />
+        confirmDisabled={!resetPhraseOk}
+        onConfirm={() => {
+          if (!resetPhraseOk) return;
+          resetAll.mutate(undefined, { onSuccess: () => openFull(false) });
+        }}
+      >
+        <label className="block mt-5 font-sans text-sm text-muted">
+          Type <span className="font-mono text-ink">{RESET_PHRASE}</span> to confirm
+          <input
+            type="text"
+            value={resetTyped}
+            onChange={(e) => setResetTyped(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && resetPhraseOk && !resetAll.isPending) {
+                e.preventDefault();
+                resetAll.mutate(undefined, { onSuccess: () => openFull(false) });
+              }
+            }}
+            autoComplete="off"
+            autoFocus
+            spellCheck={false}
+            aria-label={`Type ${RESET_PHRASE} to confirm`}
+            className={cn(
+              "mt-2 block w-full h-9 px-3 rounded-md border bg-bone/50 font-mono text-sm text-ink focus:outline-none transition-colors",
+              resetTyped && !resetPhraseOk
+                ? "border-rose/60 focus:border-rose"
+                : "border-hair focus:border-ink/40",
+            )}
+          />
+        </label>
+      </AlertDialog>
     </div>
   );
 }

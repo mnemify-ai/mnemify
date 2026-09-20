@@ -492,13 +492,21 @@ async def discover_confluence(body: ConfluenceDiscover | None = None):
     base = (body.base_url or "").strip().rstrip("/") if body else ""
     email = (body.email or "").strip() if body else ""
     token = (body.token or "").strip() if body else ""
-    if not (base and email and token):
+    if base or email or token:
+        # The wizard path: the caller supplies the whole triple it just
+        # validated. Never mix a caller-chosen ``base_url`` with the *saved*
+        # email/token — that would send the user's stored credentials, as
+        # HTTP Basic auth, to whatever host the request named.
+        if not (base and email and token):
+            raise HTTPException(400, "base_url, email and token must be given together")
+    else:
+        # The re-scan path: everything from the saved connection.
         refresh()
         cfg = load_config_file()
         src = cfg.get("sources", {}).get("confluence", {})
-        base = base or (src.get("base_url") or "").rstrip("/")
-        email = email or os.environ.get(src.get("email_env", "CONFLUENCE_EMAIL"), "").strip()
-        token = token or os.environ.get(src.get("token_env", "CONFLUENCE_API_TOKEN"), "").strip()
+        base = (src.get("base_url") or "").rstrip("/")
+        email = os.environ.get(src.get("email_env", "CONFLUENCE_EMAIL"), "").strip()
+        token = os.environ.get(src.get("token_env", "CONFLUENCE_API_TOKEN"), "").strip()
     if not (base and email and token):
         return {"items": []}
 

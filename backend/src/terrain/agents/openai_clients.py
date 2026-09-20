@@ -312,7 +312,10 @@ class OpenAIFeatureExtractor(OpenAIClientMixin):
 
     @property
     def schema_version(self) -> str:
-        return SCHEMA_VERSION + products_schema_suffix(self.cache_products)
+        # Backend + model tag, like the Claude/Anthropic extractors: features
+        # extracted by one model (or by the local heuristics) must never be
+        # served as another's from the per-chunk cache.
+        return f"openai-{self.model}:{SCHEMA_VERSION}{products_schema_suffix(self.cache_products)}"
 
     def extract(self, chunk: TerrainChunk) -> ChunkFeatures:
         response = self._responses_parse(

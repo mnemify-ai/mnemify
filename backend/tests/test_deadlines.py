@@ -95,3 +95,17 @@ def test_parse_anchor_tolerates_common_shapes():
 
 def test_invalid_calendar_dates_are_rejected():
     assert resolve_deadline("due 2026-13-01", ANCHOR) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "in 99999999999 days",
+        "in 5000000 weeks",
+        "in 999999999 months",
+        "due Q3 0000",
+    ],
+)
+def test_absurd_content_returns_none_instead_of_raising(text):
+    """Harvested text is untrusted; a bad number must not abort the compile."""
+    assert resolve_deadline(text, ANCHOR) is None

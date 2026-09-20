@@ -50,7 +50,9 @@ def test_heartbeat_returns_204_and_stamps_the_idle_clock():
 def test_shutdown_without_the_client_header_is_forbidden():
     server = _FakeServer()
     lifecycle.set_server(server)
-    resp = _client().post("/api/system/shutdown")
+    client = _client()
+    del client.headers["X-Mnemify-Client"]  # the suite's default; drop it on purpose
+    resp = client.post("/api/system/shutdown")
     assert resp.status_code == 403
     assert "X-Mnemify-Client" in resp.json()["detail"]
     assert server.should_exit is False

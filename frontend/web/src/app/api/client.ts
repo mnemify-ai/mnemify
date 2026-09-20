@@ -20,12 +20,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Every request carries this. The backend refuses any state-changing `/api`
+ * call without it: a page on another site can make the browser POST to
+ * localhost, but it cannot add a custom header without a CORS preflight the
+ * server never grants. Any non-empty value works; "web" says who we are.
+ */
+export const CLIENT_HEADER = "X-Mnemify-Client";
+export const CLIENT_NAME = "web";
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      [CLIENT_HEADER]: CLIENT_NAME,
       ...(init?.headers ?? {}),
     },
   });

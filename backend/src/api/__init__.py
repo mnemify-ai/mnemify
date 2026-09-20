@@ -207,21 +207,62 @@ class HostGuardMiddleware:
         await self.app(scope, receive, send)
 
 
+#: The header every state-changing ``/api`` request must carry. Any non-empty
+#: value ("web" from the UI, "cli" from ``mnemify stop``, "test" in the suite).
+CLIENT_HEADER = "X-Mnemify-Client"
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class ClientGuardMiddleware:
+    """Refuse state-changing ``/api`` requests that lack ``X-Mnemify-Client``.
+
+    Cross-site request forgery: a page on any other site can make the
+    browser send ``POST http://localhost:8783/api/reset`` — the Host header
+    is ``localhost``, so the Host guard passes, and a POST with no body and
+    no custom header is a CORS "simple request" that needs no preflight. The
+    browser hides the *response* from that page, but the request still runs.
+
+    A custom header is what a foreign page cannot add: the browser would
+    preflight, and this app grants no cross-origin allowance in a normal run.
+    Our own UI and CLI add it trivially. GET/HEAD/OPTIONS stay open so SSE
+    streams and plain reads keep working.
+
+    Pure ASGI, like :class:`HostGuardMiddleware`.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("method", "GET") not in _SAFE_METHODS:
+            path = scope.get("path", "")
+            if path == "/api" or path.startswith("/api/"):
+                value = ""
+                for k, v in scope.get("headers") or []:
+                    if k == b"x-mnemify-client":
+                        value = v.decode("latin-1").strip()
+                        break
+                if not value:
+                    response = JSONResponse(
+                        {"detail": f"{CLIENT_HEADER} header required"}, status_code=403
+                    )
+                    await response(scope, receive, send)
+                    return
+        await self.app(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Mnemify Harvester API", version=__version__, lifespan=_lifespan)
 
-    # Outermost: a request that is not addressed to this machine never
-    # reaches a route, the idle clock or CORS.
-    app.add_middleware(HostGuardMiddleware)
-
-    # Stamps the idle clock on real /api traffic and
-    # counts in-flight /api/ask streams. Pure ASGI, so SSE isn't buffered.
-    app.add_middleware(idle.IdleMiddleware)
+    # Starlette wraps in *reverse* registration order: the middleware added
+    # last is outermost. So these are listed innermost-first, and the resulting
+    # onion is HostGuard > ClientGuard > Idle > (CORS, dev only) > routes.
 
     # Dev only: allow the Vite dev server (5173+) to hit /api directly when
     # developing without the built bundle. `mnemify up --reload` sets
     # MNEMIFY_DEV=1. In normal runs the static mount serves the frontend on
-    # the same origin, so no cross-origin allowance exists at all.
+    # the same origin, so no cross-origin allowance exists at all. Preflights
+    # (OPTIONS) pass both guards, so this can sit inside them.
     if os.environ.get("MNEMIFY_DEV") == "1":
         app.add_middleware(
             CORSMiddleware,
@@ -236,6 +277,18 @@ def create_app() -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    # Stamps the idle clock on real /api traffic and counts in-flight
+    # /api/ask streams. Pure ASGI, so SSE isn't buffered. Inside the guards,
+    # so a refused request does not count as activity.
+    app.add_middleware(idle.IdleMiddleware)
+
+    # Nothing mutates without the client header (CSRF guard).
+    app.add_middleware(ClientGuardMiddleware)
+
+    # Outermost: a request that is not addressed to this machine never
+    # reaches a route, the idle clock or CORS.
+    app.add_middleware(HostGuardMiddleware)
 
     app.include_router(routes_connections.router, prefix="/api")
     app.include_router(routes_harvest.router, prefix="/api")

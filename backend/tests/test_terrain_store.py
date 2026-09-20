@@ -150,3 +150,30 @@ def test_save_compiled_note_without_members_never_fuzzy_matches(tmp_path):
         ) is None
     finally:
         store.close()
+
+
+def test_find_similar_compiled_note_is_confined_to_one_identity(tmp_path):
+    """Two sibling tags over the same documents (identical member sets) must
+    never be handed each other's synthesized text."""
+    store = TerrainStore(tmp_path / "t.db")
+    try:
+        m = [f"h{i}" for i in range(20)]
+        store.save_compiled_note(
+            "k_a", "tag", "About A", [0.1], "v1", members=m, identity="tag|alpha"
+        )
+        # Same identity, near-identical members: reuse.
+        hit = store.find_similar_compiled_note(
+            "tag", "v1", m[:19] + ["new"], min_overlap=0.9, max_drift=3, identity="tag|alpha"
+        )
+        assert hit is not None and hit["text"] == "About A"
+        # Different identity, identical members: no reuse.
+        assert store.find_similar_compiled_note(
+            "tag", "v1", m, min_overlap=0.9, max_drift=3, identity="tag|beta"
+        ) is None
+        # Rows saved before identities existed never match an identity query.
+        store.save_compiled_note("k_legacy", "tag", "old", [0.1], "v1", members=m)
+        assert store.find_similar_compiled_note(
+            "tag", "v1", m, min_overlap=0.9, max_drift=3, identity="tag|gamma"
+        ) is None
+    finally:
+        store.close()

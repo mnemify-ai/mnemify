@@ -42,6 +42,26 @@ def _isolated_mnemify_home(tmp_path, monkeypatch):
     monkeypatch.setenv("MNEMIFY_ALLOWED_HOSTS", "testserver")
 
 
+@pytest.fixture(autouse=True)
+def _test_client_sends_the_client_header(monkeypatch):
+    """Every ``TestClient`` speaks as our own UI would.
+
+    ``ClientGuardMiddleware`` refuses state-changing ``/api`` requests that
+    lack ``X-Mnemify-Client`` (CSRF guard). The suite's clients get it by
+    default; a test that wants to *prove* the guard passes an explicit
+    ``headers={"X-Mnemify-Client": ""}`` (or drops it via ``client.headers``).
+    """
+    from starlette.testclient import TestClient
+
+    original_init = TestClient.__init__
+
+    def init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.headers.setdefault("X-Mnemify-Client", "test")
+
+    monkeypatch.setattr(TestClient, "__init__", init)
+
+
 #: Every name ``/api/secrets`` can read or write. Kept as a literal so this
 #: root conftest imports nothing from ``src.api`` (which would drag FastAPI,
 #: the SSE buses and the scheduler into every test session's import graph).

@@ -203,6 +203,11 @@ class TerrainStore:
             # The cache_key of the row the LLM actually produced; carried-forward
             # copies share it so ``drift`` can be bumped across the whole family.
             self._ensure_column("compiled_notes", "origin_key", "TEXT")
+            # What the note is *about* (a tag label, a region name, an
+            # entity label+type), independent of exact membership. Fuzzy reuse
+            # is confined to rows with the same identity so two sibling tags
+            # over the same documents can never be handed each other's text.
+            self._ensure_column("compiled_notes", "identity", "TEXT")
             # Stamp last, in the same transaction as the ALTERs above: a crash
             # mid-upgrade leaves user_version at its old value, so the next
             # open re-runs the (idempotent) migrations.
@@ -611,19 +616,22 @@ class TerrainStore:
         members: list[str] | set[str] | None = None,
         drift: int = 0,
         origin_key: str | None = None,
+        identity: str | None = None,
     ) -> None:
         """Persist a compiled note. ``members`` (content hashes the note was
         synthesized from) enables overlap-tolerant reuse on later compiles;
         omit it to store an exact-key-only row. ``origin_key`` defaults to
-        ``cache_key`` (a freshly synthesized note is its own origin)."""
+        ``cache_key`` (a freshly synthesized note is its own origin).
+        ``identity`` names what the note describes (see
+        :meth:`find_similar_compiled_note`)."""
         member_set = sorted(set(members)) if members else []
         with self._transaction():
             self._conn.execute(
                 """
                 INSERT INTO compiled_notes
                     (cache_key, kind, text, embedding, prompt_version, updated_at,
-                     member_count, drift, origin_key)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     member_count, drift, origin_key, identity)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(cache_key) DO UPDATE SET
                     kind=excluded.kind,
                     text=excluded.text,
@@ -632,12 +640,13 @@ class TerrainStore:
                     updated_at=excluded.updated_at,
                     member_count=excluded.member_count,
                     drift=excluded.drift,
-                    origin_key=excluded.origin_key
+                    origin_key=excluded.origin_key,
+                    identity=excluded.identity
                 """,
                 (cache_key, kind, text, json.dumps(embedding),
                  prompt_version, _now_iso(),
                  len(member_set) if member_set else None, int(drift),
-                 origin_key or cache_key),
+                 origin_key or cache_key, identity),
             )
             self._conn.execute(
                 "DELETE FROM compiled_note_members WHERE cache_key=?", (cache_key,)
@@ -657,6 +666,7 @@ class TerrainStore:
         *,
         min_overlap: float,
         max_drift: int,
+        identity: str | None = None,
     ) -> dict | None:
         """Best cached note of ``kind`` whose synthesized member set overlaps
         ``members`` by Jaccard ≥ ``min_overlap`` and has drifted fewer than
@@ -665,7 +675,13 @@ class TerrainStore:
 
         Overlap is always measured against the member set the LLM actually
         saw (carried forward verbatim on reuse), so repeated small changes
-        cannot compound into unbounded staleness."""
+        cannot compound into unbounded staleness.
+
+        With ``identity`` given, only rows saved under the *same* identity
+        qualify. Member sets alone do not identify a node: two sibling tags
+        over the same documents, "Stripe (customer)" vs "Stripe (product)",
+        or a region and its one dominant child all share ≥90 % of their
+        members while describing different things."""
         current = set(members)
         if not current or min_overlap <= 0:
             return None
@@ -690,11 +706,13 @@ class TerrainStore:
         best: dict | None = None
         for cache_key, n in sorted(hits.items(), key=lambda kv: -kv[1])[:10]:
             row = self._conn.execute(
-                "SELECT text, embedding, prompt_version, member_count, drift, origin_key "
-                "FROM compiled_notes WHERE cache_key=?",
+                "SELECT text, embedding, prompt_version, member_count, drift, origin_key, "
+                "identity FROM compiled_notes WHERE cache_key=?",
                 (cache_key,),
             ).fetchone()
             if not row or row["prompt_version"] != prompt_version:
+                continue
+            if identity is not None and row["identity"] != identity:
                 continue
             if int(row["drift"] or 0) >= max_drift:
                 continue
