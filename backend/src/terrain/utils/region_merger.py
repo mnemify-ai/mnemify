@@ -337,9 +337,9 @@ class RegionMerger:
             if a_id == b_id:
                 continue
             if verdict.parent == "A":
-                self._move_child(top_level, parent_id=a_id, child_id=b_id)
+                self._move_child(top_level, parent_id=a_id, child_id=b_id, chunks_by_id=chunks_by_id)
             elif verdict.parent == "B":
-                self._move_child(top_level, parent_id=b_id, child_id=a_id)
+                self._move_child(top_level, parent_id=b_id, child_id=a_id, chunks_by_id=chunks_by_id)
             else:
                 self._synth_parent(top_level, a_id, b_id, chunks_by_id)
 
@@ -378,11 +378,31 @@ class RegionMerger:
         *,
         parent_id: str,
         child_id: str,
+        chunks_by_id: dict[str, EnrichedChunk],
     ) -> None:
         parent = top_level.get(parent_id)
         child = top_level.get(child_id)
         if parent is None or child is None:
             return
+        if not parent.children:
+            # The parent was a leaf. Giving it a child turns it into an
+            # internal node, and tags/notes/graph nodes are minted from
+            # leaves only — so its own chunks would silently drop out of the
+            # map (same hazard ``_merged_node`` guards against). Keep them
+            # reachable as a sibling leaf, the way the clusterer does for a
+            # folder that has both notes and sub-folders (``__direct__``).
+            own = sorted(set(parent.chunk_ids) - set(child.chunk_ids))
+            if own:
+                parent.children.append(
+                    ClusterTreeNode(
+                        id=self._fresh_node_id(f"{parent.id}/__direct__", own, chunks_by_id),
+                        name="",
+                        position=Position(x=0.0, z=0.0),
+                        height=parent.height,
+                        chunk_ids=own,
+                        children=[],
+                    )
+                )
         parent.children = [existing for existing in parent.children if existing.id != child.id]
         parent.children.append(child)
         parent.chunk_ids = sorted(set(parent.chunk_ids) | set(child.chunk_ids))

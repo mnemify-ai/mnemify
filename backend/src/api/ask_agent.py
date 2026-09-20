@@ -25,6 +25,7 @@ import asyncio
 import json
 import logging
 import sys
+import tempfile
 import threading
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -740,7 +741,14 @@ def _build_options(ctx: AgentContext, provider: str, model: str, key: str | None
         max_turns=MAX_TURNS,
         model=model,
         env=env,
-        setting_sources=None,
+        # Isolation mode. ``None`` would load the user's own Claude Code
+        # config — ~/.claude/settings.json hooks, ~/.claude.json MCP servers,
+        # any CLAUDE.md under the cwd — into every chat turn. An empty list
+        # loads nothing (same as ``--setting-sources ""`` in claude_cli.py).
+        setting_sources=[],
+        # A neutral cwd, so a CLAUDE.md or .claude/ next to wherever the
+        # server happened to be launched from cannot leak in either.
+        cwd=tempfile.gettempdir(),
         include_partial_messages=True,
     )
 
@@ -828,7 +836,7 @@ async def run_agent_session(
     ctx = AgentContext(
         knowledge_map=knowledge_map,
         embedder=embedder,
-        db_path=db_path or ask_expansion._TERRAIN_DB_PATH,
+        db_path=db_path or ask_expansion._terrain_db_path(),
     )
     prompt = _render_prompt(query_text, history)
     options = _build_options(ctx, provider, model, key)

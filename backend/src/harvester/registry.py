@@ -18,6 +18,11 @@ The factory callable signature is::
 The second return value is an optional "closeable resource" that the CLI
 must close in its ``finally`` block (e.g. the Notion HTTP client).  Plugins
 with no long-lived resources return ``None`` as the second element.
+
+Which plugins get imported (and therefore registered) is decided by
+``src.sources.enabled_sources()`` — this build ships Notion, Confluence and
+Obsidian. The other plugin packages remain importable by hand; they just
+aren't auto-registered. See ``src/sources.py``.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from __future__ import annotations
 from typing import Callable
 
 from src.harvester import SourcePlugin
+from src.sources import enabled_sources
 
 # source_type → factory(config: dict) -> (plugin, closeable | None)
 _PLUGIN_FACTORIES: dict[str, Callable[[dict], tuple[SourcePlugin, object | None]]] = {}
@@ -81,17 +87,21 @@ def registered_source_types() -> list[str]:
 def _ensure_plugins_registered() -> None:
     """Trigger registration side-effects by importing plugin packages.
 
-    Each import is guarded so a missing optional dependency in one plugin
-    does not block the others from registering.
+    Only the connectors this build ships are imported — see
+    ``src/sources.py`` for why and for the ``MNEMIFY_SOURCES`` dev override.
+    Each import is still guarded so a missing optional dependency in one
+    plugin does not block the others from registering.
     """
-    _try_import("src.harvester.notion")
-    _try_import("src.harvester.obsidian")
-    _try_import("src.harvester.confluence")
-    _try_import("src.harvester.jira")
-    _try_import("src.harvester.gmail")
-    _try_import("src.harvester.calendar")
-    _try_import("src.harvester.slack")
-    _try_import("src.harvester.github")
+    for name in enabled_sources():
+        _try_import(f"src.harvester.{name}")
+
+    # Present in the tree, not enabled in this build — see src/sources.py.
+    # Re-enable by name via MNEMIFY_SOURCES rather than by uncommenting:
+    #   _try_import("src.harvester.jira")
+    #   _try_import("src.harvester.gmail")
+    #   _try_import("src.harvester.calendar")
+    #   _try_import("src.harvester.slack")
+    #   _try_import("src.harvester.github")
 
 
 def _try_import(module: str) -> None:

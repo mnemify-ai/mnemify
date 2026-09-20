@@ -38,28 +38,39 @@ dependencies = [
     # _run_leiden). Both ship prebuilt wheels; no system graph lib required.
     "igraph>=0.11",
     "leidenalg>=0.10",
-    # Google source connectors (gmail + calendar). `google-auth-oauthlib`
-    # ships the InstalledAppFlow used by `mnemify login`; the API
-    # client provides googleapiclient.discovery for the read paths.
-    "google-auth>=2.30",
-    "google-auth-oauthlib>=1.2",
-    "google-api-python-client>=2.130",
     # APScheduler powers /api/schedules — cron-style harvest triggers fired
     # in-process by an AsyncIOScheduler hooked into the FastAPI lifespan.
     # Single-worker only: multiple uvicorn workers would each run the
     # scheduler and double-fire.
     "apscheduler>=3.10",
-    # Slack source connector. Uses the sync slack_sdk.WebClient wrapped
-    # in asyncio.to_thread — same pattern as the Jira plugin's atlassian
-    # client. Avoids pulling in aiohttp (which AsyncWebClient requires)
-    # so Mnemify keeps a single async HTTP stack (httpx).
-    "slack-sdk>=3.27",
     # GitHub uses the existing httpx for both REST and GraphQL — no
     # GitHub-specific library required.
     "python-frontmatter>=1.3.0",
 ]
 
 [project.optional-dependencies]
+# Connectors this build does not ship (see src/sources.py) keep their code in
+# the tree but move their third-party clients out of the default install. The
+# Google tree alone is ~100 MB — the single biggest cost in `uv sync` for a
+# user who will never harvest Gmail. `registry._try_import` swallows the
+# resulting ImportError, so a plain install simply has no gmail/calendar/slack
+# plugin; `uv sync --extra all-sources` puts them back.
+google = [
+    # Google source connectors (gmail + calendar). `google-auth-oauthlib`
+    # ships the InstalledAppFlow used by `mnemify login`; the API
+    # client provides googleapiclient.discovery for the read paths.
+    "google-auth>=2.30",
+    "google-auth-oauthlib>=1.2",
+    "google-api-python-client>=2.130",
+]
+slack = [
+    # Slack source connector. Uses the sync slack_sdk.WebClient wrapped
+    # in asyncio.to_thread — same pattern as the Jira plugin's atlassian
+    # client. Avoids pulling in aiohttp (which AsyncWebClient requires)
+    # so Mnemify keeps a single async HTTP stack (httpx).
+    "slack-sdk>=3.27",
+]
+all-sources = ["mnemify[google,slack]"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

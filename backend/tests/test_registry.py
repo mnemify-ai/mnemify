@@ -130,15 +130,24 @@ def test_confluence_is_registered():
     assert "confluence" in registered_source_types()
 
 
-def test_jira_is_registered():
-    """ATL-04: jira plugin auto-registers via _ensure_plugins_registered.
+def test_jira_registers_on_explicit_import_only():
+    """ATL-04, updated for the shipped connector set.
 
-    As with confluence, this test must not import ``src.harvester.jira``
-    directly — the registry wiring is what's under test.
+    Jira is not in ``src.sources.ENABLED_SOURCES``, so
+    ``_ensure_plugins_registered()`` no longer imports it and the registry
+    doesn't list it on its own. The plugin is still complete and importable —
+    importing the package runs its ``register_plugin`` call as it always did.
+    (Asserting "jira is absent" before the import would be order-dependent:
+    ``_PLUGIN_FACTORIES`` is process-global and test_jira_plugin.py imports
+    the package at module level, so in a full-suite run it may already be
+    registered. What is under test here is that the explicit import path
+    still works.)
     """
     from src.harvester.registry import _ensure_plugins_registered
 
     _ensure_plugins_registered()
+    import src.harvester.jira  # noqa: F401 — registration side-effect
+
     assert "jira" in registered_source_types()
 
 

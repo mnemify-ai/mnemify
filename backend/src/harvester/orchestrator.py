@@ -14,7 +14,7 @@ Usage:
         manifest=manifest,
         harvest_logger=harvest_logger,
         max_concurrent=5,
-        raw_store=RawStore(DATA_DIR / "raw", converter_version="0.1.0"),
+        raw_store=RawStore(paths.data_dir() / "raw", converter_version="0.1.0"),
     )
     result = await orchestrator.run()
     print(result.summary())

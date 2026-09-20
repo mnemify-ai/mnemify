@@ -73,8 +73,8 @@ def _create_github_plugin(config: dict) -> tuple[GitHubHarvesterPlugin, None]:
     if not token:
         raise EnvironmentError(
             f"GitHub token not found: env var {cfg.token_env!r} is unset or empty. "
-            f"Set it in backend/.env to a fine-grained or classic PAT. "
-            f"See backend/.env.template for the setup steps."
+            f"Set it to a fine-grained PAT (Contents, Metadata, Issues, Pull requests, "
+            f"Discussions: read) or a classic PAT with `repo` + `read:discussion`."
         )
 
     client = GitHubClient(

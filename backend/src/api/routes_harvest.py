@@ -23,7 +23,7 @@ from .event_bus import bus
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 
 class HarvestScope(BaseModel):
@@ -91,12 +91,12 @@ async def reset():
 
     removed: list[str] = []
     for name in _RESET_DIRS:
-        p = _DATA_DIR / name
+        p = paths.data_dir() / name
         if p.is_dir():
             shutil.rmtree(p, ignore_errors=True)
             removed.append(f"{name}/")
     for name in _RESET_FILES:
-        p = _DATA_DIR / name
+        p = paths.data_dir() / name
         if p.exists():
             try:
                 p.unlink()
@@ -173,7 +173,7 @@ def _derive_run_status(run: dict) -> str:
 
 @router.get("/harvest/history")
 async def history():
-    db = _DATA_DIR / "harvest-manifest.db"
+    db = paths.data_dir() / "harvest-manifest.db"
     if not db.exists():
         return {"runs": []}
     try:

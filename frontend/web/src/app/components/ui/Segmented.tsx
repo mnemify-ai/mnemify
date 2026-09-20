@@ -4,6 +4,11 @@ import { cn } from "../../lib/cn";
 export interface SegmentedOption<T extends string = string> {
   value: T;
   label: string;
+  /** Unselectable, but still shown — an option the user should know exists
+   *  and why it is out of reach. Pair it with {@link SegmentedOption.title}. */
+  disabled?: boolean;
+  /** Native tooltip, used to explain a disabled option. */
+  title?: string;
 }
 
 export interface SegmentedProps<T extends string = string> {
@@ -52,6 +57,8 @@ export function Segmented<T extends string = string>({
         <RadixRadioGroup.Item
           key={opt.value}
           value={opt.value}
+          disabled={opt.disabled}
+          title={opt.title}
           className={cn(
             "px-3 rounded-full font-sans text-xs font-medium",
             "transition-colors duration-base ease-out",
@@ -59,6 +66,7 @@ export function Segmented<T extends string = string>({
             itemHeight,
             "data-[state=checked]:bg-ink data-[state=checked]:text-cream",
             "data-[state=unchecked]:text-muted data-[state=unchecked]:hover:text-ink",
+            opt.disabled && "opacity-disabled cursor-not-allowed",
           )}
         >
           {opt.label}

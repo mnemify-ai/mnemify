@@ -43,13 +43,14 @@ from src.harvester.orchestrator import (
     _is_unreliable_modified_at,
 )
 from src.harvester.retention import purge_deleted
+from src.sources import is_enabled
 
 from ._rate import _BytesRate, _Rate
 from .event_bus import bus
 
 
 logger = logging.getLogger(__name__)
-DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 DEFAULT_CONCURRENCY = 10  # was 5; bigger pool drains lists faster
 
 # Per-source default concurrency when the user's YAML sets none. Obsidian reads
@@ -93,8 +94,8 @@ def _retention_sweep(manifest: HarvestManifest, source: str) -> None:
     if not isinstance(grace, int) or grace < 0:
         grace = 7
 
-    raw_store = RawStore(DATA_DIR / "raw", converter_version=cfg.get("converter_version", "0.1.0"))
-    normalized_store = NormalizedStore(DATA_DIR / "normalized")
+    raw_store = RawStore(paths.data_dir() / "raw", converter_version=cfg.get("converter_version", "0.1.0"))
+    normalized_store = NormalizedStore(paths.data_dir() / "normalized")
     result = purge_deleted(
         manifest,
         raw_store,
@@ -404,6 +405,15 @@ state = RunState()
 
 # ─── Public entrypoints ─────────────────────────────────────────────
 
+def is_running() -> bool:
+    """Whether a harvest is in flight (any source still fetching).
+
+    Queried by the idle watchdog before it shuts the process down: killing a
+    harvest mid-run loses the in-progress fetches and leaves the run row open.
+    """
+    return state.status == "running"
+
+
 async def start_harvest(
     sources: list[str] | None = None,
     *,
@@ -421,7 +431,25 @@ async def start_harvest(
     include_databases; Obsidian: watch_folders; Jira: project keys).
     """
     cfg = load_config_file()
-    enabled = [s for s, v in (cfg.get("sources") or {}).items() if v.get("enabled")]
+    configured = [s for s, v in (cfg.get("sources") or {}).items() if v.get("enabled")]
+    # A ``sources.jira`` block left over in someone's yaml must not run: the
+    # build decides which connectors exist (``src.sources``), not the config.
+    hidden = [s for s in configured if not is_enabled(s)]
+    if hidden:
+        logger.info(
+            "harvest: ignoring %s — not enabled in this build (MNEMIFY_SOURCES)",
+            ", ".join(hidden),
+        )
+    enabled = [s for s in configured if is_enabled(s)]
+    if sources:
+        rejected = [s for s in sources if not is_enabled(s)]
+        if rejected:
+            return {
+                "ok": False,
+                "reason": (
+                    f"source(s) not available in this build: {', '.join(rejected)}"
+                ),
+            }
     requested = [s for s in (sources or enabled) if s in enabled]
     if not requested:
         return {"ok": False, "reason": "no enabled sources to harvest"}
@@ -658,8 +686,8 @@ async def _run_one(
     scope: dict | None = None,
     scope_ids: list[str] | None = None,
 ) -> None:
-    manifest = HarvestManifest(DATA_DIR / "harvest-manifest.db")
-    underlying = HarvestLogger(DATA_DIR / "harvest-log.jsonl")
+    manifest = HarvestManifest(paths.data_dir() / "harvest-manifest.db")
+    underlying = HarvestLogger(paths.data_dir() / "harvest-log.jsonl")
 
     try:
         source_cfg = get_source_config(cfg, source)
@@ -720,10 +748,10 @@ async def _run_one(
         })
 
         raw_store = RawStore(
-            DATA_DIR / "raw",
+            paths.data_dir() / "raw",
             converter_version=cfg.get("converter_version", "0.1.0"),
         )
-        normalized_store = NormalizedStore(DATA_DIR / "normalized")
+        normalized_store = NormalizedStore(paths.data_dir() / "normalized")
 
         # Read the FULL YAML scope (not the narrowed source_cfg one) so the
         # reconcile pass can tell "the user removed this scope item" apart

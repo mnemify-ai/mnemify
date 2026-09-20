@@ -25,7 +25,9 @@ npx tsc -b           # typecheck
 ```
 
 The dev server needs the backend running too — start it with `uv run mnemify up`
-in `backend/` (see [Run it](../README.md#run-it) in the repo README). With no
+in `backend/`. This two-terminal setup is the *developer* path; the normal way to
+run Mnemify is `sh setup.sh` at the repo root, which builds `dist/` and lets the
+backend serve it from one process (see [Install](../README.md#install)). With no
 backend, the brain map and the connect/harvest screens just sit on a "couldn't
 reach the backend" / "nothing compiled yet" state — nothing breaks, the live bits
 are inert.

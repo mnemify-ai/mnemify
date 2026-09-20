@@ -2,8 +2,8 @@
 
 Search order:
   1. Path passed via --config CLI flag (explicit)
-  2. ./mnemify.yaml  (current working directory)
-  3. ~/.mnemify/mnemify.yaml (user home)
+  2. ``src.paths.yaml_file()`` — ``MNEMIFY_YAML_FILE`` if set, else
+     ``<mnemify home>/mnemify.yaml``. Never the process cwd.
 
 Returns a plain dict; the caller merges with CLI flag overrides.
 Returns an empty dict when no config file is found.
@@ -96,10 +96,18 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SEARCH_PATHS: list[Path] = [
-    Path("mnemify.yaml"),
-    Path.home() / ".mnemify" / "mnemify.yaml",
-]
+# Test hook: when set, this list replaces the default search order. Left
+# ``None`` in production so the path is resolved at call time via
+# ``src.paths`` (MNEMIFY_HOME / legacy / platform) — never from cwd.
+_DEFAULT_SEARCH_PATHS: list[Path] | None = None
+
+
+def _search_paths() -> list[Path]:
+    if _DEFAULT_SEARCH_PATHS is not None:
+        return _DEFAULT_SEARCH_PATHS
+    from src import paths
+
+    return [paths.yaml_file()]
 
 
 def load_config_file(explicit_path: str | Path | None = None) -> dict:
@@ -129,7 +137,7 @@ def load_config_file(explicit_path: str | Path | None = None) -> dict:
             raise FileNotFoundError(f"Config file not found: {path}")
         return _parse(path, yaml)
 
-    for candidate in _DEFAULT_SEARCH_PATHS:
+    for candidate in _search_paths():
         if candidate.exists():
             return _parse(candidate, yaml)
 

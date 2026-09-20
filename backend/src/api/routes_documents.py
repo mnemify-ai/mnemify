@@ -14,7 +14,7 @@ from src.harvester.manifest import HarvestManifest
 
 
 router = APIRouter()
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 
 def _attachments_dir(row: dict) -> Path | None:
@@ -41,7 +41,7 @@ def _attachments_dir(row: dict) -> Path | None:
 
 
 def _manifest() -> HarvestManifest | None:
-    db = _DATA_DIR / "harvest-manifest.db"
+    db = paths.data_dir() / "harvest-manifest.db"
     if not db.exists():
         return None
     return HarvestManifest(db)
@@ -621,29 +621,78 @@ async def get_attachment(doc_id: str, filename: str, inline: int = 0):
         raise HTTPException(404, "attachment not found")
 
     mime, _ = mimetypes.guess_type(target.name)
+    mime = mime or "application/octet-stream"
     # Filenames in the attachments dir are content-addressed (raw_store writes
     # ``{hash}{ext}``) so the bytes for a given URL never change. A day of
     # browser caching means re-opening a PDF in the viewer is instant instead
     # of re-fetching + re-parsing on every modal open.
-    cache_header = "private, max-age=86400"
-    if inline:
+    #
+    # The attachment bytes are whatever the source page's author uploaded,
+    # and this URL is on the same origin as the API. Rendered as a document
+    # (``inline`` + a browser-executable type such as text/html or SVG) a
+    # hostile attachment would run script with full access to ``/api``. So:
+    # ``nosniff`` stops the browser second-guessing the type, ``sandbox``
+    # denies script even if a type slips through, and ``inline`` is granted
+    # only to types the browser renders passively.
+    headers = {
+        "Cache-Control": "private, max-age=86400",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if inline and _inline_safe(mime):
         # Starlette's FileResponse forces ``Content-Disposition: attachment``
         # whenever ``filename=`` is set, overriding any custom header we
-        # supply. Pass filename=None so our inline header survives.
-        return FileResponse(
-            target,
-            media_type=mime or "application/octet-stream",
-            headers={
-                "Content-Disposition": f'inline; filename="{target.name}"',
-                "Cache-Control": cache_header,
-            },
-        )
-    return FileResponse(
-        target,
-        media_type=mime or "application/octet-stream",
-        filename=target.name,
-        headers={"Cache-Control": cache_header},
-    )
+        # supply. Pass filename=None so our inline header survives. No CSP
+        # ``sandbox`` here: passive types cannot run script, and a sandboxed
+        # top-level PDF navigation trips up Chrome's built-in viewer.
+        headers["Content-Disposition"] = f'inline; filename="{target.name}"'
+        return FileResponse(target, media_type=mime, headers=headers)
+    # Everything else is a download, and would be script-free even if the
+    # browser somehow rendered it.
+    headers["Content-Security-Policy"] = "sandbox; default-src 'none'"
+    if _browser_executable(mime):
+        # Never let the browser interpret these, even as a download it might
+        # later open: force the opaque type.
+        mime = "application/octet-stream"
+    return FileResponse(target, media_type=mime, filename=target.name, headers=headers)
+
+
+#: Types a browser renders without running anything from the file.
+_INLINE_SAFE_TYPES = frozenset(
+    {
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/avif",
+        "text/plain",
+        "text/csv",
+        "application/json",
+    }
+)
+#: Types the browser would execute or that can carry script.
+_BROWSER_EXECUTABLE_TYPES = frozenset(
+    {
+        "text/html",
+        "application/xhtml+xml",
+        "image/svg+xml",
+        "text/xml",
+        "application/xml",
+        "text/javascript",
+        "application/javascript",
+        "application/x-javascript",
+        "text/ecmascript",
+    }
+)
+
+
+def _inline_safe(mime: str) -> bool:
+    return mime in _INLINE_SAFE_TYPES or mime.startswith(("video/", "audio/"))
+
+
+def _browser_executable(mime: str) -> bool:
+    return mime in _BROWSER_EXECUTABLE_TYPES
 
 
 @router.post("/documents/{doc_id}/reharvest")
@@ -712,12 +761,12 @@ async def reharvest_document(doc_id: str):
         orchestrator = HarvestOrchestrator(
             plugin=plugin,
             manifest=m,
-            harvest_logger=HarvestLogger(_DATA_DIR / "harvest-log.jsonl"),
+            harvest_logger=HarvestLogger(paths.data_dir() / "harvest-log.jsonl"),
             raw_store=RawStore(
-                _DATA_DIR / "raw",
+                paths.data_dir() / "raw",
                 converter_version=cfg.get("converter_version", "0.1.0"),
             ),
-            normalized_store=NormalizedStore(_DATA_DIR / "normalized"),
+            normalized_store=NormalizedStore(paths.data_dir() / "normalized"),
             max_concurrent=1,
         )
         result = await orchestrator.harvest_one(doc_ref, force_full=True)

@@ -202,6 +202,13 @@ def _compile_cache_key(
     return sha256_hash(payload)
 
 
+def _note_identity(kind: str, label: str | None) -> str:
+    """What a compiled note is about, for confining fuzzy cache reuse
+    (``TerrainStore.find_similar_compiled_note``). Case/whitespace-insensitive
+    so an LLM re-capitalising a name does not defeat reuse."""
+    return f"{kind}|{' '.join((label or '').casefold().split())}"
+
+
 def _llm_concurrency() -> int:
     """Max concurrent LLM calls. ``TERRAIN_LLM_CONCURRENCY=1`` reproduces the
     old fully-serial behavior (a verification lever)."""
@@ -443,7 +450,7 @@ class TerrainCompiler:
 
     def __init__(
         self,
-        data_dir: str | Path = ".mnemify",
+        data_dir: str | Path | None = None,
         *,
         manifest_path: str | Path | None = None,
         store: TerrainStore | None = None,
@@ -476,6 +483,12 @@ class TerrainCompiler:
         workspace: str = "Mnemify",
         owner: Owner | None = None,
     ):
+        # Resolved here, not in the signature: a default argument would bind
+        # one path at import time and ignore later MNEMIFY_HOME changes.
+        if data_dir is None:
+            from src import paths
+
+            data_dir = paths.data_dir()
         self.data_dir = Path(data_dir)
         self.manifest_path = (
             Path(manifest_path)
@@ -541,13 +554,13 @@ class TerrainCompiler:
         else:
             raise ValueError("ai_mode must be 'openai', 'anthropic', 'local', or 'claude'")
 
-        # Compiled-note cache version — tag the backend so Claude-, Anthropic-
-        # and OpenAI-synthesized notes never collide in the compiled-notes cache.
+        # Compiled-note cache version — tag the backend *and* the model that
+        # synthesizes notes, so local heuristic notes, OpenAI notes and Claude
+        # notes never collide, and switching model re-synthesizes. (Effort is
+        # deliberately not part of any key.)
         from src.terrain.agents.openai_clients import PROMPT_VERSION as _base_prompt_version
         self._compile_prompt_version = (
-            f"{_base_prompt_version}|{getattr(self.extractor, 'schema_version', ai_mode)}"
-            if ai_mode in ("claude", "anthropic")
-            else _base_prompt_version
+            f"{_base_prompt_version}|{ai_mode}|{getattr(self.namer, 'model', 'local')}"
         )
 
         self.workspace = workspace
@@ -2685,7 +2698,7 @@ class TerrainCompiler:
             kind = "entity" if u["is_llm_synthesized"] else "entity_extractive"
             self.store.save_compiled_note(
                 u["cache_key"], kind, text, embedding, PROMPT_VERSION,
-                members=_member_hashes(u["members"]),
+                members=_member_hashes(u["members"]), identity=u["identity"],
             )
             record_slots[u["idx"]] = {
                 "id": u["id"], "label": u["label"], "type": u["type"],
@@ -2714,9 +2727,10 @@ class TerrainCompiler:
                 PROMPT_VERSION, "entity", entity_id, members,
                 extras=[etype],
             )
+            identity = f"entity|{normalize(canonical) or canonical}|{etype}"
             cached = self._lookup_compiled_note(
                 cache_key, "entity" if is_llm else "entity_extractive", members,
-                fuzzy=is_llm,
+                fuzzy=is_llm, identity=identity,
             )
             if cached is not None:
                 text, embedding = cached
@@ -2730,6 +2744,7 @@ class TerrainCompiler:
             entity_units.append({
                 "idx": idx, "id": entity_id, "label": canonical, "type": etype,
                 "note_ids": note_set, "members": members, "cache_key": cache_key,
+                "identity": identity,
                 "is_llm_synthesized": is_llm,
                 # Extractive fallback (no LLM call) is cheap + deterministic —
                 # precompute it; only the embedding is deferred to the work pass.
@@ -2990,6 +3005,7 @@ class TerrainCompiler:
             self.store.save_compiled_note(
                 u["cache_key"], kind, text, embedding, PROMPT_VERSION,
                 members=_member_hashes(u["members"]),
+                identity=_note_identity("tag", u["tag"].label),
             )
             if u["eligible"]:
                 u["tag"].compiled_note = text
@@ -3015,7 +3031,9 @@ class TerrainCompiler:
                 cache_key = _compile_cache_key(
                     PROMPT_VERSION, "tag", tag.id, members, extras=key_lines
                 )
-                cached = self._lookup_compiled_note(cache_key, "tag", members)
+                cached = self._lookup_compiled_note(
+                    cache_key, "tag", members, identity=_note_identity("tag", tag.label)
+                )
                 if cached is None:
                     tag_units.append({
                         "tag": tag, "eligible": True, "cache_key": cache_key,
@@ -3068,6 +3086,7 @@ class TerrainCompiler:
             self.store.save_compiled_note(
                 u["cache_key"], "region", text, embedding, PROMPT_VERSION,
                 members=_member_hashes(u["members"]),
+                identity=_note_identity("region", u["region"].name),
             )
             u["region"].compiled_note = text
             u["region"].embedding = embedding
@@ -3106,7 +3125,9 @@ class TerrainCompiler:
                 cache_key = _compile_cache_key(
                     PROMPT_VERSION, "region", region.id, members, extras=key_extras,
                 )
-                cached = self._lookup_compiled_note(cache_key, "region", members)
+                cached = self._lookup_compiled_note(
+                    cache_key, "region", members, identity=_note_identity("region", region.name)
+                )
                 if cached is None:
                     region_units.append({
                         "region": region, "cache_key": cache_key, "name": region.name,
@@ -3128,6 +3149,7 @@ class TerrainCompiler:
         members: list,
         *,
         fuzzy: bool = True,
+        identity: str | None = None,
     ) -> tuple[str, list[float]] | None:
         """Cache lookup for a compiled note.
 
@@ -3139,7 +3161,8 @@ class TerrainCompiler:
         the note survive that churn. A fuzzy hit is re-saved under the new
         exact key (origin members carried verbatim, drift+1) so the next
         compile is an exact hit and staleness stays bounded by
-        ``TERRAIN_NOTE_REUSE_MAX_DRIFT``.
+        ``TERRAIN_NOTE_REUSE_MAX_DRIFT``. ``identity`` (label / name / entity
+        label+type) confines the fuzzy match to notes about the same thing.
         """
         if self._fresh:
             return None
@@ -3152,7 +3175,7 @@ class TerrainCompiler:
             return None
         hit = self.store.find_similar_compiled_note(
             kind, self._compile_prompt_version, _member_hashes(members),
-            min_overlap=min_overlap, max_drift=max_drift,
+            min_overlap=min_overlap, max_drift=max_drift, identity=identity,
         )
         if hit is None:
             return None
@@ -3160,6 +3183,7 @@ class TerrainCompiler:
         self.store.save_compiled_note(
             cache_key, kind, hit["text"], hit["embedding"], self._compile_prompt_version,
             members=hit["members"], drift=drift, origin_key=hit["origin_key"],
+            identity=identity,
         )
         logger.debug(
             "terrain: reused %s note (overlap %.2f, drift %d)",

@@ -22,6 +22,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.harvester.manifest import HarvestManifest
+from src.sources import is_enabled
 
 from . import orchestrator as orch
 from .yaml_writer import read_config
@@ -34,7 +35,7 @@ _JOB_PREFIX = "harvest-schedule:"
 
 _scheduler: AsyncIOScheduler | None = None
 
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 # Catch-up window. The app runs locally, so a 6am cron silently misses when
 # the laptop is closed at 6am. On startup we look for a scheduled instant that
@@ -96,7 +97,7 @@ def missed_fire_time(
 
 
 def _last_completed(source: str) -> datetime | None:
-    db = _DATA_DIR / "harvest-manifest.db"
+    db = paths.data_dir() / "harvest-manifest.db"
     if not db.exists():
         return None
     try:
@@ -117,6 +118,8 @@ async def catch_up_missed_runs(now: datetime | None = None) -> list[str]:
     missed: list[str] = []
     for source, body in list_schedules().items():
         if not isinstance(body, dict) or not body.get("enabled"):
+            continue
+        if not is_enabled(source):
             continue
         cron = body.get("cron")
         if not cron or not isinstance(cron, str):
@@ -165,6 +168,22 @@ def list_schedules() -> dict[str, dict[str, Any]]:
     return dict(cfg.get("schedules") or {})
 
 
+def has_enabled_schedules() -> bool:
+    """Whether any *available* source has ``schedules.<source>.enabled: true``.
+
+    Read straight from the config rather than from the live APScheduler jobs
+    so the answer is the same before ``start()`` and after ``stop()`` — the
+    idle watchdog uses it to suspend idle shutdown entirely (a scheduler that
+    kills its own host never fires). A schedule for a connector this build
+    hides (``src.sources.is_enabled``) never registers a job, so it must not
+    count either — otherwise it would pin the server up forever.
+    """
+    for source, body in list_schedules().items():
+        if isinstance(body, dict) and body.get("enabled") and is_enabled(source):
+            return True
+    return False
+
+
 def reload_from_yaml() -> None:
     """Clear all existing schedule jobs and re-register from yaml. Called on
     startup and after every schedule update."""
@@ -178,6 +197,11 @@ def reload_from_yaml() -> None:
         if not isinstance(body, dict):
             continue
         if not body.get("enabled"):
+            continue
+        if not is_enabled(source):
+            logger.info(
+                "scheduler: %s is not enabled in this build, skipping its schedule", source
+            )
             continue
         cron = body.get("cron")
         if not cron or not isinstance(cron, str):

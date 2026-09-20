@@ -46,6 +46,10 @@ temp_output/
 /mnemify.yaml
 /backend/mnemify.yaml
 /backend/debug_sample.md
+# running-instance markers written by `mnemify up` (legacy backend/ home layout)
+server.pid
+server.port
+/backend/logs/
 # stray writes if an old build path ever resurfaces (the compiler writes to .mnemify/ now)
 /frontend/terrain.json
 /frontend/mocknotes.json
@@ -57,7 +61,7 @@ temp_output/
 # Microsoft 365 source connectors — same pattern as Google
 /backend/src/harvester/_microsoft/oauth_client.json
 
-# Outlook + shared _microsoft work-in-progress — not ready to push yet
+# Outlook / Microsoft 365 connector — local-only, not part of this tree
 /backend/src/harvester/_microsoft/
 /backend/src/harvester/outlook/
 /backend/tests/test_microsoft_oauth.py
@@ -68,9 +72,10 @@ temp_output/
 
 *.zip
 *.mnemify*
-# The committed demo dataset (see backend/.mnemify_example/README.md) is the one exception.
-!/backend/.mnemify_example/
 
 /data
 # Demo video source (hosted as a GitHub user-attachment, linked from README)
 assets/*.mp4
+
+# Local dev changelog (not committed)
+UPDATES.md

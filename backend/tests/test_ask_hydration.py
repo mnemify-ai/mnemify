@@ -41,17 +41,26 @@ def _lean_nodes() -> list[dict]:
     ]
 
 
+def _data_dir(tmp_path: Path) -> Path:
+    """Where ``routes_ask`` resolves terrain.json / terrain.db.
+
+    The autouse ``_isolated_mnemify_home`` fixture sets ``MNEMIFY_HOME`` to
+    ``tmp_path``, so the data dir is ``tmp_path/.mnemify`` — the route reads
+    it through ``src.paths`` at call time; there is no module constant to
+    monkeypatch any more.
+    """
+    d = tmp_path / ".mnemify"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _write_artifact(dir_: Path, data: dict) -> Path:
     path = dir_ / "terrain.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     return path
 
 
-def _point_ask_at(monkeypatch, path: Path) -> None:
-    monkeypatch.setattr(routes_ask, "_TERRAIN_PATH", path)
-
-
-def test_lean_artifact_hydrates_from_table(tmp_path, monkeypatch):
+def test_lean_artifact_hydrates_from_table(tmp_path):
     edges = [
         {
             "from": "tag.a",
@@ -62,13 +71,13 @@ def test_lean_artifact_hydrates_from_table(tmp_path, monkeypatch):
             "weight": 1.0,
         }
     ]
-    path = _write_artifact(tmp_path, _map_dict(_lean_nodes(), edges))
-    store = TerrainStore(tmp_path / "terrain.db")
+    data_dir = _data_dir(tmp_path)
+    _write_artifact(data_dir, _map_dict(_lean_nodes(), edges))
+    store = TerrainStore(data_dir / "terrain.db")
     try:
         store.replace_graph_node_vectors({"tag.a": VEC_A, "tag.b": VEC_B})
     finally:
         store.close()
-    _point_ask_at(monkeypatch, path)
 
     knowledge_map = routes_ask._load_knowledge_map()
 
@@ -80,55 +89,56 @@ def test_lean_artifact_hydrates_from_table(tmp_path, monkeypatch):
     assert routes_ask._graph_embedding_dim(knowledge_map) == 3
 
 
-def test_fat_artifact_skips_hydration(tmp_path, monkeypatch):
+def test_fat_artifact_skips_hydration(tmp_path):
     nodes = _lean_nodes()
     nodes[0]["embedding"] = VEC_A  # inline vector → pre-strip artifact
-    path = _write_artifact(tmp_path, _map_dict(nodes, []))
+    data_dir = _data_dir(tmp_path)
+    _write_artifact(data_dir, _map_dict(nodes, []))
     # Deliberately no terrain.db: a fat artifact must never need one.
-    _point_ask_at(monkeypatch, path)
 
     knowledge_map = routes_ask._load_knowledge_map()
 
     by_id = {n.id: n for n in knowledge_map.graph.nodes}
     assert by_id["tag.a"].embedding == VEC_A
-    assert not (tmp_path / "terrain.db").exists()
+    assert not (data_dir / "terrain.db").exists()
 
 
-def test_lean_artifact_without_db_degrades(tmp_path, monkeypatch):
-    path = _write_artifact(tmp_path, _map_dict(_lean_nodes(), []))
-    _point_ask_at(monkeypatch, path)
+def test_lean_artifact_without_db_degrades(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    _write_artifact(data_dir, _map_dict(_lean_nodes(), []))
 
     knowledge_map = routes_ask._load_knowledge_map()  # must not raise
 
     assert routes_ask._graph_embedding_dim(knowledge_map) is None
     # Hydration must not create an empty db as a side effect.
-    assert not (tmp_path / "terrain.db").exists()
+    assert not (data_dir / "terrain.db").exists()
 
 
-def test_lean_artifact_with_empty_table_degrades(tmp_path, monkeypatch):
-    path = _write_artifact(tmp_path, _map_dict(_lean_nodes(), []))
-    TerrainStore(tmp_path / "terrain.db").close()  # tables exist, no rows
-    _point_ask_at(monkeypatch, path)
+def test_lean_artifact_with_empty_table_degrades(tmp_path):
+    data_dir = _data_dir(tmp_path)
+    _write_artifact(data_dir, _map_dict(_lean_nodes(), []))
+    TerrainStore(data_dir / "terrain.db").close()  # tables exist, no rows
 
     knowledge_map = routes_ask._load_knowledge_map()  # must not raise
 
     assert routes_ask._graph_embedding_dim(knowledge_map) is None
 
 
-def test_startup_migration_slims_fat_artifact(tmp_path, monkeypatch):
+def test_startup_migration_slims_fat_artifact(tmp_path):
+    data_dir = _data_dir(tmp_path)
     nodes = _lean_nodes()
     nodes[0]["embedding"] = VEC_A
     nodes[0]["context_embedding"] = VEC_A
     nodes[1]["embedding"] = VEC_B
-    path = _write_artifact(tmp_path, _map_dict(nodes, []))
+    path = _write_artifact(data_dir, _map_dict(nodes, []))
 
-    _migrate_fat_terrain_artifact(tmp_path)
+    _migrate_fat_terrain_artifact(data_dir)
 
     slimmed = json.loads(path.read_text(encoding="utf-8"))
     dumped = json.dumps(slimmed)
     assert '"embedding"' not in dumped
     assert '"context_embedding"' not in dumped
-    store = TerrainStore(tmp_path / "terrain.db")
+    store = TerrainStore(data_dir / "terrain.db")
     try:
         vectors = store.load_graph_node_vectors()
     finally:
@@ -136,12 +146,11 @@ def test_startup_migration_slims_fat_artifact(tmp_path, monkeypatch):
     assert set(vectors) == {"tag.a", "tag.b"}
 
     # The migrated artifact hydrates like a native lean one.
-    _point_ask_at(monkeypatch, path)
     knowledge_map = routes_ask._load_knowledge_map()
     assert routes_ask._graph_embedding_dim(knowledge_map) == 3
 
     # Idempotent: a second run is a no-op.
-    _migrate_fat_terrain_artifact(tmp_path)
+    _migrate_fat_terrain_artifact(data_dir)
     assert json.loads(path.read_text(encoding="utf-8")) == slimmed
 
 

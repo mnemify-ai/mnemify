@@ -1,6 +1,6 @@
 """/api/changes — documents changed since a boundary (default: last compile).
 
-Reads the append-only ``.mnemify/harvest-log.jsonl`` (see
+Reads the append-only ``<data_dir>/harvest-log.jsonl`` (see
 ``harvester/logger.py``), keeps the per-document ``harvested`` /
 ``deleted_at_source`` entries after the boundary, dedupes to one row per
 document, and joins each row against the harvest manifest for author
@@ -17,15 +17,25 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
+from src import paths
 from src.harvester.logger import HarvestLogger
 from src.harvester.manifest import HarvestManifest
 
 router = APIRouter()
 
-_DATA_DIR = Path(".mnemify")
-_LOG_PATH = _DATA_DIR / "harvest-log.jsonl"
-_TERRAIN_DB = _DATA_DIR / "terrain.db"
-_MANIFEST_DB = _DATA_DIR / "harvest-manifest.db"
+
+# Resolved per call, never at import: MNEMIFY_HOME (and the tests) may point
+# somewhere else by the time a request lands.
+def _log_path() -> Path:
+    return paths.data_dir() / "harvest-log.jsonl"
+
+
+def _terrain_db() -> Path:
+    return paths.data_dir() / "terrain.db"
+
+
+def _manifest_db() -> Path:
+    return paths.data_dir() / "harvest-manifest.db"
 
 
 def _parse_iso(value: str) -> datetime | None:
@@ -38,11 +48,12 @@ def _parse_iso(value: str) -> datetime | None:
 
 
 def _last_compile_time() -> str | None:
-    if not _TERRAIN_DB.exists():
+    terrain_db = _terrain_db()
+    if not terrain_db.exists():
         return None
     from src.terrain.utils.store import TerrainStore
 
-    store = TerrainStore(_TERRAIN_DB)
+    store = TerrainStore(terrain_db)
     try:
         return store.get_last_compile_time()
     finally:
@@ -80,7 +91,8 @@ async def list_changes(
         boundary = {"kind": "timestamp", "ts": boundary_iso}
     boundary_dt = _parse_iso(boundary_iso) if boundary_iso else None
 
-    log = HarvestLogger(_LOG_PATH) if _LOG_PATH.exists() else None
+    log_path = _log_path()
+    log = HarvestLogger(log_path) if log_path.exists() else None
     entries = log.read_log(since=boundary_dt) if log else []
 
     # Truncation detection: if the boundary predates the oldest surviving log
@@ -88,7 +100,7 @@ async def list_changes(
     truncated = False
     if log and boundary_dt is not None:
         oldest_ts: datetime | None = None
-        with _LOG_PATH.open(encoding="utf-8") as fh:
+        with log_path.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -134,7 +146,8 @@ async def list_changes(
     changes = changes[:limit]
 
     # Join against the manifest for authors / links.
-    manifest = HarvestManifest(_MANIFEST_DB) if _MANIFEST_DB.exists() else None
+    manifest_db = _manifest_db()
+    manifest = HarvestManifest(manifest_db) if manifest_db.exists() else None
     last_harvest_time: str | None = None
     try:
         if manifest:

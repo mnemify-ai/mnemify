@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import shutil
-from pathlib import Path
 from typing import Literal
 from src.terrain.agents.anthropic_clients import CLAUDE_MODEL_PATTERN, is_claude_model_ref
 
@@ -15,14 +14,14 @@ from . import compile_orchestrator as compile_orch
 from . import orchestrator as orch
 from .compile_bus import compile_bus
 from .event_bus import bus
-from .yaml_writer import read_config, upsert_compile, upsert_retention
+from .yaml_writer import read_config, upsert_compile, upsert_retention, upsert_server
 
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 RETENTION_POLICY_DEFAULT = "keep"
 RETENTION_GRACE_DAYS_DEFAULT = 7
 
@@ -57,7 +56,7 @@ async def get_retention() -> dict:
     from src.harvester.retention import count_deleted
 
     block = _retention_block()
-    db_path = _DATA_DIR / "harvest-manifest.db"
+    db_path = paths.data_dir() / "harvest-manifest.db"
     deleted_count = 0
     if db_path.exists():
         manifest = HarvestManifest(db_path)
@@ -221,6 +220,47 @@ async def patch_compile_settings(body: CompileSettingsUpdate) -> dict:
     return {"ok": True, **body.model_dump()}
 
 
+# ─── Server (lifecycle) settings ────────────────────────────────────
+
+#: Minutes of inactivity before the server quits itself. 0 disables it.
+IDLE_TIMEOUT_MINUTES_DEFAULT = 30
+IDLE_TIMEOUT_MINUTES_MAX = 24 * 60
+
+
+def server_settings() -> dict:
+    """Read the ``server`` block from YAML, clamped to sane values.
+
+    ``src.api.idle`` imports this lazily on each watchdog tick, so editing the
+    timeout in Settings takes effect without a restart.
+    """
+    cfg = read_config()
+    block = cfg.get("server") or {}
+    minutes = block.get("idle_timeout_minutes")
+    valid = (
+        isinstance(minutes, int)
+        and not isinstance(minutes, bool)
+        and 0 <= minutes <= IDLE_TIMEOUT_MINUTES_MAX
+    )
+    return {"idle_timeout_minutes": minutes if valid else IDLE_TIMEOUT_MINUTES_DEFAULT}
+
+
+class ServerSettingsUpdate(BaseModel):
+    idle_timeout_minutes: int = Field(ge=0, le=IDLE_TIMEOUT_MINUTES_MAX)
+
+
+@router.get("/settings/server")
+async def get_server_settings() -> dict:
+    """Return the lifecycle settings (idle shutdown)."""
+    return server_settings()
+
+
+@router.patch("/settings/server")
+async def patch_server_settings(body: ServerSettingsUpdate) -> dict:
+    """Persist the lifecycle settings to ``mnemify.yaml``."""
+    upsert_server(body.model_dump())
+    return {"ok": True, **body.model_dump()}
+
+
 @router.post("/settings/retention/purge-now")
 async def purge_now(source: str | None = None) -> dict:
     """Immediately purge every doc marked ``deleted_at_source`` (grace_days=0).
@@ -239,14 +279,14 @@ async def purge_now(source: str | None = None) -> dict:
     from src.harvester.raw_store import RawStore
     from src.harvester.retention import purge_deleted
 
-    db_path = _DATA_DIR / "harvest-manifest.db"
+    db_path = paths.data_dir() / "harvest-manifest.db"
     if not db_path.exists():
         return {"ok": True, "purged": 0, "eligible": 0, "skipped": 0}
 
     manifest = HarvestManifest(db_path)
     try:
-        raw_store = RawStore(_DATA_DIR / "raw", converter_version="0.1.0")
-        normalized_store = NormalizedStore(_DATA_DIR / "normalized")
+        raw_store = RawStore(paths.data_dir() / "raw", converter_version="0.1.0")
+        normalized_store = NormalizedStore(paths.data_dir() / "normalized")
         result = purge_deleted(
             manifest,
             raw_store,
@@ -283,12 +323,26 @@ _RESET_FILES = (
 _RESET_DIRS = ("raw", "normalized")
 
 
+#: What the caller has to type to confirm a full reset.
+RESET_CONFIRM_PHRASE = "RESET"
+
+
+class ResetConfirm(BaseModel):
+    confirm: str = Field(max_length=32)
+
+
 @router.post("/reset")
-async def reset():
+async def reset(body: ResetConfirm):
     """Hard reset: clear harvested data + the compiled map, disable every
     source, and remove first-party credentials. Refused while a harvest or
     compile is running. (For "wipe data but keep my connections", use
-    ``POST /api/harvest/reset``.)"""
+    ``POST /api/harvest/reset``.)
+
+    Irreversible, so it is deliberately hard to call by accident: the body
+    must carry ``{"confirm": "RESET"}`` — the UI asks the user to type it.
+    """
+    if body.confirm.strip() != RESET_CONFIRM_PHRASE:
+        raise HTTPException(400, f'type "{RESET_CONFIRM_PHRASE}" to confirm a full reset')
     if orch.state.status == "running":
         raise HTTPException(409, "a harvest is in progress; cancel it first")
     if compile_orch.state.status == "running":
@@ -297,7 +351,7 @@ async def reset():
     from .credential_store import delete_secrets
     from .yaml_writer import disable_source, read_config
 
-    data_dir = Path(".mnemify")
+    data_dir = paths.data_dir()
 
     cfg = read_config()
     for name in list((cfg.get("sources") or {}).keys()):

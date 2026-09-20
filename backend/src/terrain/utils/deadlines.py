@@ -48,6 +48,8 @@ _WEEKDAYS.update({name.lower(): i for i, name in enumerate(calendar.day_abbr)})
 _WEEKDAY_ALT = "|".join(sorted(_WEEKDAYS, key=len, reverse=True))
 _WEEKDAY_RE = re.compile(rf"\b(next\s+)?({_WEEKDAY_ALT})\b", re.IGNORECASE)
 
+#: Anything further out than ten years is treated as noise, not a deadline.
+_MAX_RELATIVE_COUNT = 3650
 _RELATIVE_RE = re.compile(
     r"\b(?:in|within)\s+(a|an|one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+"
     r"(day|week|month)s?\b",
@@ -129,7 +131,8 @@ def resolve_deadline(text: str | None, anchor: date | None) -> str | None:
             year = anchor.year + (1 if anchor > date(anchor.year, month, _last_day(anchor.year, month)) else 0)
         else:
             return None
-        return date(year, month, _last_day(year, month)).isoformat()
+        resolved = _safe_date(year, month, _last_day(year, month))
+        return resolved.isoformat() if resolved else None
 
     match = _MONTH_ONLY_RE.search(text)
     if match:
@@ -150,12 +153,17 @@ def resolve_deadline(text: str | None, anchor: date | None) -> str | None:
     match = _RELATIVE_RE.search(text)
     if match:
         count = _NUM_WORDS.get(match.group(1).lower()) or int(match.group(1))
+        if count > _MAX_RELATIVE_COUNT:
+            return None  # "in 99999999999 days" is noise, not a deadline
         unit = match.group(2).lower()
-        if unit == "day":
-            return (anchor + timedelta(days=count)).isoformat()
-        if unit == "week":
-            return (anchor + timedelta(weeks=count)).isoformat()
-        return _add_months(anchor, count).isoformat()
+        try:
+            if unit == "day":
+                return (anchor + timedelta(days=count)).isoformat()
+            if unit == "week":
+                return (anchor + timedelta(weeks=count)).isoformat()
+            return _add_months(anchor, count).isoformat()
+        except (OverflowError, ValueError):
+            return None
 
     match = _END_OF_RE.search(text)
     if match:

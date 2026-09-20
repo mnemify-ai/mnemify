@@ -12,8 +12,8 @@ strings and filled in later when the storage layer is built).
 
 Typical usage by an orchestrator:
 
-    manifest = HarvestManifest(".mnemify/harvest-manifest.db")
-    logger   = HarvestLogger(".mnemify/harvest-log.jsonl")
+    manifest = HarvestManifest()          # <mnemify home>/.mnemify/harvest-manifest.db
+    logger   = HarvestLogger()             # <mnemify home>/.mnemify/harvest-log.jsonl
 
     run_id = manifest.start_run(source_type="notion", mode="scheduled")
     since  = manifest.get_last_harvest_time("notion")
@@ -162,7 +162,20 @@ class HarvestManifest:
         ),
     ]
 
-    def __init__(self, db_path: str | Path = ".mnemify/harvest-manifest.db"):
+    #: On-disk schema generation. Bump when a change can't be expressed as an
+    #: idempotent ``ALTER TABLE`` in ``_DOCUMENTS_MIGRATIONS`` / the runs list —
+    #: i.e. when an older build would misread a newer file. Stamped into
+    #: ``PRAGMA user_version`` so a downgraded checkout refuses to open the DB
+    #: instead of silently corrupting it.
+    SCHEMA_VERSION = 1
+
+    def __init__(self, db_path: str | Path | None = None):
+        # Resolved here, not in the signature: a default argument would bind
+        # one path at import time and ignore later MNEMIFY_HOME changes.
+        if db_path is None:
+            from src import paths
+
+            db_path = paths.data_dir() / "harvest-manifest.db"
         self.db_path = Path(db_path)
         if self.db_path != Path(":memory:"):
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,7 +183,24 @@ class HarvestManifest:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL;")
         self._conn.execute("PRAGMA foreign_keys=ON;")
+        self._check_schema_version()
         self._init_schema()
+
+    def _check_schema_version(self) -> None:
+        """Refuse a database written by a newer Mnemify.
+
+        ``user_version`` is 0 both for a brand-new file and for every database
+        written before this stamp existed; both are handled by running the
+        normal create/ALTER path and stamping afterwards.
+        """
+        found = int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+        if found > self.SCHEMA_VERSION:
+            self._conn.close()
+            raise RuntimeError(
+                f"{self.db_path} was written by a newer Mnemify "
+                f"(schema v{found}; this build understands v{self.SCHEMA_VERSION}). "
+                f"Update the code and re-run setup."
+            )
 
     def _init_schema(self) -> None:
         with self._transaction():
@@ -191,6 +221,10 @@ class HarvestManifest:
             for col_name, ddl in self._HARVEST_RUNS_MIGRATIONS:
                 if col_name not in existing_run_cols:
                     self._conn.execute(ddl)
+            # Stamp last, in the same transaction as the migrations above: a
+            # crash mid-upgrade leaves user_version at its old value, so the
+            # next open re-runs the (idempotent) migrations.
+            self._conn.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:

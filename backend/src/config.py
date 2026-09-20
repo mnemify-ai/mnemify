@@ -7,14 +7,18 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src import paths
 
-def load_config(env_path: Path | None = None) -> None:
-    """Load .env file. Call once at startup."""
-    if env_path:
-        load_dotenv(env_path)
-    else:
-        # Walk up from cwd to find .env
-        load_dotenv()
+
+def load_config(env_path: Path | None = None, *, override: bool = False) -> None:
+    """Load the ``.env`` file into ``os.environ``.
+
+    Reads ``paths.env_file()`` — the same file ``credential_store`` writes —
+    so the wizard's saved tokens and the harvester's reads can never point
+    at different files. ``override=True`` makes file values replace
+    already-set process env (used after a UI write to pick up new values).
+    """
+    load_dotenv(env_path or paths.env_file(), override=override)
 
 
 def get_notion_token() -> str:
@@ -23,7 +27,7 @@ def get_notion_token() -> str:
     if not token or token.startswith("ntn_your_"):
         raise EnvironmentError(
             "NOTION_TOKEN not set. "
-            "Copy .env.template to .env and add your Notion integration token. "
+            "Connect Notion in the app (Build → Sources) or set it in Settings → AI & Models. "
             "Get one at: https://www.notion.so/my-integrations"
         )
     return token

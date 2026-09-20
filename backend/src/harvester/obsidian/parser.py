@@ -194,17 +194,43 @@ class NoteParser:
 
         Returns ``None`` if the file cannot be located.
         """
+        # The ref is text somebody typed into a note. ``vault_path / "/etc/x"``
+        # is ``/etc/x`` (an absolute right-hand side discards the left) and
+        # ``..`` walks up freely, so every hit is checked to be a real file
+        # *inside* the vault after symlinks are resolved. Anything else is
+        # treated as unresolved — the harvester must never copy a file from
+        # outside the vault into the data dir because a note pointed at it.
+        vault_root = vault_path.resolve()
+
+        def _inside(candidate: Path) -> Path | None:
+            try:
+                if not (candidate.exists() and candidate.is_file()):
+                    return None
+                resolved = candidate.resolve()
+                if not resolved.is_relative_to(vault_root):
+                    logger.warning(
+                        f"NoteParser._resolve: {raw_ref!r} points outside the vault; ignored"
+                    )
+                    return None
+                return resolved
+            except OSError:
+                return None
+
+        if Path(raw_ref).is_absolute():
+            logger.warning(f"NoteParser._resolve: absolute embed {raw_ref!r} ignored")
+            return None
+
         # 1. Exact path from vault root
-        candidate = vault_path / raw_ref
-        if candidate.exists() and candidate.is_file():
+        hit = _inside(vault_path / raw_ref)
+        if hit is not None:
             logger.debug(f"NoteParser._resolve: tier-1 (vault-root) hit for {raw_ref!r}")
-            return candidate.resolve()
+            return hit
 
         # 2. Relative to the note's directory
-        candidate = note_dir / raw_ref
-        if candidate.exists() and candidate.is_file():
+        hit = _inside(note_dir / raw_ref)
+        if hit is not None:
             logger.debug(f"NoteParser._resolve: tier-2 (note-dir) hit for {raw_ref!r}")
-            return candidate.resolve()
+            return hit
 
         # 3. Shortest-path match: scan vault for any file with this name/path
         #    Only the filename portion of raw_ref is used for matching here
@@ -214,7 +240,7 @@ class NoteParser:
         best_depth: int = 9999
         try:
             for candidate in vault_path.rglob(target_name):
-                if candidate.is_file():
+                if _inside(candidate) is not None:
                     depth = len(candidate.relative_to(vault_path).parts)
                     if depth < best_depth:
                         best = candidate
@@ -226,7 +252,7 @@ class NoteParser:
                 f"NoteParser._resolve: tier-3 (vault-scan) hit for {raw_ref!r} "
                 f"-> {best.relative_to(vault_path).as_posix()}"
             )
-            return best.resolve()
+            return _inside(best)
 
         logger.debug(f"NoteParser._resolve: unresolved {raw_ref!r}")
         return None

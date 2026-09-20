@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import pytest
+
+# Slack is not enabled in this build, so `slack-sdk` moved to the optional
+# `slack` extra (see pyproject.toml + src/sources.py). The plugin code under
+# test imports it at module level, so skip the file rather than fail
+# collection on a default install. `uv sync --extra all-sources` runs these.
+pytest.importorskip("slack_sdk")
+
 import json
 
 from src.harvester.slack.normalizer import (

@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException
 from src.terrain.utils.deadlines import parse_anchor
 
 router = APIRouter()
-_DATA_DIR = Path(".mnemify")
+from src import paths  # data dir resolved at call time — see src/paths.py
 
 _DUE_SOON_DAYS = 7
 
@@ -40,7 +40,7 @@ def _bucket(due: date | None, today: date) -> tuple[str, int | None]:
 
 @router.get("/action-items")
 async def action_items():
-    path = _DATA_DIR / "terrain.json"
+    path = paths.data_dir() / "terrain.json"
     if not path.is_file():
         raise HTTPException(404, "no compiled map yet — run a compile")
     try:

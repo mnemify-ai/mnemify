@@ -14,7 +14,7 @@ needing a log-aggregation stack.
 
 Typical usage:
 
-    log = HarvestLogger(".mnemify/harvest-log.jsonl")
+    log = HarvestLogger()                  # <mnemify home>/.mnemify/harvest-log.jsonl
     run_id = manifest.start_run(source_type="notion", mode="scheduled")
     log.log_run_started(run_id, source_type="notion", mode="scheduled")
 
@@ -47,7 +47,13 @@ class HarvestLogger:
     expected harvester volume (hundreds of docs/run) open-per-write is fine.
     """
 
-    def __init__(self, log_path: str | Path = ".mnemify/harvest-log.jsonl"):
+    def __init__(self, log_path: str | Path | None = None):
+        # Resolved here, not in the signature: a default argument would bind
+        # one path at import time and ignore later MNEMIFY_HOME changes.
+        if log_path is None:
+            from src import paths
+
+            log_path = paths.data_dir() / "harvest-log.jsonl"
         self.log_path = Path(log_path)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 

@@ -7,6 +7,10 @@ Commands:
   inspect   Print metadata and content for a specific document by source_id
   debug     Connection test + document listing + sample fetch for any source
   purge     Delete raw files for docs marked deleted_at_source
+  up        Start the web app (API + built UI) on localhost
+  stop      Stop the running server
+  migrate-home
+            Move a legacy backend/ state layout into the platform app-data home
 
 Usage:
   python -m src harvest --source notion
@@ -25,12 +29,14 @@ import argparse
 import asyncio
 import json
 import logging
+import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from src import paths
 
-DATA_DIR = Path(".mnemify")
+logger = logging.getLogger(__name__)
 
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -86,24 +92,25 @@ async def _cmd_harvest(args: argparse.Namespace) -> None:
     file_cfg = load_config_file(getattr(args, "config", None))
 
     # Shared resources across all sources in this invocation.
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    manifest = HarvestManifest(DATA_DIR / "harvest-manifest.db")
-    harvest_logger = HarvestLogger(DATA_DIR / "harvest-log.jsonl")
+    paths.ensure_home()
+    data_dir = paths.data_dir()
+    manifest = HarvestManifest(data_dir / "harvest-manifest.db")
+    harvest_logger = HarvestLogger(data_dir / "harvest-log.jsonl")
 
-    raw_root_str = file_cfg.get("raw_root", str(DATA_DIR / "raw"))
+    # YAML path settings are anchored to the Mnemify home, never the cwd, so
+    # `raw_root: .mnemify/raw` means the same tree wherever you run from.
+    raw_root_cfg = file_cfg.get("raw_root")
     converter_version = file_cfg.get("converter_version", "0.1.0")
     raw_root_path = (
-        Path(raw_root_str)
-        if Path(raw_root_str).is_absolute()
-        else Path.cwd() / raw_root_str
+        paths.resolve_under_data_dir(raw_root_cfg) if raw_root_cfg else data_dir / "raw"
     )
     raw_store = RawStore(raw_root_path, converter_version=converter_version)
 
-    normalized_root_str = file_cfg.get("normalized_root", str(DATA_DIR / "normalized"))
+    normalized_root_cfg = file_cfg.get("normalized_root")
     normalized_root_path = (
-        Path(normalized_root_str)
-        if Path(normalized_root_str).is_absolute()
-        else Path.cwd() / normalized_root_str
+        paths.resolve_under_data_dir(normalized_root_cfg)
+        if normalized_root_cfg
+        else data_dir / "normalized"
     )
     normalized_store = NormalizedStore(normalized_root_path)
 
@@ -237,10 +244,18 @@ async def _harvest_one_source(
 async def _cmd_status(args: argparse.Namespace) -> None:
     from src.harvester.manifest import HarvestManifest
 
-    db_path = DATA_DIR / "harvest-manifest.db"
+    info = paths.describe()
+    json_output = getattr(args, "json_output", False)
+    if not json_output:
+        print(f"Layout   : {info['layout']}")
+        print(f"Home     : {info['home']}")
+        print(f"Data dir : {info['data_dir']}")
+        print()
+
+    db_path = paths.data_dir() / "harvest-manifest.db"
     if not db_path.exists():
-        if getattr(args, "json_output", False):
-            print(json.dumps({"error": "No manifest found"}))
+        if json_output:
+            print(json.dumps({"error": "No manifest found", "paths": info}))
         else:
             print("No manifest found. Run 'harvest' first.")
         return
@@ -248,8 +263,8 @@ async def _cmd_status(args: argparse.Namespace) -> None:
     manifest = HarvestManifest(db_path)
     stats = manifest.stats()
 
-    if getattr(args, "json_output", False):
-        print(json.dumps(stats, indent=2, default=str))
+    if json_output:
+        print(json.dumps({**stats, "paths": info}, indent=2, default=str))
         return
 
     print(f"Total documents : {stats['total_documents']}")
@@ -262,7 +277,7 @@ async def _cmd_status(args: argparse.Namespace) -> None:
     else:
         print("No documents harvested yet.")
 
-    log_path = DATA_DIR / "harvest-log.jsonl"
+    log_path = paths.data_dir() / "harvest-log.jsonl"
     if log_path.exists():
         from src.harvester.logger import HarvestLogger
 
@@ -291,13 +306,13 @@ async def _cmd_terrain(args: argparse.Namespace) -> None:
         print("Usage: python -m src terrain build | python -m src terrain schema --out PATH")
         return
 
-    db_path = DATA_DIR / "harvest-manifest.db"
+    db_path = paths.data_dir() / "harvest-manifest.db"
     if not db_path.exists():
         print("No harvest manifest found. Run 'harvest' first.")
         sys.exit(1)
 
     compiler = TerrainCompiler(
-        data_dir=DATA_DIR,
+        data_dir=paths.data_dir(),
         ai_mode=getattr(args, "ai_mode", "openai"),
         llm_model=getattr(args, "llm_model", "gpt-5.6-luna"),
         embedding_model=getattr(args, "embedding_model", "text-embedding-3-large"),
@@ -341,7 +356,7 @@ def _cmd_terrain_schema(args: argparse.Namespace) -> None:
 async def _cmd_inspect(args: argparse.Namespace) -> None:
     from src.harvester.manifest import HarvestManifest
 
-    db_path = DATA_DIR / "harvest-manifest.db"
+    db_path = paths.data_dir() / "harvest-manifest.db"
     if not db_path.exists():
         print("No manifest found. Run 'harvest' first.")
         return
@@ -386,18 +401,18 @@ async def _cmd_normalize(args: argparse.Namespace) -> None:
     load_config()
     file_cfg = load_config_file(getattr(args, "config", None))
 
-    db_path = DATA_DIR / "harvest-manifest.db"
+    db_path = paths.data_dir() / "harvest-manifest.db"
     if not db_path.exists():
         print("No harvest manifest found. Run 'harvest' first.")
         sys.exit(1)
 
     manifest = HarvestManifest(db_path)
 
-    normalized_root_str = file_cfg.get("normalized_root", str(DATA_DIR / "normalized"))
+    normalized_root_cfg = file_cfg.get("normalized_root")
     normalized_root_path = (
-        Path(normalized_root_str)
-        if Path(normalized_root_str).is_absolute()
-        else Path.cwd() / normalized_root_str
+        paths.resolve_under_data_dir(normalized_root_cfg)
+        if normalized_root_cfg
+        else paths.data_dir() / "normalized"
     )
     normalized_store = NormalizedStore(normalized_root_path)
 
@@ -526,13 +541,13 @@ async def _cmd_purge(args: argparse.Namespace) -> None:
     from src.harvester.manifest import HarvestManifest
     from src.harvester.raw_store import RawStore
 
-    db_path = DATA_DIR / "harvest-manifest.db"
+    db_path = paths.data_dir() / "harvest-manifest.db"
     if not db_path.exists():
         print("No manifest found. Nothing to purge.")
         return
 
     manifest = HarvestManifest(db_path)
-    raw_root = DATA_DIR / "raw"
+    raw_root = paths.data_dir() / "raw"
     raw_store = RawStore(raw_root, converter_version="0.1.0")
 
     older_than_days = getattr(args, "older_than_days", 0)
@@ -651,10 +666,12 @@ async def _cmd_debug(args: argparse.Namespace) -> None:
                 for k, v in raw.metadata.items():
                     print(f"     {k}: {v}")
 
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            paths.ensure_home()
+            data_dir = paths.data_dir()
+            data_dir.mkdir(parents=True, exist_ok=True)
             ext = raw.format if raw.format else "bin"
-            content_path = DATA_DIR / f"debug_sample.{ext}"
-            md_path = DATA_DIR / "debug_sample.md"
+            content_path = data_dir / f"debug_sample.{ext}"
+            md_path = data_dir / "debug_sample.md"
 
             content_path.write_bytes(raw.content)
             print(f"   Saved raw   : {content_path}")
@@ -665,7 +682,7 @@ async def _cmd_debug(args: argparse.Namespace) -> None:
             # 4. Fetch attachments (using only the ABC method)
             if raw.attachments:
                 print(f"\n4. Fetching {len(raw.attachments)} attachment(s)...")
-                att_dir = DATA_DIR / "debug_attachments"
+                att_dir = data_dir / "debug_attachments"
                 att_dir.mkdir(parents=True, exist_ok=True)
                 fetched = 0
                 for att in raw.attachments:
@@ -883,6 +900,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Dev: reload the FastAPI app on code changes (requires uvicorn[standard]).",
     )
 
+    # stop — ask a running server to quit (no signals; works on Windows)
+    subparsers.add_parser(
+        "stop",
+        help="Stop the running Mnemify server (reads <home>/server.port).",
+    )
+
     # reset — complete wipe: .mnemify/, Mnemify-owned secrets, yaml flags
     reset_p = subparsers.add_parser(
         "reset",
@@ -898,6 +921,17 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="keep_env",
         help="Leave .env credentials in place; only wipe harvested data + yaml flags.",
+    )
+
+    # migrate-home — legacy backend/ layout → platform app-data dir
+    migrate_p = subparsers.add_parser(
+        "migrate-home",
+        help="Move a legacy backend/ state layout into the platform app-data home.",
+    )
+    migrate_p.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip confirmation prompt. Use in scripts.",
     )
 
     # login — one-time OAuth consent flow for Google sources
@@ -929,43 +963,506 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# ── Server lifecycle helpers (`up` / `stop`) ───────────────────────
+
+#: How many consecutive ports `up` will try before giving up.
+PORT_FALLBACK_TRIES = 11
+
+
+def _loopback(host: str) -> str:
+    """The address to *talk to* a server bound on ``host``."""
+    return "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
+
+
+def _read_runtime_files() -> tuple[int | None, int | None]:
+    """``(pid, port)`` from ``<home>/server.pid`` + ``server.port``.
+
+    ``server.pid`` holds ``"<pid> <start-token>"``; only the pid is returned
+    here — see :func:`_read_runtime_token` for the second field.
+    """
+    def _read_int(path) -> int | None:
+        try:
+            return int(path.read_text(encoding="utf-8").split()[0])
+        except Exception:  # noqa: BLE001 — missing, empty or garbage: same answer
+            return None
+
+    return _read_int(paths.server_pid_file()), _read_int(paths.server_port_file())
+
+
+def _read_runtime_token() -> str | None:
+    """The process-identity token recorded next to the pid, or ``None``.
+
+    Files written by an older Mnemify carry only the pid; they return
+    ``None`` and are treated as unverifiable (see :func:`_inspect_instance`).
+    """
+    try:
+        parts = paths.server_pid_file().read_text(encoding="utf-8").split()
+    except OSError:
+        return None
+    return parts[1] if len(parts) > 1 else None
+
+
+def _pid_start_token(pid: int) -> str | None:
+    """An opaque string identifying *this incarnation* of ``pid``.
+
+    Operating systems recycle pids, so "the pid in ``server.pid`` is alive"
+    does not mean "our server is alive": after a crash or a reboot the number
+    can belong to the user's editor. The process start time changes with
+    every incarnation, so it is recorded alongside the pid and compared
+    before the pid is trusted — or signalled. ``None`` means this platform
+    gave no answer; :func:`_inspect_instance` then believes the pid only if
+    its port answers ``/api/health``, never on liveness alone.
+    """
+    if pid <= 0:
+        return None
+    try:
+        if sys.platform.startswith("linux"):
+            # /proc/<pid>/stat: "pid (comm) state ppid ... starttime ..."; the
+            # comm may contain spaces or ')' so split after the last ')'.
+            stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+            fields = stat[stat.rfind(")") + 2 :].split()
+            return fields[19]  # field 22 overall, 20th after (comm) state
+        if sys.platform.startswith("win"):
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.windll.kernel32
+            # Declare the signatures: HANDLE is pointer-sized, and the default
+            # c_int return would truncate it on 64-bit Windows.
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel32.GetProcessTimes.restype = wintypes.BOOL
+            kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+            if not handle:
+                return None
+            try:
+                created = wintypes.FILETIME()
+                exited = wintypes.FILETIME()
+                kern = wintypes.FILETIME()
+                user = wintypes.FILETIME()
+                ok = kernel32.GetProcessTimes(
+                    handle,
+                    ctypes.byref(created),
+                    ctypes.byref(exited),
+                    ctypes.byref(kern),
+                    ctypes.byref(user),
+                )
+                if not ok:
+                    return None
+                return str((created.dwHighDateTime << 32) | created.dwLowDateTime)
+            finally:
+                kernel32.CloseHandle(handle)
+        # macOS / other Unix: ``ps`` is the portable answer.
+        out = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        token = "-".join(out.stdout.split())
+        return token or None
+    except Exception:  # noqa: BLE001 — gone mid-read, no permission, odd platform
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """Whether a process with this pid exists (no signal is delivered)."""
+    if pid <= 0:
+        return False
+    if sys.platform.startswith("win"):
+        import ctypes
+
+        # PROCESS_QUERY_LIMITED_INFORMATION — the least we can ask for.
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Someone else's pid — it exists, it just isn't ours to signal.
+        return True
+    return True
+
+
+def _probe_health(port: int, host: str = "127.0.0.1", timeout: float = 1.5) -> dict | None:
+    """``GET /api/health`` → the decoded body, or ``None`` if it didn't answer 200."""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(
+            f"http://{host}:{port}/api/health", timeout=timeout
+        ) as resp:
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 — refused, timed out, not our server
+        return None
+
+
+#: How long ``_inspect_instance`` keeps re-probing ``/api/health`` while the
+#: recorded pid is alive but not answering yet. ``server.pid`` is written
+#: before uvicorn listens, so a freshly launched server has a window of a
+#: second or two in which "alive pid, no health" is *starting*, not stale.
+HEALTH_WAIT_S = 5.0
+#: Pause between two health probes inside that window.
+HEALTH_RETRY_INTERVAL_S = 0.25
+
+
+@dataclass(frozen=True)
+class InstanceState:
+    """What ``server.pid`` + ``server.port`` say about the recorded process.
+
+    ``status`` is ``"running"`` (pid alive, ``/api/health`` answered ``ok``)
+    or ``"starting"`` (pid alive, health still silent after the wait window).
+    A dead pid is not a state at all: ``_inspect_instance`` returns ``None``
+    and the files are stale.
+    """
+
+    status: str
+    pid: int
+    port: int
+    health: dict | None = None
+
+    @property
+    def running(self) -> bool:
+        return self.status == "running"
+
+
+def _inspect_instance(
+    host: str = "127.0.0.1",
+    *,
+    wait: float | None = None,
+    sleep=None,
+    clock=None,
+) -> InstanceState | None:
+    """Classify the recorded server as running, starting, or gone (``None``).
+
+    A live pid whose port does not answer is re-probed for up to ``wait``
+    seconds (default :data:`HEALTH_WAIT_S`): a double-clicked icon or a
+    ``mnemify stop`` issued right after ``up`` must not mistake a server that
+    is still binding its socket for a crashed one and wipe its files — or
+    start a second copy on top of it. If the pid dies during the wait the
+    answer is ``None``; if it is still alive and still silent, ``"starting"``.
+    """
+    import time
+
+    sleep = time.sleep if sleep is None else sleep
+    clock = time.monotonic if clock is None else clock
+    wait = HEALTH_WAIT_S if wait is None else wait
+
+    pid, port = _read_runtime_files()
+    if pid is None or port is None or not _pid_alive(pid):
+        return None
+
+    # A live pid is only *ours* if it is the same incarnation that wrote the
+    # file. After a crash or a reboot the number may now be someone else's
+    # process; that is stale files, not a starting server.
+    recorded = _read_runtime_token()
+    current = _pid_start_token(pid)
+    verified = recorded is not None and current is not None and recorded == current
+    if recorded is not None and current is not None and recorded != current:
+        return None
+
+    deadline = clock() + wait
+    while True:
+        health = _probe_health(port, host)
+        if health and health.get("ok"):
+            return InstanceState("running", pid, port, health)
+        if clock() >= deadline:
+            break
+        sleep(HEALTH_RETRY_INTERVAL_S)
+        if not _pid_alive(pid):
+            return None
+    if not _pid_alive(pid):
+        return None
+    if not verified:
+        # Alive, silent, and we cannot prove it is Mnemify (a pre-token
+        # ``server.pid`` or a platform with no start-time answer): never
+        # report — or later signal — a process we have not identified.
+        return None
+    return InstanceState("starting", pid, port, None)
+
+
+def _live_instance(host: str = "127.0.0.1", **kw) -> tuple[int, dict] | None:
+    """``(port, health)`` of the already-running Mnemify, or ``None``.
+
+    "Running" means both halves agree: the recorded pid is alive *and* the
+    recorded port answers a healthy ``/api/health`` (after the startup grace
+    of :func:`_inspect_instance`). A server that is still *starting* is not
+    "live" for callers that want to talk to it — use ``_inspect_instance``
+    to tell it apart from stale files.
+    """
+    inst = _inspect_instance(host, **kw)
+    if inst is None or not inst.running:
+        return None
+    return inst.port, inst.health or {}
+
+
+def _terminate_pid(pid: int, *, wait: float = 3.0, sleep=None, clock=None) -> bool:
+    """SIGTERM ``pid`` (TerminateProcess on Windows) and wait for it to exit."""
+    import os
+    import signal
+    import time
+
+    sleep = time.sleep if sleep is None else sleep
+    clock = time.monotonic if clock is None else clock
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        logger.debug("could not signal pid %s", pid, exc_info=True)
+        return False
+    deadline = clock() + wait
+    while _pid_alive(pid):
+        if clock() >= deadline:
+            return False
+        sleep(0.1)
+    return True
+
+
+def _clear_runtime_files() -> None:
+    for f in (paths.server_pid_file(), paths.server_port_file()):
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _claim_runtime_files(port: int):
+    """Write ``server.pid`` + ``server.port``; return the matching remover.
+
+    The remover unlinks only files that still name *this* process, so a second
+    ``mnemify up`` that bows out (or an old atexit handler) can never delete
+    the live instance's files.
+    """
+    import os
+
+    paths.ensure_home()
+    pid_file = paths.server_pid_file()
+    port_file = paths.server_port_file()
+    mypid = os.getpid()
+    token = _pid_start_token(mypid) or ""
+    pid_file.write_text(f"{mypid} {token}".rstrip() + "\n", encoding="utf-8")
+    port_file.write_text(f"{port}\n", encoding="utf-8")
+
+    def _recorded_pid() -> str:
+        parts = pid_file.read_text(encoding="utf-8").split()
+        return parts[0] if parts else ""
+
+    def release() -> None:
+        try:
+            if pid_file.exists() and _recorded_pid() == str(mypid):
+                pid_file.unlink(missing_ok=True)
+                port_file.unlink(missing_ok=True)
+        except OSError:
+            logger.debug("could not remove server.pid/server.port", exc_info=True)
+
+    return release
+
+
+def _bind_first_free_port(host: str, port: int, tries: int = PORT_FALLBACK_TRIES):
+    """Bind ``host`` on the first free port from ``port``. Returns ``(sock, port)``.
+
+    The socket is *kept* and handed to uvicorn (``Server.run(sockets=[sock])``)
+    rather than closed and re-bound: that removes the window in which another
+    process could take the port between our probe and uvicorn's bind, and
+    guarantees ``server.port`` names the port that is actually listening.
+    """
+    import socket
+
+    last_error: OSError | None = None
+    for candidate in range(port, port + max(1, tries)):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # POSIX SO_REUSEADDR only permits binding over lingering TIME_WAIT
+        # sockets — never over a live listener — so single-instance detection
+        # is unaffected and `stop` + immediate restart keeps its port. On
+        # Windows the same flag *does* allow stealing a live port, so: never.
+        if not sys.platform.startswith("win"):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, candidate))
+            sock.listen(2048)
+            sock.set_inheritable(True)
+            return sock, candidate
+        except OSError as e:
+            last_error = e
+            sock.close()
+    raise RuntimeError(
+        f"no free port in {port}–{port + tries - 1} on {host} ({last_error}). "
+        f"Pass --port to pick another range."
+    )
+
+
 def _cmd_up(args: argparse.Namespace) -> None:
+    import atexit
+    import os
+
     import uvicorn
+
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        # The app refuses any request whose Host header is not loopback (DNS
+        # rebinding guard in src/api). Bound elsewhere, the browser's Host is
+        # this machine's LAN name or address, which only the user knows.
+        allowed = os.environ.get("MNEMIFY_ALLOWED_HOSTS", "")
+        print(
+            f"\n  --host {args.host}: requests must carry a Host header in "
+            f"MNEMIFY_ALLOWED_HOSTS (currently {allowed!r}) or they get 403. "
+            f"Set it to the name or address you will open in the browser.\n",
+            flush=True,
+        )
+
+    if args.reload:
+        # Dev path only. The reloader supervises a child process, so it needs
+        # the import string (an app object can't cross the fork) — and with it
+        # there is no Server object to register for `stop`, no pid/port files
+        # and no port fallback. MNEMIFY_DEV=1 enables the Vite CORS allowance.
+        os.environ["MNEMIFY_DEV"] = "1"
+        url = f"http://{args.host}:{args.port}"
+        if not args.no_browser:
+            _open_browser(url)
+        print(f"\n  Mnemify up on {url} (reload)\n", flush=True)
+        uvicorn.run(
+            "src.api:create_app",
+            factory=True,
+            host=args.host,
+            port=args.port,
+            reload=True,
+            log_level="info",
+        )
+        return
+
+    # ── Single instance ────────────────────────────────────────────
+    loopback = _loopback(args.host)
+    inst = _inspect_instance(loopback)
+    if inst is not None:
+        url = f"http://{loopback}:{inst.port}"
+        if inst.running:
+            print(f"\n  Mnemify is already running at {url}\n", flush=True)
+            if not args.no_browser:
+                _open_browser(url)
+        else:
+            # A live pid that has not started listening yet: it is ours (a
+            # double-clicked icon, most likely). Leave its files alone.
+            print(
+                f"\n  Mnemify is already starting (pid {inst.pid}) — "
+                f"it will be at {url} in a moment.\n",
+                flush=True,
+            )
+        sys.exit(0)
+    # Files that survived a crash or a kill -9 — nobody is listening on them.
+    if any(f.exists() for f in (paths.server_pid_file(), paths.server_port_file())):
+        logger.info("clearing stale server.pid/server.port (no live server found)")
+        _clear_runtime_files()
+
+    # ── Port ───────────────────────────────────────────────────────
+    sock, port = _bind_first_free_port(args.host, args.port)
+    if port != args.port:
+        print(f"  Port {args.port} is in use — using {port} instead.", flush=True)
+
+    from src.api import create_app, lifecycle
+
+    app = create_app()
+    config = uvicorn.Config(app, host=args.host, port=port, log_level="info")
+    server = uvicorn.Server(config)
+    lifecycle.set_server(server)
+
+    release = _claim_runtime_files(port)
+    atexit.register(release)
+
+    url = f"http://{loopback}:{port}"
+    if not args.no_browser:
+        _open_browser(url)
+    print(f"\n  Mnemify up on {url}\n", flush=True)
+    try:
+        server.run(sockets=[sock])
+    finally:
+        release()
+        lifecycle.clear_server()
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+def _open_browser(url: str) -> None:
     import webbrowser
 
-    url = f"http://{args.host}:{args.port}"
-    if not args.no_browser:
-        try:
-            webbrowser.open(url)
-        except Exception:  # noqa: BLE001
-            pass
-    print(f"\n  Mnemify up on {url}\n")
-    uvicorn.run(
-        "src.api:create_app",
-        factory=True,
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-        log_level="info",
+    try:
+        webbrowser.open(url)
+    except Exception:  # headless box, no browser configured: not fatal
+        logger.debug("could not open a browser for %s", url, exc_info=True)
+
+
+def _cmd_stop(args: argparse.Namespace) -> None:
+    """Ask a running server to quit, via the API (no signals — Windows works)."""
+    import urllib.request
+
+    inst = _inspect_instance()
+    if inst is None:
+        # Only a *dead* pid makes the files stale enough to remove.
+        _clear_runtime_files()
+        print("Mnemify is not running.")
+        return
+
+    if not inst.running:
+        # Alive but not yet answering: it has no API to ask, so signal it.
+        print(f"Mnemify (pid {inst.pid}) is still starting — stopping it.")
+        if _terminate_pid(inst.pid):
+            _clear_runtime_files()
+            print(f"Mnemify (pid {inst.pid}) stopped.")
+            return
+        print(
+            f"Could not stop pid {inst.pid}. It is still running; try `mnemify stop` again "
+            f"in a moment. If Mnemify is not actually running, delete "
+            f"{paths.server_pid_file()} and {paths.server_port_file()}."
+        )
+        sys.exit(1)
+
+    port = inst.port
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/system/shutdown",
+        data=b"{}",
+        method="POST",
+        headers={"Content-Type": "application/json", "X-Mnemify-Client": "cli"},
     )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = json.loads(resp.read().decode("utf-8") or "{}")
+    except Exception as e:  # noqa: BLE001
+        print(f"Could not stop Mnemify on port {port}: {e}")
+        sys.exit(1)
+    if not body.get("ok"):
+        print(f"Mnemify refused the shutdown request: {body}")
+        sys.exit(1)
+    print(f"Mnemify on port {port} is shutting down.")
 
 
 def _cmd_reset(args: argparse.Namespace) -> None:
     """Complete wipe of harvested data + source configs + (optionally) creds."""
     import shutil
 
-    data_dir = DATA_DIR
-    yaml_path = Path("mnemify.yaml")
-    env_path = Path(".env")
+    dd = paths.data_dir()
+    yaml_path = paths.yaml_file()
+    env_path = paths.env_file()
 
     # What exactly will be destroyed.
     victims: list[tuple[str, str]] = []
-    if data_dir.exists():
+    if dd.exists():
         try:
-            size = sum(f.stat().st_size for f in data_dir.rglob("*") if f.is_file())
-            victims.append((f"harvest data at {data_dir}/", f"{size / 1_048_576:.1f} MB"))
+            size = sum(f.stat().st_size for f in dd.rglob("*") if f.is_file())
+            victims.append((f"harvest data at {dd}/", f"{size / 1_048_576:.1f} MB"))
         except Exception:  # noqa: BLE001
-            victims.append((f"harvest data at {data_dir}/", "size unknown"))
+            victims.append((f"harvest data at {dd}/", "size unknown"))
     if yaml_path.exists():
         victims.append((f"every sources.*.enabled flag in {yaml_path}", "flipped to false"))
     if not args.keep_env and env_path.exists():
@@ -993,12 +1490,12 @@ def _cmd_reset(args: argparse.Namespace) -> None:
             return
 
     # 1. Harvested bytes + manifest + log.
-    if data_dir.exists():
+    if dd.exists():
         try:
-            shutil.rmtree(data_dir)
-            print(f"  ✓ removed {data_dir}/")
+            shutil.rmtree(dd)
+            print(f"  ✓ removed {dd}/")
         except Exception as e:  # noqa: BLE001
-            print(f"  ✗ could not remove {data_dir}/: {e}")
+            print(f"  ✗ could not remove {dd}/: {e}")
 
     # 2. Disable every source in yaml (keeps structure + comments intact).
     if yaml_path.exists():
@@ -1029,6 +1526,106 @@ def _cmd_reset(args: argparse.Namespace) -> None:
     print("\nMemory wiped. Ready when you are.")
 
 
+def _migration_clashes(dest_dir: Path, names: list[str]) -> list[str]:
+    """Names in ``names`` that already exist under ``dest_dir``."""
+    return [name for name in names if (dest_dir / name).exists()]
+
+
+def _rollback_migration(source_dir: Path, dest_dir: Path, moved: list[str]) -> None:
+    """Move already-migrated items back, newest first. Reports, never raises."""
+    import shutil
+
+    for name in reversed(moved):
+        try:
+            shutil.move(str(dest_dir / name), str(source_dir / name))
+            print(f"  ↩ moved {name} back")
+        except Exception as e:  # noqa: BLE001
+            print(f"  ✗ could not move {name} back: {e} — it is now in {dest_dir}")
+
+
+def _cmd_migrate_home(args: argparse.Namespace) -> None:
+    """Move a legacy ``backend/`` state layout into the platform app-data home.
+
+    Only ever reads from ``paths.backend_dir()`` — the one place the legacy
+    layout can live — so it does the same thing regardless of ``MNEMIFY_HOME``
+    or the cwd. Refuses to merge into a destination that already holds any of
+    the three items rather than guessing which copy wins.
+    """
+    import os
+    import shutil
+
+    # A server that is up (or still coming up) holds the manifest/terrain DBs
+    # open and would keep writing into the old home mid-move.
+    inst = _inspect_instance()
+    if inst is not None:
+        state = "running" if inst.running else "starting"
+        print(f"Mnemify is {state} (pid {inst.pid}). Run `mnemify stop` first, then retry.")
+        sys.exit(1)
+
+    source_dir = paths.backend_dir()
+    dest_dir = paths.platform_default()
+
+    movable = [
+        name for name in (".mnemify", "mnemify.yaml", ".env")
+        if (source_dir / name).exists()
+    ]
+    if not movable:
+        print(f"Nothing to migrate — no .mnemify/, mnemify.yaml or .env in {source_dir}.")
+        return
+
+    clashes = _migration_clashes(dest_dir, movable)
+    if clashes:
+        print(f"Refusing to migrate: {dest_dir} already holds {', '.join(clashes)}.")
+        print("Move or remove those first — Mnemify will not merge two homes.")
+        sys.exit(1)
+
+    print(f"\nThis will move, from {source_dir}")
+    print(f"                 to {dest_dir}:")
+    for name in movable:
+        print(f"  • {name}")
+    if os.environ.get(paths.HOME_ENV):
+        print(
+            f"\nNote: {paths.HOME_ENV} is set in this environment — unset it for "
+            "the new home to take effect."
+        )
+
+    if not args.yes:
+        reply = input("\nProceed? [y/N] ").strip().lower()
+        if reply not in ("y", "yes"):
+            print("Aborted. Nothing moved.")
+            return
+
+    # Re-check right before touching anything: the prompt may have sat open.
+    problems = [f"{name} is gone from {source_dir}" for name in movable
+                if not (source_dir / name).exists()]
+    problems += [f"{dest_dir / name} now exists" for name in _migration_clashes(dest_dir, movable)]
+    if problems:
+        print("Refusing to migrate — the layout changed while waiting:")
+        for problem in problems:
+            print(f"  • {problem}")
+        sys.exit(1)
+
+    # ``paths._legacy_home`` treats *any* marker left in backend/ as "legacy",
+    # so a half-done move would leave Mnemify reading one home and writing
+    # another. Ordering cannot help with that; rolling back can.
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    moved: list[str] = []
+    for name in movable:
+        try:
+            shutil.move(str(source_dir / name), str(dest_dir / name))
+        except Exception as e:  # noqa: BLE001 — permissions, cross-device, locks…
+            print(f"  ✗ could not move {name}: {e}")
+            _rollback_migration(source_dir, dest_dir, moved)
+            print("\nMigration aborted; the legacy layout was left as it was.")
+            sys.exit(1)
+        moved.append(name)
+        print(f"  ✓ moved {name}")
+
+    print("\nMnemify now reads and writes:")
+    for key, value in paths.describe().items():
+        print(f"  {key:10} {value}")
+
+
 def _cmd_login(args: argparse.Namespace) -> None:
     """Run the one-time OAuth consent flow for a Google source.
 
@@ -1037,6 +1634,23 @@ def _cmd_login(args: argparse.Namespace) -> None:
     caches the resulting refresh token (mode 0600) for every subsequent
     harvest to use silently.
     """
+    # Gmail/Calendar are in the tree but out of this build's scope, and their
+    # Google client libraries are an optional extra — so refuse *before* the
+    # import, which would otherwise fail with a bare ModuleNotFoundError.
+    try:
+        from src.sources import is_enabled
+    except ImportError:  # pragma: no cover — pre-`sources.py` checkouts
+        is_enabled = None
+    if is_enabled is not None and not is_enabled(args.source):
+        print(
+            "Gmail/Calendar are not enabled in this build.\n"
+            "  Set MNEMIFY_SOURCES to re-enable them for development, e.g.\n"
+            f"    MNEMIFY_SOURCES=notion,confluence,obsidian,{args.source} "
+            f"mnemify login --source {args.source}\n"
+            '  You will also need the Google client libraries: `uv sync --extra google`.'
+        )
+        sys.exit(1)
+
     default_token_paths = {
         "gmail": "~/.mnemify/google/gmail-token.json",
         "calendar": "~/.mnemify/google/calendar-token.json",
@@ -1076,8 +1690,16 @@ def main() -> None:
         # Sync command — uvicorn owns its own event loop.
         _cmd_up(args)
         return
+    if args.command == "stop":
+        # Sync command — one HTTP POST to the running server.
+        _cmd_stop(args)
+        return
     if args.command == "reset":
         _cmd_reset(args)
+        return
+    if args.command == "migrate-home":
+        # Sync command — plain filesystem moves.
+        _cmd_migrate_home(args)
         return
     if args.command == "login":
         # Sync command — google_auth_oauthlib runs its own local HTTP server.
@@ -1094,6 +1716,15 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nInterrupted.")
         sys.exit(0)
+    except PermissionError as e:
+        print(f"Permission denied: {e}")
+        print(
+            f"Mnemify is using {paths.describe()['home']} "
+            f"(layout: {paths.layout()}).\n"
+            f"Set {paths.HOME_ENV} to a directory you can write to, "
+            f"or run `mnemify migrate-home`."
+        )
+        sys.exit(1)
     except EnvironmentError as e:
         print(f"Configuration error: {e}")
         sys.exit(1)

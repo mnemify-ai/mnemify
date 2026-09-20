@@ -101,7 +101,35 @@ def test_region_merger_nests_under_named_parent():
     assert len(result) == 1
     assert result[0].id == "A"
     assert result[0].chunk_ids == ["a", "b"]
-    assert [child.id for child in result[0].children] == ["B"]
+    # A was a leaf. Nesting B under it makes A internal, and only leaves
+    # mint tags/notes — so A's own chunk must survive in a sibling leaf,
+    # or the "machine learning overview" doc silently vanishes from the map.
+    children = result[0].children
+    assert [child.id for child in children][-1] == "B"
+    assert len(children) == 2
+    direct = children[0]
+    assert direct.chunk_ids == ["a"] and direct.children == []
+    assert {c for child in children for c in child.chunk_ids} == {"a", "b"}
+
+
+def test_region_merger_nest_under_internal_parent_adds_no_extra_leaf():
+    chunks = [
+        enriched_chunk("a1", [1.0, 0.0], "one"),
+        enriched_chunk("a2", [0.98, 0.02], "two"),
+        enriched_chunk("b", [0.9, 0.1], "three"),
+    ]
+    roots = [
+        ClusterTreeNode(
+            id="A", name="Parent", chunk_ids=["a1", "a2"],
+            children=[
+                ClusterTreeNode(id="A1", name="x", chunk_ids=["a1"]),
+                ClusterTreeNode(id="A2", name="y", chunk_ids=["a2"]),
+            ],
+        ),
+        ClusterTreeNode(id="B", name="Child", chunk_ids=["b"]),
+    ]
+    result = RegionMerger(FakeJudge("nest", parent="A")).merge(roots, chunks)
+    assert [child.id for child in result[0].children] == ["A1", "A2", "B"]
 
 
 def test_region_merger_nests_under_synthesized_parent():
@@ -158,7 +186,9 @@ def test_region_merger_allow_merge_false_still_nests():
 
     assert len(result) == 1
     assert result[0].id == "A"
-    assert [child.id for child in result[0].children] == ["B"]
+    # B nested, plus the leaf that keeps A's own chunk reachable.
+    assert [child.id for child in result[0].children][-1] == "B"
+    assert {c for child in result[0].children for c in child.chunk_ids} == {"a", "b"}
 
 
 def test_region_merger_merge_keeps_childless_member_as_leaf_child():

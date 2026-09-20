@@ -145,3 +145,46 @@ def test_find_attachments_source_id_is_hex(parser):
     if refs:
         assert len(refs[0].source_id) == 16
         assert all(c in "0123456789abcdef" for c in refs[0].source_id)
+
+
+# ── embeds must stay inside the vault ─────────────────────────────────
+
+def _vault_with_secret_outside(tmp_path):
+    vault = tmp_path / "vault"
+    (vault / "notes").mkdir(parents=True)
+    (vault / "inside.pdf").write_bytes(b"%PDF")
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"%PDF secret")
+    return vault, outside
+
+
+def test_absolute_embed_is_ignored(parser, tmp_path):
+    vault, outside = _vault_with_secret_outside(tmp_path)
+    refs = parser.find_attachments(f"![[{outside}]]", vault, vault / "notes")
+    assert refs == []
+
+
+def test_dotdot_embed_is_ignored(parser, tmp_path):
+    vault, _ = _vault_with_secret_outside(tmp_path)
+    refs = parser.find_attachments("![[../outside.pdf]]", vault, vault / "notes")
+    assert refs == []
+    refs = parser.find_attachments("![[../../outside.pdf]]", vault, vault / "notes")
+    assert refs == []
+
+
+def test_symlink_escaping_the_vault_is_ignored(parser, tmp_path):
+    vault, outside = _vault_with_secret_outside(tmp_path)
+    link = vault / "link.pdf"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported here")
+    assert parser.find_attachments("![[link.pdf]]", vault, vault) == []
+    # tier-3 name scan would also find it — still refused
+    assert parser.find_attachments("![[sub/link.pdf]]", vault, vault) == []
+
+
+def test_embed_inside_the_vault_still_resolves(parser, tmp_path):
+    vault, _ = _vault_with_secret_outside(tmp_path)
+    refs = parser.find_attachments("![[inside.pdf]] and ![[../inside.pdf]]", vault, vault / "notes")
+    assert {r.filename for r in refs} == {"inside.pdf"}

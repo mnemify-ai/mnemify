@@ -40,10 +40,12 @@ def _graph() -> GraphView:
 def client(tmp_path, monkeypatch):
     from src.api import create_app, routes_ask
 
+    # MNEMIFY_HOME is tmp_path (autouse fixture), so the route reads
+    # tmp_path/.mnemify/terrain.json — no module constant to patch.
     monkeypatch.chdir(tmp_path)
-    terrain = tmp_path / "terrain.json"
+    terrain = tmp_path / ".mnemify" / "terrain.json"
+    terrain.parent.mkdir(parents=True, exist_ok=True)
     terrain.write_text("{}", encoding="utf-8")
-    monkeypatch.setattr(routes_ask, "_TERRAIN_PATH", terrain)
     monkeypatch.setattr(
         routes_ask, "_load_knowledge_map", lambda: SimpleNamespace(graph=_graph())
     )
@@ -208,10 +210,138 @@ def test_anthropic_provider_dispatches_agentic_with_key(client, monkeypatch):
 
 
 def test_anthropic_without_key_still_401(client, monkeypatch):
+    """Still 401 — but only because nothing is stored server-side either.
+
+    The route now falls back to the key saved under Settings → AI & Models,
+    so this test has to prove the *absence* of both sources. `get_secret`
+    reads os.environ when the .env file has no entry, and a developer shell
+    (or an earlier test's `credential_store.refresh()`) can leave one there.
+    """
     tc, _routes_ask = client
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     resp = tc.post(
         "/api/ask",
         json={"query": "alpha", "provider": "anthropic", "model": "m",
               "history": []},
     )
     assert resp.status_code == 401
+    detail = resp.json()["detail"]
+    assert "Settings" in detail and "Bearer" in detail
+
+
+def test_openai_without_any_key_401s(client, monkeypatch):
+    tc, _routes_ask = client
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    resp = tc.post(
+        "/api/ask",
+        json={"query": "alpha", "provider": "openai", "model": "m",
+              "history": []},
+    )
+    assert resp.status_code == 401
+
+
+# ── server-stored key fallback (Settings → AI & Models) ─────────────────────
+
+def test_openai_falls_back_to_the_stored_key_without_a_header(client, monkeypatch):
+    tc, routes_ask = client
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    from src.api import credential_store
+
+    credential_store.save_secret("OPENAI_API_KEY", "sk-from-settings")
+    monkeypatch.setattr(routes_ask, "_embedder_for_query",
+                        lambda: _StubEmbedder([1.0, 0.0]))
+    seen = {}
+
+    async def _stream(provider, model, key, messages, system, **kwargs):
+        seen["key"] = key
+        yield "ok"
+
+    monkeypatch.setattr(routes_ask.ask_providers, "stream_chat", _stream)
+
+    resp = tc.post(
+        "/api/ask",
+        json={"query": "alpha", "provider": "openai", "model": "m",
+              "history": []},
+    )  # no Authorization header at all
+    assert resp.status_code == 200
+    assert seen["key"] == "sk-from-settings"
+
+
+def test_anthropic_falls_back_to_the_stored_key_without_a_header(client, monkeypatch):
+    tc, routes_ask = client
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from src.api import credential_store
+
+    credential_store.save_secret("ANTHROPIC_API_KEY", "sk-ant-from-settings")
+    monkeypatch.setattr(routes_ask, "_embedder_for_query",
+                        lambda: _StubEmbedder([1.0, 0.0]))
+    calls = _patch_agent_session(monkeypatch, _AGENT_EVENTS)
+
+    resp = tc.post(
+        "/api/ask",
+        json={"query": "alpha", "provider": "anthropic", "model": "m",
+              "history": []},
+    )
+    assert resp.status_code == 200
+    assert calls["key"] == "sk-ant-from-settings"
+
+
+def test_bearer_header_still_wins_over_the_stored_key(client, monkeypatch):
+    """The per-browser BYOK key stays the override it always was."""
+    tc, routes_ask = client
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from src.api import credential_store
+
+    credential_store.save_secret("ANTHROPIC_API_KEY", "sk-ant-from-settings")
+    monkeypatch.setattr(routes_ask, "_embedder_for_query",
+                        lambda: _StubEmbedder([1.0, 0.0]))
+    calls = _patch_agent_session(monkeypatch, _AGENT_EVENTS)
+
+    resp = tc.post(
+        "/api/ask",
+        json={"query": "alpha", "provider": "anthropic", "model": "m",
+              "history": []},
+        headers={"Authorization": "Bearer sk-ant-from-the-browser"},
+    )
+    assert resp.status_code == 200
+    assert calls["key"] == "sk-ant-from-the-browser"
+
+
+def test_claude_provider_ignores_a_stored_anthropic_key(client, monkeypatch):
+    """The CLI authenticates on the user's subscription; injecting a stored
+    API key would silently move them onto metered billing."""
+    tc, routes_ask = client
+    from src.api import credential_store
+
+    credential_store.save_secret("ANTHROPIC_API_KEY", "sk-ant-from-settings")
+    monkeypatch.setattr(routes_ask, "_embedder_for_query",
+                        lambda: _StubEmbedder([1.0, 0.0]))
+    calls = _patch_agent_session(monkeypatch, _AGENT_EVENTS)
+
+    resp = tc.post(
+        "/api/ask",
+        json={"query": "alpha", "provider": "claude", "model": "sonnet",
+              "history": []},
+    )
+    assert resp.status_code == 200
+    assert calls["key"] is None
+
+
+def test_blank_bearer_header_falls_through_to_the_stored_key(client, monkeypatch):
+    tc, routes_ask = client
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from src.api import credential_store
+
+    credential_store.save_secret("ANTHROPIC_API_KEY", "sk-ant-from-settings")
+    monkeypatch.setattr(routes_ask, "_embedder_for_query",
+                        lambda: _StubEmbedder([1.0, 0.0]))
+    calls = _patch_agent_session(monkeypatch, _AGENT_EVENTS)
+
+    resp = tc.post(
+        "/api/ask",
+        json={"query": "alpha", "provider": "anthropic", "model": "m",
+              "history": []},
+        headers={"Authorization": "Bearer   "},
+    )
+    assert resp.status_code == 200
+    assert calls["key"] == "sk-ant-from-settings"

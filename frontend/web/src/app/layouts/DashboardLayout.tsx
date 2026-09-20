@@ -7,6 +7,7 @@ import { AskDock } from "../../ask/AskDock";
 import { AskBubble } from "../../ask/AskBubble";
 import { useAskDockStore } from "../../ask/askDockStore";
 import { MAP_PANEL_GUTTER, useMapPanelStore } from "../lib/mapPanelStore";
+import { useHeartbeat } from "../lib/useHeartbeat";
 import { cn } from "../lib/cn";
 
 /** What the shell hands its routes through `<Outlet context>`. */
@@ -84,6 +85,11 @@ export function DashboardLayout() {
   // viewport (DocumentsPage's two-pane layout) disappears with the column
   // instead of stranding itself under the dock.
   const dockMaximized = useAskDockStore((s) => s.open && s.wide) && hasMap;
+
+  // The shell is the one component mounted on every route, so this is the one
+  // place the "a human is watching" beat belongs. Above the early returns:
+  // the loading and error states are still an open tab.
+  useHeartbeat();
 
   if (error) {
     return (

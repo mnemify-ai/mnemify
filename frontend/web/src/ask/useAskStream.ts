@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { apiUrl } from "../app/api/client";
+import { apiUrl, CLIENT_HEADER, CLIENT_NAME } from "../app/api/client";
 import { newLocalId, useActiveThreadMessages, useAskThreadStore } from "./askThreadStore";
 import type { AgentStep, AskMessage, AskSettings, Citation } from "./types";
 import { activeKey, wireProvider } from "./types";
@@ -46,16 +46,11 @@ export function useAskStream(settings: AskSettings) {
         fn: (m: AskMessage) => AskMessage,
       ) => useAskThreadStore.getState().patchMessage(threadId, messageId, fn);
 
+      // No client-side "is a key set?" guard: the browser key is only an
+      // override. `/api/ask` falls back to the key saved in Settings → AI &
+      // Models, and answers 401 when neither exists — `describeAskFailure`
+      // turns that into the "add your key" message below.
       const key = activeKey(settings);
-      // Claude works without a key (local Claude Code login); OpenAI is BYOK.
-      if (!key && settings.provider === "openai") {
-        store.appendMessages(threadId, [
-          mkMessage("assistant", "", {
-            error: "Add your OpenAI API key in Settings to start.",
-          }),
-        ]);
-        return;
-      }
 
       const userMsg = mkMessage("user", query.trim());
       const assistantId = newLocalId();
@@ -86,6 +81,7 @@ export function useAskStream(settings: AskSettings) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            [CLIENT_HEADER]: CLIENT_NAME,
             ...(key ? { Authorization: `Bearer ${key}` } : {}),
           },
           body: JSON.stringify({
@@ -99,7 +95,7 @@ export function useAskStream(settings: AskSettings) {
         if (!response.ok || !response.body) {
           const detail = await safeBody(response);
           throw new Error(
-            `ask request failed: ${response.status} ${detail}`,
+            describeAskFailure(response.status, detail, settings.provider),
           );
         }
         await consumeSseStream(response.body, {
@@ -264,6 +260,44 @@ async function consumeSseStream(
   handlers.onDone();
 }
 
+/**
+ * The assistant-bubble error for a failed `/api/ask` request.
+ *
+ * A 401 means the server found no key for the provider — neither the
+ * `Authorization` header nor the stored secret — so the user is told where to
+ * add one rather than shown a raw status line. Everything else surfaces the
+ * backend's `detail` when the body is FastAPI-style JSON, and the status plus
+ * a body excerpt otherwise. Pure — unit-tested.
+ */
+export function describeAskFailure(
+  status: number,
+  body: string,
+  provider: AskSettings["provider"],
+): string {
+  if (status === 401) {
+    return provider === "openai"
+      ? "Add your OpenAI API key in Settings → AI & Models (or in this browser under Chat) to start."
+      : "Add your Anthropic API key in Settings → AI & Models (or in this browser under Chat) to start.";
+  }
+  const detail = extractDetail(body);
+  return detail
+    ? `ask request failed: ${status} — ${detail}`
+    : `ask request failed: ${status} ${body}`.trimEnd();
+}
+
+function extractDetail(body: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed && typeof parsed === "object" && "detail" in parsed) {
+      const d = (parsed as { detail: unknown }).detail;
+      return typeof d === "string" && d ? d : null;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
 function mkMessage(
   role: "user" | "assistant",
   text: string,
@@ -275,7 +309,7 @@ function mkMessage(
 async function safeBody(response: Response): Promise<string> {
   try {
     const t = await response.text();
-    return t.slice(0, 200);
+    return t.slice(0, 500);
   } catch {
     return "";
   }
