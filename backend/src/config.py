@@ -27,7 +27,7 @@ def get_notion_token() -> str:
     if not token or token.startswith("ntn_your_"):
         raise EnvironmentError(
             "NOTION_TOKEN not set. "
-            "Copy .env.template to .env and add your Notion integration token. "
+            "Connect Notion in the app (Build → Sources) or set it in Settings → AI & Models. "
             "Get one at: https://www.notion.so/my-integrations"
         )
     return token

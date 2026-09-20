@@ -8,8 +8,12 @@ Auth-related decisions:
 
 - User token (``xoxp-``) only — bot tokens see only channels the bot is
   invited to, which doesn't match the personal knowledge-map use case. The user
-  creates a Slack App in their own workspace, adds the User Token Scopes
-  listed in ``backend/.env.template``, and installs to themselves.
+  creates a Slack App in their own workspace, adds these User Token Scopes
+  (user-scope, not bot-scope), and installs to themselves:
+  ``channels:history``, ``channels:read``, ``groups:history``, ``groups:read``,
+  ``im:history``, ``im:read``, ``mpim:history``, ``mpim:read``, ``users:read``,
+  ``files:read``, ``team:read``. Private channels additionally require the
+  user to be a member — user tokens inherit the Slack client's membership.
 - The token comes from the env var named by ``token_env`` (default
   ``SLACK_USER_TOKEN``) — same pattern as the Notion plugin.
 

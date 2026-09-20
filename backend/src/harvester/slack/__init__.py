@@ -79,8 +79,8 @@ def _create_slack_plugin(config: dict) -> tuple[SlackHarvesterPlugin, None]:
     if not token:
         raise EnvironmentError(
             f"Slack token not found: env var {cfg.token_env!r} is unset or empty. "
-            f"Set it in backend/.env to a User OAuth Token (xoxp-…). "
-            f"See backend/.env.template for the Slack App setup steps."
+            f"Set it to a User OAuth Token (xoxp-…) from a Slack App installed in your workspace. "
+            f"The required User Token Scopes are listed in harvester/slack/models.py."
         )
 
     client = SlackClient(token=token)
