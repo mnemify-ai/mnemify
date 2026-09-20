@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { toastReset, toastHarvestReset } from "../../lib/toast";
-import { Trash2 } from "lucide-react";
+import { Check, Copy, FolderOpen, Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Segmented } from "../../components/ui/Segmented";
 import { AlertDialog } from "../../components/ui/AlertDialog";
 import { apiFetch } from "../../api/client";
 import { useResetHarvest } from "../../api/harvest";
+import { useHealth, useOpenHome } from "../../api/system";
 import {
   type RetentionPolicy,
   usePurgeNow,
@@ -58,6 +59,7 @@ export function DataSection() {
 
   return (
     <div className="max-w-3xl">
+      <LocationSection />
       <RetentionSection />
 
       <SettingsSection
@@ -357,6 +359,103 @@ function RetentionSection() {
           })
         }
       />
+    </SettingsSection>
+  );
+}
+
+// ─── Where your data lives ─────────────────────────────────────────────────
+
+/** Why this home was chosen — mirrors `paths.layout()` on the server. */
+function layoutLabel(layout: string | undefined): string | null {
+  switch (layout) {
+    case "env":
+      return "Set by the MNEMIFY_HOME environment variable.";
+    case "legacy":
+      return "Inside the Mnemify checkout, because that folder already held data when the app started.";
+    case "platform":
+      return "Your account's app-data folder — outside the Mnemify checkout, so updating the code never touches it.";
+    default:
+      return null;
+  }
+}
+
+function LocationSection() {
+  const health = useHealth();
+  const openHome = useOpenHome();
+  const [copied, setCopied] = useState(false);
+  const home = health.data?.paths.home;
+
+  async function copyPath() {
+    if (!home) return;
+    try {
+      await navigator.clipboard.writeText(home);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Couldn't copy", { description: "Select the path and copy it by hand." });
+    }
+  }
+
+  function reveal() {
+    openHome.mutate(undefined, {
+      onError: (err) =>
+        toast.error("Couldn't open the folder", {
+          description: String(err),
+        }),
+    });
+  }
+
+  return (
+    <SettingsSection
+      eyebrow="Your data"
+      title="Where your data lives"
+      help={
+        <>
+          Everything Mnemify keeps — harvested documents, the compiled map, your
+          source config and your API keys — sits in this one folder on your machine.
+          Nothing is sent anywhere. Back it up, or move it, by working with this folder.
+        </>
+      }
+      actions={
+        <Button variant="secondary" size="sm" onClick={reveal} disabled={!home || openHome.isPending}>
+          <FolderOpen size={14} strokeWidth={1.5} />
+          Open folder
+        </Button>
+      }
+    >
+      {health.isLoading ? (
+        <p className="font-sans text-sm text-muted animate-pulse">Loading…</p>
+      ) : !home ? (
+        <p className="font-sans text-sm text-muted">Location unavailable — the server did not answer.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <code
+              className="font-mono text-xs text-ink bg-bone/50 border border-hair rounded-md px-2.5 py-1.5 truncate select-all"
+              title={home}
+            >
+              {home}
+            </code>
+            <button
+              type="button"
+              onClick={copyPath}
+              aria-label="Copy path"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-hair bg-bone/40 text-muted hover:bg-bone hover:text-ink transition-colors"
+            >
+              {copied ? (
+                <Check size={14} strokeWidth={1.5} aria-hidden />
+              ) : (
+                <Copy size={14} strokeWidth={1.5} aria-hidden />
+              )}
+            </button>
+          </div>
+          {layoutLabel(health.data?.paths.layout) && (
+            <p className="font-sans text-xs text-muted max-w-prose">
+              {layoutLabel(health.data?.paths.layout)}
+            </p>
+          )}
+        </div>
+      )}
     </SettingsSection>
   );
 }

@@ -83,6 +83,52 @@ def test_shutdown_is_a_noop_when_no_server_is_registered():
     assert resp.json() == {"ok": True, "stopping": False}
 
 
+# ─── open-home ──────────────────────────────────────────────────────
+
+def test_open_home_without_the_client_header_is_forbidden(monkeypatch):
+    calls: list = []
+    monkeypatch.setattr("src.api.routes_system.subprocess.Popen", lambda *a, **k: calls.append(a))
+    client = _client()
+    del client.headers["X-Mnemify-Client"]
+    resp = client.post("/api/system/open-home")
+    assert resp.status_code == 403
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "platform, opener",
+    [("darwin", "open"), ("win32", "explorer"), ("linux", "xdg-open")],
+)
+def test_open_home_reveals_only_the_data_home(tmp_path, monkeypatch, platform, opener):
+    from src import paths
+
+    calls: list = []
+    monkeypatch.setattr("src.api.routes_system.sys.platform", platform)
+    monkeypatch.setattr("src.api.routes_system.subprocess.Popen", lambda cmd, **k: calls.append(cmd))
+    resp = _client().post(
+        "/api/system/open-home",
+        headers={"X-Mnemify-Client": "web"},
+        # A body naming another folder must be ignored — the route takes no input.
+        json={"path": "/etc"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "path": str(paths.home())}
+    assert calls == [[opener, str(paths.home())]]
+    assert paths.home().is_dir()  # created if it did not exist yet
+
+
+def test_open_home_reports_a_missing_opener_with_the_path(monkeypatch):
+    from src import paths
+
+    def boom(*a, **k):
+        raise FileNotFoundError("xdg-open")
+
+    monkeypatch.setattr("src.api.routes_system.subprocess.Popen", boom)
+    resp = _client().post("/api/system/open-home", headers={"X-Mnemify-Client": "web"})
+    assert resp.status_code == 501
+    assert str(paths.home()) in resp.json()["detail"]
+
+
 # ─── /api/settings/server ───────────────────────────────────────────
 
 def _settings_client() -> TestClient:

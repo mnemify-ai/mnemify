@@ -23,9 +23,9 @@
 
 <p align="center"><sub>Click the preview to watch the full-resolution demo.</sub></p>
 
-Our knowledge was scattered across Notion, Confluence, and a pile of Obsidian vaults. We built Mnemify to bring it together into one connected, searchable map — and we use it every day to rediscover what we know and give our AI tools better context.
+Our knowledge was scattered across Notion, Confluence, Obsidian vaults, Zoom meeting notes, Google meeting notes and so on.... We built Mnemify to bring it together into one connected, searchable map — and we use it every day to rediscover what we know and give our AI tools better context.
 
-After several months of heavy daily use, we're sharing it with you.
+For several month we have been using this product ourselves and found it very useful. Now we are sharing it with you. 
 
 ## How it works
 
@@ -69,7 +69,19 @@ Your harvested documents, the compiled map, your settings and your keys live in 
 | Windows | `%LOCALAPPDATA%\Mnemify` |
 | Linux | `~/.local/share/mnemify` (or `$XDG_DATA_HOME/mnemify`) |
 
-Set `MNEMIFY_HOME` to put it somewhere else. The repo folder holds nothing but code: deleting it, replacing it with a fresh download, or moving it never touches your data.
+To put it somewhere else, set the `MNEMIFY_HOME` environment variable before launching. It must be set in every shell (or shortcut) that starts Mnemify, so add it to your shell profile:
+
+```sh
+# macOS / Linux — e.g. in ~/.zshrc or ~/.bashrc
+export MNEMIFY_HOME="$HOME/mnemify-data"
+```
+
+```powershell
+# Windows (PowerShell) — persists for your user account
+[Environment]::SetEnvironmentVariable("MNEMIFY_HOME", "D:\mnemify-data", "User")
+```
+
+The folder is created on first launch. The repo folder holds nothing but code: deleting it, replacing it with a fresh download, or moving it never touches your data.
 
 ## Updating
 
@@ -85,6 +97,7 @@ Open **Build → Sources**. Mnemify harvests **Notion**, **Confluence**, and **O
 - **Notion** — an internal integration token, shared with the pages you want.
 - **Confluence** — your Atlassian email plus an [API token](https://id.atlassian.com/manage-profile/security/api-tokens).
 - **Obsidian** — the path to your vault. No token at all.
+- More will be added soon.
 
 Nothing here needs a file edited. Tokens are written to your data folder, readable only by you, and never to the repo.
 
@@ -94,8 +107,8 @@ Then run a **harvest**, then a **compile**, and the home page turns into a livin
 
 The **Compile** step and **Chat** need a language model. You have three options, and Mnemify picks up whichever you have. Set keys under **Settings → AI & Models**:
 
-- **OpenAI** (recommended) — set `OPENAI_API_KEY`. This is the default mode and the one we run day to day.
-- **Claude Code** — if the `claude` CLI is installed and logged in, Mnemify detects it automatically and can use your Claude subscription for compile and chat, no API key needed. An Anthropic API key (`ANTHROPIC_API_KEY`) works too.
+- **OpenAI** (recommended) — set `OPENAI_API_KEY`. This is the default mode and the one we run day to day. (Used for embeddings as well)
+- **Claude Code** — if the `claude` CLI is installed and logged in, Mnemify detects it automatically and can use your Claude subscription for compile and chat, no API key needed. An Anthropic API key (`ANTHROPIC_API_KEY`) works too. (Unfortunatelly we cannot use Claude for embedding)
 - **Local** — compiles deterministically with no key and no network. Good for a first look; the map is much better with a real model.
 
 Even with Claude, keep an `OPENAI_API_KEY` set: embeddings for chunking and clustering always run through OpenAI, so every mode except local needs it.

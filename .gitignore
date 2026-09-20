@@ -46,6 +46,10 @@ temp_output/
 /mnemify.yaml
 /backend/mnemify.yaml
 /backend/debug_sample.md
+# running-instance markers written by `mnemify up` (legacy backend/ home layout)
+server.pid
+server.port
+/backend/logs/
 # stray writes if an old build path ever resurfaces (the compiler writes to .mnemify/ now)
 /frontend/terrain.json
 /frontend/mocknotes.json

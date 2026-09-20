@@ -115,6 +115,25 @@ export function useShutdown() {
   });
 }
 
+/** `POST /api/system/open-home` — the server opens the data folder in the
+ *  OS file manager (the browser cannot). Always `paths.home()`; the route
+ *  takes no input. 501 means no opener on that machine — show the path. */
+export interface OpenHomeResponse {
+  ok: boolean;
+  path: string;
+}
+
+export function useOpenHome() {
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<OpenHomeResponse>("/api/system/open-home", {
+        method: "POST",
+        headers: { [CLIENT_HEADER]: "web" },
+        body: "{}",
+      }),
+  });
+}
+
 /** One heartbeat. Fire-and-forget: a failed beat just means the next one
  *  matters more, so it never surfaces an error to the user. */
 export async function sendHeartbeat(): Promise<void> {
