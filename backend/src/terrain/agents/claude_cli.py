@@ -10,9 +10,12 @@ Why the bare CLI and not the Python Agent SDK here: these are one-shot
 prompts with no tool use, so the SDK's agent loop adds nothing. (The old
 auth objection is stale — the SDK drives this same CLI and inherits the
 subscription login; the agentic ``/api/ask`` path in ``src/api/ask_agent.py``
-uses it.) We keep the invocation lean — override the system prompt and drop
-setting sources, run from a neutral cwd — so each call carries no project
-context (verified: ~3 input tokens of overhead vs ~2900 with defaults).
+uses it.) We keep the invocation lean — override the system prompt, disable
+every tool, drop setting sources, run from a neutral cwd — so each call
+carries no project context. Measured (haiku, tiny prompt): ~250 input tokens
+per call; with tools left on it is ~14K (cached) of tool definitions, and
+with the default system prompt ~17.5K. The tool definitions also carry agent
+instructions (commit attribution etc.) that leak into one-shot answers.
 
 Single-user / local only: this routes *one* logged-in subscription and is not a
 multi-tenant path. Production stays on BYOK (see ``ask_providers``).
@@ -25,10 +28,12 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 from src.terrain.agents.usage import ledger
@@ -184,21 +189,102 @@ def _claude_argv(binary: str) -> list[str]:
     return [node_path, str(cli_js)]
 
 
+_SYSTEM_FILE_LOCK = threading.Lock()
+
+
 def _system_prompt_file(system: str) -> str:
     """Path of a temp file holding ``system``, for ``--system-prompt-file``.
 
     Content-addressed and written once: a compile issues hundreds of calls
     with the same handful of system prompts, so this is a hash + stat per
-    call, not a write. Written via rename so a parallel worker never reads a
-    half-written file.
+    call, not a write. The first call for a new prompt races 8-way (the
+    extraction workers all start together), hence the lock and the
+    per-thread temp name; and because Windows refuses to replace a file
+    another process — a `claude` that just started — still has open, a
+    failed replace is fine as long as the file is there afterwards.
     """
     digest = hashlib.sha1(system.encode("utf-8")).hexdigest()[:16]
     path = Path(tempfile.gettempdir()) / f"mnemify-claude-system-{digest}.txt"
-    if not path.is_file():
-        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    if path.is_file():
+        return str(path)
+    with _SYSTEM_FILE_LOCK:
+        if path.is_file():
+            return str(path)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         tmp.write_text(system, encoding="utf-8")
-        os.replace(tmp, path)
+        try:
+            os.replace(tmp, path)
+        except OSError:
+            if not path.is_file():
+                raise
+            tmp.unlink(missing_ok=True)
     return str(path)
+
+
+def describe_transport() -> dict | None:
+    """How `claude` will be invoked on this machine, for the compile log:
+    ``{"binary", "argv", "via"}`` — or None when it isn't installed."""
+    binary = find_claude_binary()
+    if binary is None:
+        return None
+    argv = _claude_argv(binary)
+    if len(argv) > 1:
+        via = "npm install, run through node directly"
+    elif binary.lower().endswith((".cmd", ".bat")):
+        via = "npm shim via cmd.exe — node.exe not found, fragile"
+    else:
+        via = "native executable"
+    return {"binary": binary, "argv": argv, "via": via}
+
+
+def self_test(model: str = DEFAULT_CLAUDE_MODEL, timeout: float = 120) -> None:
+    """One tiny call proving the CLI receives a *whole multi-line* prompt and
+    answers in the JSON envelope we parse.
+
+    Run once at the start of a Claude-engine compile. Without it a broken
+    transport surfaces only as a quarter of the chunks failing with a model
+    reply like "I don't see a message from you yet" — after minutes of work,
+    and with nothing pointing at the cause. The token sits on the *last* line
+    so a transport that drops everything after the first newline (cmd.exe
+    treats a newline in an argument as end-of-command) fails the check.
+    Raises :class:`ClaudeCLIUnavailableError` (``kind="transport"``) — a
+    systemic failure, so the compiler aborts instead of grinding on.
+    """
+    token = f"MNEMIFY-{secrets.token_hex(4).upper()}"
+    prompt = (
+        "This is a transport check from Mnemify.\n"
+        "This second line is filler and can be ignored.\n"
+        f"Reply with exactly this token and nothing else: {token}"
+    )
+    try:
+        reply = claude_text(
+            prompt,
+            system="You are a transport check. Reply with only the token you are asked for.",
+            model=model,
+            timeout=timeout,
+        )
+    except ClaudeCLIUnavailableError:
+        raise
+    except ClaudeCLIError as e:
+        raise ClaudeCLIUnavailableError(
+            f"Claude CLI transport check failed — {e}. {_transport_hint()}", kind="transport"
+        ) from e
+    if token not in reply:
+        raise ClaudeCLIUnavailableError(
+            "Claude CLI transport check failed: the CLI did not receive the whole "
+            f"prompt (asked for {token}, it replied: {reply.strip()[:160]!r}). "
+            + _transport_hint(),
+            kind="transport",
+        )
+
+
+def _transport_hint() -> str:
+    t = describe_transport() or {}
+    return (
+        f"Binary: {t.get('binary')} ({t.get('via')}). Restart Mnemify so the server "
+        "runs the current build; if it persists, install Claude Code with the native "
+        "installer instead of npm."
+    )
 
 
 def claude_text(
@@ -242,6 +328,10 @@ def claude_text(
         # MCP config bleeds into the prompt (keeps the call lean + deterministic).
         "--setting-sources",
         "",
+        # No tools: a pure completion. Saves ~14K tokens of tool definitions
+        # per call and keeps their agent instructions out of the answers.
+        "--tools",
+        "",
         "--output-format",
         "json",
     ]
@@ -261,13 +351,12 @@ def claude_text(
     try:
         proc = subprocess.run(
             cmd,
-            input=user_prompt,
+            # Bytes, not text: explicit UTF-8 both ways (Windows' locale
+            # default, cp1252, can't encode most non-Latin document text and
+            # mangled Claude's output into "â€”"), and no newline translation
+            # — text-mode stdin on Windows would rewrite every \n as \r\n.
+            input=user_prompt.encode("utf-8"),
             capture_output=True,
-            # Explicit UTF-8 both ways: Windows' locale default (cp1252) can't
-            # encode most non-Latin document text and mangles Claude's output
-            # (the "â€”" dashes seen in error reports).
-            encoding="utf-8",
-            errors="replace",
             timeout=timeout,
             # Neutral cwd: avoids loading the project's CLAUDE.md / .claude config.
             cwd=tempfile.gettempdir(),
@@ -282,22 +371,32 @@ def claude_text(
     except subprocess.TimeoutExpired as e:
         raise ClaudeCLIError(f"claude call timed out after {timeout}s") from e
 
+    stdout = (proc.stdout or b"").decode("utf-8", errors="replace")
+    stderr = (proc.stderr or b"").decode("utf-8", errors="replace")
     if proc.returncode != 0:
         # On failure (rate/usage limits, auth) the CLI often writes the reason
         # to stdout, not stderr — surface whichever is non-empty so the cause
         # isn't swallowed into a bare "exited 1".
-        detail = (proc.stderr or "").strip() or (proc.stdout or "").strip()
+        detail = stderr.strip() or stdout.strip()
         message = f"claude exited {proc.returncode}: {detail[:300]}"
+        if "unknown option" in detail.lower():
+            # A `claude` too old for a flag we pass (`--tools`,
+            # `--system-prompt-file`, ...). Systemic — every call would fail.
+            raise ClaudeCLIUnavailableError(
+                f"Claude Code is too old for this build ({detail[:120].strip()}). "
+                "Update it (`claude update`, or reinstall) and recompile.",
+                kind="outdated_cli",
+            )
         kind = classify_cli_failure(detail)
         if kind:
             raise ClaudeCLIUnavailableError(message, kind=kind)
         raise ClaudeCLIError(message)
 
     try:
-        envelope = json.loads(proc.stdout)
+        envelope = json.loads(stdout)
     except json.JSONDecodeError as e:
         raise ClaudeCLIError(
-            f"claude returned non-JSON envelope: {(proc.stdout or '')[:300]}"
+            f"claude returned non-JSON envelope: {stdout[:300]}"
         ) from e
 
     ledger.record_claude_cli(envelope, model=model)

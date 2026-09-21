@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from contextlib import asynccontextmanager
 
-from src import __version__, paths
+from src import __version__, build_commit, paths
 from src.terrain.agents.claude_cli import find_claude_binary
 
 from . import (
@@ -50,32 +50,7 @@ from . import (
 logger = logging.getLogger(__name__)
 
 
-def _git_commit() -> str | None:
-    """Short HEAD sha, or ``None`` when this isn't a git checkout.
-
-    Resolved once at import so ``/api/health`` costs nothing per call. The
-    explicit ``cwd`` matters: the server (and every test that ``chdir``s into
-    a tmp dir) must not report some neighbouring repository's sha.
-    """
-    root = paths.repo_root()
-    if not (root / ".git").exists():
-        return None
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-    except Exception:  # noqa: BLE001 — no git on PATH, sandboxed exec, timeout
-        return None
-    sha = out.stdout.strip()
-    return sha or None
-
-
-COMMIT: str | None = _git_commit()
+COMMIT: str | None = build_commit()
 
 
 def _migrate_fat_terrain_artifact(data_dir: Path) -> None:

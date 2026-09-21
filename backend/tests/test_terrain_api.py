@@ -161,7 +161,7 @@ def test_claude_text_resolves_binary_via_which(monkeypatch):
 
     def fake_run(cmd, **kw):
         seen["cmd"] = cmd
-        return subprocess.CompletedProcess(cmd, 0, stdout='{"result": "ok"}', stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=b'{"result": "ok"}', stderr=b"")
 
     monkeypatch.setattr(claude_cli.shutil, "which", lambda _n: r"C:\Users\me\.local\bin\claude.exe")
     monkeypatch.setattr(claude_cli.subprocess, "run", fake_run)
@@ -181,7 +181,7 @@ def test_claude_text_keeps_prompts_off_the_command_line(monkeypatch, tmp_path):
 
     def fake_run(cmd, **kw):
         seen["cmd"], seen["kw"] = cmd, kw
-        return subprocess.CompletedProcess(cmd, 0, stdout='{"result": "ok"}', stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=b'{"result": "ok"}', stderr=b"")
 
     monkeypatch.setattr(claude_cli, "find_claude_binary", lambda: "/usr/bin/claude")
     monkeypatch.setattr(claude_cli.subprocess, "run", fake_run)
@@ -192,9 +192,10 @@ def test_claude_text_keeps_prompts_off_the_command_line(monkeypatch, tmp_path):
     assert claude_cli.claude_text(prompt, system=system) == "ok"
 
     cmd, kw = seen["cmd"], seen["kw"]
-    assert kw["input"] == prompt
-    assert kw["encoding"] == "utf-8"
+    assert kw["input"] == prompt.encode("utf-8")  # bytes: no cp1252, no CRLF rewrite
+    assert "encoding" not in kw and "text" not in kw
     assert "-p" in cmd and prompt not in cmd and system not in cmd
+    assert cmd[cmd.index("--tools") + 1] == ""  # pure completion, no tool defs
     sys_file = cmd[cmd.index("--system-prompt-file") + 1]
     assert open(sys_file, encoding="utf-8").read() == system
     # Same system prompt → same file, written once (hundreds of calls per compile).
@@ -262,3 +263,78 @@ def test_start_compile_refuses_claude_mode_without_cli(tmp_path, monkeypatch):
     assert res["ok"] is False
     assert res["code"] == "claude_cli_missing"
     assert "install" in res["reason"].lower()
+
+
+def test_claude_self_test_detects_a_transport_that_drops_lines(monkeypatch):
+    """The token is on the LAST line of a multi-line prompt: a transport that
+    truncates at the first newline (cmd.exe shim) or loses stdin fails fast
+    with kind="transport", instead of a 25%-of-chunks abort minutes later."""
+    from src.terrain.agents import claude_cli
+
+    monkeypatch.setattr(claude_cli, "find_claude_binary", lambda: "/usr/bin/claude")
+
+    def echo_last_line(prompt, **_kw):
+        return prompt.splitlines()[-1].rsplit(": ", 1)[1]
+
+    monkeypatch.setattr(claude_cli, "claude_text", echo_last_line)
+    claude_cli.self_test()  # whole prompt arrived → no error
+
+    monkeypatch.setattr(claude_cli, "claude_text", lambda prompt, **_kw: "I don't see a task from you yet")
+    with pytest.raises(claude_cli.ClaudeCLIUnavailableError) as ei:
+        claude_cli.self_test()
+    assert ei.value.kind == "transport"
+    assert "did not receive the whole prompt" in str(ei.value)
+    assert "/usr/bin/claude" in str(ei.value)
+
+    def non_json(prompt, **_kw):
+        raise claude_cli.ClaudeCLIError("claude returned non-JSON envelope: hello")
+
+    monkeypatch.setattr(claude_cli, "claude_text", non_json)
+    with pytest.raises(claude_cli.ClaudeCLIUnavailableError) as ei:
+        claude_cli.self_test()
+    assert ei.value.kind == "transport"
+
+
+def test_describe_transport_names_how_claude_is_run(monkeypatch, tmp_path):
+    from src.terrain.agents import claude_cli
+
+    monkeypatch.setattr(claude_cli, "find_claude_binary", lambda: None)
+    assert claude_cli.describe_transport() is None
+
+    monkeypatch.setattr(claude_cli, "find_claude_binary", lambda: "/usr/local/bin/claude")
+    assert claude_cli.describe_transport()["via"] == "native executable"
+
+    shim = tmp_path / "claude.cmd"
+    shim.write_text("@ECHO off\r\nunknown layout\r\n")
+    monkeypatch.setattr(claude_cli, "find_claude_binary", lambda: str(shim))
+    assert "cmd.exe" in claude_cli.describe_transport()["via"]
+
+
+def test_system_prompt_file_is_written_once_under_parallel_first_use(monkeypatch, tmp_path):
+    """Eight extraction workers hit a new system prompt at the same instant."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from src.terrain.agents import claude_cli
+
+    monkeypatch.setattr(claude_cli.tempfile, "gettempdir", lambda: str(tmp_path))
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        paths = set(ex.map(lambda _i: claude_cli._system_prompt_file("same prompt"), range(32)))
+    assert len(paths) == 1
+    assert open(paths.pop(), encoding="utf-8").read() == "same prompt"
+    assert [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")] == []
+
+
+def test_old_claude_without_a_flag_we_pass_is_a_clear_systemic_error(monkeypatch):
+    import subprocess
+
+    from src.terrain.agents import claude_cli
+
+    monkeypatch.setattr(claude_cli, "find_claude_binary", lambda: "/usr/bin/claude")
+    monkeypatch.setattr(
+        claude_cli.subprocess, "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout=b"", stderr=b"error: unknown option '--tools'"),
+    )
+    with pytest.raises(claude_cli.ClaudeCLIUnavailableError) as ei:
+        claude_cli.claude_text("hi")
+    assert ei.value.kind == "outdated_cli"
+    assert "too old" in str(ei.value)

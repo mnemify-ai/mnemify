@@ -119,7 +119,7 @@ def test_claude_cli_passes_effort_flag_and_records_envelope(monkeypatch):
         seen.append(cmd)
         env = {"result": "ok", "model": "claude-sonnet-5", "duration_ms": 5,
                "usage": {"input_tokens": 9, "output_tokens": 1}}
-        return SimpleNamespace(returncode=0, stdout=json.dumps(env), stderr="")
+        return SimpleNamespace(returncode=0, stdout=json.dumps(env).encode("utf-8"), stderr=b"")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     ledger.reset()
