@@ -28,8 +28,14 @@ export function LocalEmbeddingsDialog() {
   // OpenAI key *is* stored (added after the consent path saved that default):
   // the question is no longer "no key — run locally?" but "download, or use
   // the key?". Offer both and say so in the heading.
-  const keyedButNoModel =
-    request?.refusal.code === "local_model_missing" && request.refusal.openai_key_set === true;
+  const modelMissing = request?.refusal.code === "local_model_missing";
+  const keyedButNoModel = modelMissing && request.refusal.openai_key_set === true;
+  const engineName =
+    request?.payload.ai_mode === "openai"
+      ? "OpenAI"
+      : request?.payload.ai_mode === "local"
+        ? "Local heuristics"
+        : "Claude";
   const claudeName =
     switchTo === "claude"
       ? "your logged-in Claude Code"
@@ -64,6 +70,13 @@ export function LocalEmbeddingsDialog() {
               default for later compiles and for Ask, and you can change it under Settings → AI
               &amp; Models or in the compile dialog.
             </>
+          ) : modelMissing ? (
+            <>
+              Compiles are set to embed on this computer, but the model was never downloaded.
+              {engineName} writes the names and notes; the embeddings — the vectors that decide
+              how notes group into regions — come from the on-device model. Download it once to
+              continue, or add an OpenAI key for OpenAI embeddings.
+            </>
           ) : claudeName ? (
             <>
               Mnemify can build your map with Claude instead, using {claudeName}. Claude writes
@@ -95,7 +108,7 @@ export function LocalEmbeddingsDialog() {
             <p className="font-sans text-sm text-muted leading-relaxed">
               <span className="text-ink">The map will look different.</span> Regions form from a
               different embedding space, so you get broader topic groups than with OpenAI's model.
-              For the best results, add an OpenAI key.
+              {keyedButNoModel ? " For the best results, use OpenAI embeddings." : " For the best results, add an OpenAI key."}
             </p>
           </li>
           <li className="flex gap-3">
@@ -103,7 +116,7 @@ export function LocalEmbeddingsDialog() {
             <p className="font-sans text-sm text-muted leading-relaxed">
               <span className="text-ink">English only.</span> The on-device model understands
               English. OpenAI's embeddings are multilingual — if your notes are in other
-              languages, use a key.
+              languages, {keyedButNoModel ? "use OpenAI embeddings" : "use a key"}.
             </p>
           </li>
         </ul>
