@@ -85,12 +85,11 @@ def snapshot() -> dict[str, Any]:
 
 def _suggest_claude_engine() -> str | None:
     """Which Claude engine could replace a keyless OpenAI engine right now:
-    ``"claude"`` (subscription CLI on PATH, not Windows), ``"anthropic"``
-    (ANTHROPIC_API_KEY set), or None."""
-    import shutil
-    import sys
+    ``"claude"`` (subscription CLI on PATH — any OS, the CLI ships native
+    Windows builds too), ``"anthropic"`` (ANTHROPIC_API_KEY set), or None."""
+    from src.terrain.agents.claude_cli import find_claude_binary
 
-    if not sys.platform.startswith("win") and shutil.which("claude"):
+    if find_claude_binary():
         return "claude"
     if os.getenv("ANTHROPIC_API_KEY"):
         return "anthropic"

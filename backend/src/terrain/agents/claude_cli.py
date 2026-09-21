@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 import tempfile
 
@@ -105,6 +106,18 @@ def classify_cli_failure(detail: str) -> str | None:
     return None
 
 
+def find_claude_binary() -> str | None:
+    """Absolute path of the `claude` executable on PATH, or None.
+
+    Resolved through :func:`shutil.which` rather than passing the bare name to
+    ``subprocess`` so the same lookup works everywhere: on Windows the npm
+    install exposes ``claude.cmd`` (which ``CreateProcess`` won't find by
+    bare name — only PATHEXT-aware ``which`` does) and the native installer
+    ships ``claude.exe``; on macOS/Linux it's a plain ``claude`` symlink.
+    """
+    return shutil.which("claude")
+
+
 def claude_text(
     user_prompt: str,
     *,
@@ -123,8 +136,15 @@ def claude_text(
     with). Raises :class:`ClaudeCLIError` on non-zero exit, an error envelope,
     or empty output.
     """
+    binary = find_claude_binary()
+    if binary is None:
+        raise ClaudeCLIUnavailableError(
+            "the `claude` CLI is not installed or not on PATH — required for "
+            "ai_mode='claude'",
+            kind="missing_cli",
+        )
     cmd = [
-        "claude",
+        binary,
         "-p",
         user_prompt,
         "--model",

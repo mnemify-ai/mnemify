@@ -17,6 +17,9 @@ export interface Health {
   commit: string | null;
   /** Python's `sys.platform` — "darwin" | "win32" | "linux". */
   platform: string;
+  /** The `claude` CLI is on the server's PATH (`ai_mode="claude"` can run).
+   *  Optional so a tab talking to an older server still type-checks. */
+  claude_cli?: boolean;
   paths: {
     layout: string;
     home: string;
@@ -28,22 +31,25 @@ export interface Health {
 
 /**
  * Whether the `claude` CLI compile mode can work on the machine running the
- * server. The CLI ships for macOS and Linux only, so on Windows that mode is
- * a dead end — the Anthropic API key (`anthropic` mode) is the equivalent.
+ * server: the backend probes its own PATH for the binary and reports it as
+ * `claude_cli` on `/api/health`. The CLI ships for macOS, Linux *and*
+ * Windows, so this is never a platform guess — only "is it installed here".
  *
- * `platform` is Python's `sys.platform` from `/api/health`. While health is
- * still loading it is `undefined`, and an unknown platform means "show
- * everything" rather than hiding an option from a Mac user for a moment.
+ * While health is still loading `health` is `undefined`, and that means
+ * "show everything" rather than hiding an option from a user for a moment.
+ * An old server that doesn't report the field is treated the same way.
  *
  * Pure — unit-tested.
  */
-export function isClaudeCliAvailable(platform: string | undefined | null): boolean {
-  return !(platform ?? "").toLowerCase().startsWith("win");
+export function isClaudeCliAvailable(
+  health: Pick<Health, "claude_cli"> | undefined | null,
+): boolean {
+  return health?.claude_cli !== false;
 }
 
-/** Shown wherever {@link isClaudeCliAvailable} hides the CLI mode. */
+/** Shown wherever {@link isClaudeCliAvailable} disables the CLI mode. */
 export const CLAUDE_CLI_UNAVAILABLE_HINT =
-  "Claude CLI mode is macOS/Linux only — use the Anthropic API key instead";
+  "The `claude` CLI isn't installed on this computer (not on PATH) — install Claude Code, or use the Anthropic API key instead";
 
 export interface ServerSettings {
   /** Minutes of inactivity before the server exits. 0 = never. */

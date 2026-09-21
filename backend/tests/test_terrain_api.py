@@ -126,3 +126,41 @@ def test_non_progress_frames_do_not_touch_the_rate(compile_orch):
     compile_orch._on_progress({"type": "log", "stage": "enrich", "msg": "Tagged: foo"}, rate)
 
     assert compile_orch.snapshot()["counts"]["rate_per_sec"] == 2.5
+
+
+def test_health_reports_claude_cli_from_path_probe(monkeypatch):
+    """`claude_cli` on /api/health is a real PATH probe, never a platform
+    guess — the CLI ships for Windows too, so the UI must not gate on OS."""
+    import src.api as api_mod
+    from src.api import create_app
+
+    monkeypatch.setattr(api_mod, "find_claude_binary", lambda: "/x/claude")
+    assert TestClient(create_app()).get("/api/health").json()["claude_cli"] is True
+
+    monkeypatch.setattr(api_mod, "find_claude_binary", lambda: None)
+    assert TestClient(create_app()).get("/api/health").json()["claude_cli"] is False
+
+
+def test_claude_text_resolves_binary_via_which(monkeypatch):
+    """The transport passes the resolved executable (not the bare name) to
+    subprocess, so Windows' `claude.cmd` / `claude.exe` are found; a missing
+    binary is a `missing_cli` failure before any subprocess call."""
+    import subprocess
+
+    from src.terrain.agents import claude_cli
+
+    monkeypatch.setattr(claude_cli.shutil, "which", lambda _n: None)
+    with pytest.raises(claude_cli.ClaudeCLIUnavailableError) as ei:
+        claude_cli.claude_text("hi")
+    assert ei.value.kind == "missing_cli"
+
+    seen: dict = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout='{"result": "ok"}', stderr="")
+
+    monkeypatch.setattr(claude_cli.shutil, "which", lambda _n: r"C:\Users\me\.local\bin\claude.exe")
+    monkeypatch.setattr(claude_cli.subprocess, "run", fake_run)
+    assert claude_cli.claude_text("hi") == "ok"
+    assert seen["cmd"][0] == r"C:\Users\me\.local\bin\claude.exe"
