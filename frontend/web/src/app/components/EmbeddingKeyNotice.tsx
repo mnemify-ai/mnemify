@@ -13,7 +13,7 @@ import { cn } from "../lib/cn";
  * user hears that embeddings may run on-device.
  *
  *  - Claude engine, no OpenAI key → embeddings run on this computer (English
- *    only, coarser regions); the model download is asked for once.
+ *    only, broader topic groups); the model download is asked for once.
  *  - Claude engine, OpenAI key set, OpenAI embeddings → an informational
  *    line: the key is used for embeddings by default; Claude only names.
  *  - OpenAI engine, no OpenAI key → the engine can't run; add a key or pick
@@ -68,7 +68,7 @@ export function EmbeddingKeyNotice({
               instead of OpenAI
             </>
           )}
-          {" "}— the on-device model is English-only and groups notes a little more coarsely.
+          {" "}— the on-device model is English-only and forms broader topic groups.
           {downloaded
             ? " The model is already downloaded."
             : ` You'll be asked once before the ${sizeMb} MB model downloads.`}

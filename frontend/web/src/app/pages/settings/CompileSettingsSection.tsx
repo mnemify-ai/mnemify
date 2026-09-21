@@ -217,7 +217,7 @@ export function CompileSettingsSection() {
           {/* Embedding model — confirm before change (recompile required) */}
           <Field
             label="Embedding model"
-            hint="Drives clustering / region structure. The OpenAI models need OPENAI_API_KEY and are multilingual. On-device (bge-small, 384-d) runs on this computer with no key — English only, and regions group a little more coarsely."
+            hint="Drives clustering / region structure. The OpenAI models need OPENAI_API_KEY and are multilingual. On-device (bge-small, 384-d) runs on this computer with no key — English only, and it forms broader topic groups."
           >
             <div className="flex flex-col gap-2">
               <Segmented<EmbeddingModel>
@@ -289,7 +289,7 @@ export function CompileSettingsSection() {
         title="Change the embedding model?"
         description={
           pendingEmbedding === LOCAL_EMBEDDING_MODEL
-            ? "The on-device model runs on this computer with no API key. It is English-only and groups notes a little more coarsely than OpenAI's models; the ~67 MB model downloads once into your Mnemify data folder. The change takes effect after a fresh recompile (Compile → Recompile from scratch)."
+            ? "The on-device model runs on this computer with no API key. It is English-only and forms broader topic groups than OpenAI's models; the ~67 MB model downloads once into your Mnemify data folder. The change takes effect after a fresh recompile (Compile → Recompile from scratch)."
             : "This changes how notes cluster into regions. It only takes effect after a fresh recompile (Compile → Recompile from scratch) — the embedding cache and the Ask search index both key on the model + dimensions. Until you recompile, search and the existing map keep using the old model."
         }
         confirmLabel={pendingEmbedding === LOCAL_EMBEDDING_MODEL ? "Download & save" : "Change & save"}

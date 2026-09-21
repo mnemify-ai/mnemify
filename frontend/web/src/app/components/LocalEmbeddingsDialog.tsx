@@ -94,7 +94,7 @@ export function LocalEmbeddingsDialog() {
             <Sparkles size={16} strokeWidth={1.5} className="mt-0.5 shrink-0 text-ink" aria-hidden />
             <p className="font-sans text-sm text-muted leading-relaxed">
               <span className="text-ink">The map will look different.</span> Regions form from a
-              different embedding space, so grouping is a little coarser than with OpenAI's model.
+              different embedding space, so you get broader topic groups than with OpenAI's model.
               For the best results, add an OpenAI key.
             </p>
           </li>

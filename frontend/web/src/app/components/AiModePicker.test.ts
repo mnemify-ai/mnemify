@@ -45,7 +45,7 @@ describe("embedding backend switch", () => {
 
   it("keeps the saved OpenAI model when switching to OpenAI, else the default", () => {
     expect(embeddingModelFor("openai", "text-embedding-3-small")).toBe("text-embedding-3-small");
-    expect(embeddingModelFor("openai", "bge-small-en-v1.5")).toBe("text-embedding-3-large");
+    expect(embeddingModelFor("openai", "bge-small-en-v1.5")).toBe("text-embedding-3-small");
     expect(embeddingModelFor("local", "text-embedding-3-large")).toBe("bge-small-en-v1.5");
   });
 });

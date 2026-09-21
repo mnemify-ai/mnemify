@@ -109,7 +109,7 @@ COMPILE_DEFAULTS: dict = {
     "claude_extract_model": "sonnet",
     "claude_name_model": "opus",
     "openai_model": "gpt-5.6-luna",
-    "embedding_model": "text-embedding-3-large",
+    "embedding_model": "text-embedding-3-small",
     "llm_concurrency": 16,
     "extract_batch_size": 4,
     # Reasoning effort per step, for every LLM engine (OpenAI reasoning.effort,

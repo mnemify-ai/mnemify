@@ -315,7 +315,7 @@ async def _cmd_terrain(args: argparse.Namespace) -> None:
         data_dir=paths.data_dir(),
         ai_mode=getattr(args, "ai_mode", "openai"),
         llm_model=getattr(args, "llm_model", "gpt-5.6-luna"),
-        embedding_model=getattr(args, "embedding_model", "text-embedding-3-large"),
+        embedding_model=getattr(args, "embedding_model", "text-embedding-3-small"),
     )
     try:
         result = compiler.build(source=getattr(args, "source", None))
@@ -854,7 +854,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     terrain_build_p.add_argument(
         "--embedding-model",
-        default="text-embedding-3-large",
+        default="text-embedding-3-small",
         help="OpenAI embedding model",
     )
 

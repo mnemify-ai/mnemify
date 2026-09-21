@@ -352,7 +352,7 @@ async def _run_compile(
             llm_model=llm_model,
             claude_extract_model=claude_extract_model,
             claude_name_model=claude_name_model,
-            embedding_model=embedding_model or "text-embedding-3-large",
+            embedding_model=embedding_model or "text-embedding-3-small",
             llm_concurrency=llm_concurrency,
             extract_batch_size=extract_batch_size,
             extract_effort=extract_effort,
