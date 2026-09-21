@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from src.terrain.preprocessing.extractor import (
     KNOWN_PRODUCTS,
     SCHEMA_VERSION,
+    FeatureExtractor,
     heuristic_tag_type,
     products_schema_suffix,
 )
@@ -298,6 +299,9 @@ _BATCH_SUFFIX = (
 )
 
 
+_EMPTY_CONTENT_EXTRACTOR = FeatureExtractor()
+
+
 class OpenAIFeatureExtractor(OpenAIClientMixin):
     # Why the most recent chunk came back as ``None`` from ``extract_batch``.
     # ``extract_batch`` swallows per-chunk failures by contract (one bad piece
@@ -335,7 +339,33 @@ class OpenAIFeatureExtractor(OpenAIClientMixin):
         return self._to_features(response.output_parsed)
 
     def extract_batch(self, chunks: list[TerrainChunk]) -> list[ChunkFeatures | None]:
-        """Extract features for many chunks in one LLM call.
+        """Extract features for many chunks, routing empty-shell chunks (a
+        Notion database row, a link-only block — just title/metadata, no
+        body) to the deterministic local heuristic instead of the LLM.
+
+        There is nothing for the LLM to extract from truly empty content, and
+        asking it to anyway just invites a conversational refusal (Claude) or
+        a degenerate structured answer (OpenAI) instead of a clean skip. This
+        is a content-shape check, not a quality fallback: real chunks always
+        go to the LLM per this class's failure policy."""
+        if not chunks:
+            return []
+        results: list[ChunkFeatures | None] = [None] * len(chunks)
+        llm_indices: list[int] = []
+        llm_chunks: list[TerrainChunk] = []
+        for i, chunk in enumerate(chunks):
+            if not chunk.content.strip():
+                results[i] = _EMPTY_CONTENT_EXTRACTOR.extract(chunk)
+            else:
+                llm_indices.append(i)
+                llm_chunks.append(chunk)
+        if llm_chunks:
+            for i, features in zip(llm_indices, self._extract_batch_llm(llm_chunks)):
+                results[i] = features
+        return results
+
+    def _extract_batch_llm(self, chunks: list[TerrainChunk]) -> list[ChunkFeatures | None]:
+        """Extract features for many *non-empty* chunks in one LLM call.
 
         Returns a list aligned 1:1 with ``chunks``; an element is ``None`` only
         when that single chunk could not be extracted, so the caller skips just
@@ -345,8 +375,6 @@ class OpenAIFeatureExtractor(OpenAIClientMixin):
         (parse error, missing/duplicate/extra id) the batch is split in half and
         retried down to size 1; fatal config errors (auth) propagate to abort
         the build instead of degrading the whole vault to skips."""
-        if not chunks:
-            return []
         if len(chunks) == 1:
             try:
                 return [self.extract(chunks[0])]
@@ -369,7 +397,7 @@ class OpenAIFeatureExtractor(OpenAIClientMixin):
                 "terrain: batch extract of %d chunks failed (%s); splitting %d/%d",
                 len(chunks), _describe_llm_error(e), mid, len(chunks) - mid,
             )
-            return self.extract_batch(chunks[:mid]) + self.extract_batch(chunks[mid:])
+            return self._extract_batch_llm(chunks[:mid]) + self._extract_batch_llm(chunks[mid:])
 
     def _extract_batch_call(self, chunks: list[TerrainChunk]) -> list[ChunkFeatures]:
         response = self._responses_parse(

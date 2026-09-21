@@ -367,5 +367,10 @@ def schema_hint(model_cls) -> str:
     return (
         "\n\nReturn ONLY a single JSON object with these "
         + desc
-        + ". No prose, no markdown fences."
+        + ". No prose, no markdown fences. Never ask a clarifying question, "
+        "request more information, or refuse — even if the content below is "
+        "empty, blank, or just a title/metadata with no body. In that case "
+        "still return the JSON object with your best-effort generic/neutral "
+        "values for every field; an empty or thin chunk is expected input, "
+        "not an error."
     )
