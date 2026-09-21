@@ -14,6 +14,8 @@ import { cn } from "../lib/cn";
  *
  *  - Claude engine, no OpenAI key → embeddings run on this computer (English
  *    only, coarser regions); the model download is asked for once.
+ *  - Claude engine, OpenAI key set, OpenAI embeddings → an informational
+ *    line: the key is used for embeddings by default; Claude only names.
  *  - OpenAI engine, no OpenAI key → the engine can't run; add a key or pick
  *    Claude.
  *  - Otherwise renders nothing.
@@ -30,6 +32,7 @@ export function EmbeddingKeyNotice({ aiMode, className }: { aiMode: AiMode; clas
   const sizeMb = local.data?.size_mb ?? 67;
 
   let body: React.ReactNode = null;
+  let tone: "warning" | "info" = "warning";
   if (aiMode === "openai" && !openaiKey) {
     body = (
       <>
@@ -67,13 +70,26 @@ export function EmbeddingKeyNotice({ aiMode, className }: { aiMode: AiMode; clas
         </span>
       </>
     );
+  } else if ((aiMode === "claude" || aiMode === "anthropic") && openaiKey && !localDefault) {
+    tone = "info";
+    body = (
+      <>
+        <KeyRound size={14} strokeWidth={1.5} className="mt-0.5 shrink-0" aria-hidden />
+        <span>
+          <span className="text-ink">Your OpenAI key is used for embeddings</span> (
+          {settings.data.embedding_model}); Claude does the naming and notes. To keep the whole
+          compile off OpenAI, set <SettingsLink>Embedding model to On-device in Settings</SettingsLink>.
+        </span>
+      </>
+    );
   }
   if (!body) return null;
   return (
     <p
       role="note"
       className={cn(
-        "mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 font-sans text-xs text-muted leading-relaxed",
+        "mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 font-sans text-xs text-muted leading-relaxed",
+        tone === "warning" ? "border-warning/30 bg-warning/10" : "border-hair bg-bone/40",
         className,
       )}
     >
