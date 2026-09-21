@@ -22,9 +22,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
+from pathlib import Path
 
 from src.terrain.agents.usage import ledger
 
@@ -106,16 +110,77 @@ def classify_cli_failure(detail: str) -> str | None:
     return None
 
 
-def find_claude_binary() -> str | None:
-    """Absolute path of the `claude` executable on PATH, or None.
-
-    Resolved through :func:`shutil.which` rather than passing the bare name to
-    ``subprocess`` so the same lookup works everywhere: on Windows the npm
-    install exposes ``claude.cmd`` (which ``CreateProcess`` won't find by
-    bare name — only PATHEXT-aware ``which`` does) and the native installer
-    ships ``claude.exe``; on macOS/Linux it's a plain ``claude`` symlink.
+def _well_known_claude_locations() -> list[Path]:
+    """Where the official installers put `claude` when it is *not* on this
+    process's PATH — a server launched from a desktop icon inherits a minimal
+    environment, and one started before the CLI was installed never sees the
+    new PATH entry. Native installer first (a real executable), npm shims last.
     """
-    return shutil.which("claude")
+    home = Path.home()
+    if sys.platform == "win32":
+        cands = [home / ".local" / "bin" / "claude.exe"]
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            cands.append(Path(appdata) / "npm" / "claude.cmd")
+        return cands
+    return [
+        home / ".local" / "bin" / "claude",
+        home / ".claude" / "local" / "claude",  # legacy `claude migrate-installer`
+        Path("/opt/homebrew/bin/claude"),
+        Path("/usr/local/bin/claude"),
+        home / ".npm-global" / "bin" / "claude",
+    ]
+
+
+def find_claude_binary() -> str | None:
+    """Absolute path of the `claude` executable, or None.
+
+    PATH first (PATHEXT-aware :func:`shutil.which`, so Windows' ``claude.exe``
+    and npm's ``claude.cmd`` both count), then the installers' well-known
+    locations. Never a platform guess — the CLI ships for Windows too.
+    """
+    found = shutil.which("claude")
+    if found:
+        return found
+    for cand in _well_known_claude_locations():
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
+_NPM_SHIM_TARGET = re.compile(
+    r'"%dp0%\\?(node_modules\\@anthropic-ai\\claude-code\\cli\.js)"', re.IGNORECASE
+)
+
+
+def _claude_argv(binary: str) -> list[str]:
+    """The argv prefix that runs `claude` for this install.
+
+    A plain executable runs as-is. npm's Windows ``claude.cmd`` shim is the
+    exception: CreateProcess runs ``.cmd`` files through ``cmd.exe``, which
+    re-parses the command line — ``%``, ``&``, ``^``, ``|`` and quotes inside
+    the prompt would be interpreted as shell syntax and corrupt or break the
+    call. So the shim is unwrapped to what it does itself: ``node cli.js``.
+    Falls back to the shim when it can't be unwrapped (unknown layout, no node).
+    """
+    if not binary.lower().endswith((".cmd", ".bat")):
+        return [binary]
+    shim = Path(binary)
+    try:
+        text = shim.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return [binary]
+    m = _NPM_SHIM_TARGET.search(text)
+    if not m:
+        return [binary]
+    cli_js = shim.parent / m.group(1).replace("\\", os.sep)
+    if not cli_js.is_file():
+        return [binary]
+    node = shim.parent / "node.exe"
+    node_path = str(node) if node.is_file() else shutil.which("node")
+    if not node_path:
+        return [binary]
+    return [node_path, str(cli_js)]
 
 
 def claude_text(
@@ -143,8 +208,7 @@ def claude_text(
             "ai_mode='claude'",
             kind="missing_cli",
         )
-    cmd = [
-        binary,
+    cmd = _claude_argv(binary) + [
         "-p",
         user_prompt,
         "--model",

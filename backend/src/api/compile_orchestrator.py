@@ -221,6 +221,23 @@ async def start_compile(
                        if openai_key_set else ", then compile.")
                 ),
             }
+    if ai_mode == "claude":
+        # Pre-flight, not mid-build: without the binary every LLM call fails,
+        # so refuse up front with a typed code the UI can explain. Health
+        # reports the same probe (`claude_cli`) so the picker disables the
+        # mode before the user even gets here; this catches stale tabs,
+        # schedules and API callers.
+        from src.terrain.agents.claude_cli import find_claude_binary
+        if find_claude_binary() is None:
+            return {
+                "ok": False,
+                "code": "claude_cli_missing",
+                "reason": (
+                    "The `claude` CLI is not installed on this computer (not on the "
+                    "server's PATH). Install Claude Code and restart Mnemify, or pick "
+                    "the Claude API or OpenAI engine in Settings → Compile."
+                ),
+            }
     if ai_mode == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
         return {
             "ok": False,

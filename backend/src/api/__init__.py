@@ -319,7 +319,8 @@ def create_app() -> FastAPI:
             # on the server's PATH. A real probe, not a platform guess — the
             # CLI ships for Windows too. The compile dialog and Settings read
             # this to enable/disable the CLI mode.
-            "claude_cli": find_claude_binary() is not None,
+            "claude_cli": (claude_bin := find_claude_binary()) is not None,
+            "claude_cli_path": claude_bin,
             "paths": paths.describe(),
         }
 

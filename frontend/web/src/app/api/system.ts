@@ -20,6 +20,8 @@ export interface Health {
   /** The `claude` CLI is on the server's PATH (`ai_mode="claude"` can run).
    *  Optional so a tab talking to an older server still type-checks. */
   claude_cli?: boolean;
+  /** Where the server found it (for Settings / debugging), null when absent. */
+  claude_cli_path?: string | null;
   paths: {
     layout: string;
     home: string;
@@ -49,7 +51,7 @@ export function isClaudeCliAvailable(
 
 /** Shown wherever {@link isClaudeCliAvailable} disables the CLI mode. */
 export const CLAUDE_CLI_UNAVAILABLE_HINT =
-  "The `claude` CLI isn't installed on this computer (not on PATH) — install Claude Code, or use the Anthropic API key instead";
+  "The `claude` CLI isn't installed on this computer (the server can't find it) — install Claude Code and restart Mnemify, or use the Anthropic API key instead";
 
 export interface ServerSettings {
   /** Minutes of inactivity before the server exits. 0 = never. */
