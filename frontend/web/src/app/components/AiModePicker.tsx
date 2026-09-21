@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ClaudeModelSelectors } from "./ClaudeModelSelectors";
 import { EmbeddingKeyNotice } from "./EmbeddingKeyNotice";
-import { useCompileSettings, type ClaudeModel } from "../api/compileSettings";
+import { useCompileSettings, type ClaudeModel, type EmbeddingModel } from "../api/compileSettings";
+import { LOCAL_EMBEDDING_MODEL, OPENAI_EMBEDDING_MODEL, useLocalEmbeddings } from "../api/embeddings";
+import { findSecret, useSecrets } from "../api/secrets";
 import { CLAUDE_CLI_UNAVAILABLE_HINT, isClaudeCliAvailable, useHealth } from "../api/system";
 import type { AiMode, CompileStartPayload } from "../api/terrain";
 import { cn } from "../lib/cn";
 import { CLAUDE_MODELS, modelOptionLabel } from "../lib/modelCatalog";
+import { Segmented } from "./ui/Segmented";
 
 /**
  * The one AI-mode surface for compiles. Settings → AI & Models owns the saved
@@ -52,20 +55,43 @@ const MODE_LABEL: Record<AiMode, string> = {
 /** Modes that use the per-step Claude model split (CLI and API). */
 const CLAUDE_MODEL_MODES: ReadonlyArray<AiMode> = ["claude", "anthropic"];
 
+/** Where the embedding step runs — the compile dialog's two-way switch. The
+ *  concrete OpenAI model (3-large vs 3-small) stays a Settings choice. */
+export type EmbeddingBackend = "openai" | "local";
+
+export function embeddingBackendOf(model: EmbeddingModel): EmbeddingBackend {
+  return model === LOCAL_EMBEDDING_MODEL ? "local" : "openai";
+}
+
+/** The embedding model to send for a backend pick: the saved OpenAI model
+ *  when there is one, else the OpenAI default. Pure — unit-tested. */
+export function embeddingModelFor(backend: EmbeddingBackend, saved: EmbeddingModel): EmbeddingModel {
+  if (backend === "local") return LOCAL_EMBEDDING_MODEL;
+  return saved === LOCAL_EMBEDDING_MODEL ? OPENAI_EMBEDDING_MODEL : saved;
+}
+
+export type CompileOverridePayload = Pick<
+  CompileStartPayload,
+  "ai_mode" | "claude_extract_model" | "claude_name_model" | "embedding_model"
+>;
+
 /** Per-run build-request fields for a mode + model selection. The per-step
  *  Claude model picks apply to both Claude engines (CLI + API); they're
  *  meaningless elsewhere, so they're omitted and the server falls back to the
- *  saved defaults. Pure — unit-tested. */
+ *  saved defaults. The embedding model is omitted for local heuristics (hash
+ *  vectors, no embedder). Pure — unit-tested. */
 export function compileOverridePayload(
   aiMode: AiMode,
   extractModel: ClaudeModel,
   nameModel: ClaudeModel,
-): Pick<CompileStartPayload, "ai_mode" | "claude_extract_model" | "claude_name_model"> {
+  embeddingModel?: EmbeddingModel,
+): CompileOverridePayload {
   const usesClaudeModels = CLAUDE_MODEL_MODES.includes(aiMode);
   return {
     ai_mode: aiMode,
     claude_extract_model: usesClaudeModels ? extractModel : undefined,
     claude_name_model: usesClaudeModels ? nameModel : undefined,
+    embedding_model: aiMode === "local" ? undefined : embeddingModel,
   };
 }
 
@@ -93,15 +119,21 @@ export type CompileOverrides = {
   setExtractModel: (v: ClaudeModel) => void;
   nameModel: ClaudeModel;
   setNameModel: (v: ClaudeModel) => void;
+  /** Embedding model for this run — OpenAI text-embedding-3-* or on-device.
+   *  Seeded from the saved default; the server makes a different pick the
+   *  new default so Ask and scheduled compiles stay in the same space. */
+  embeddingModel: EmbeddingModel;
+  setEmbeddingModel: (v: EmbeddingModel) => void;
   /** Body fields for POST /api/terrain/build. Claude model picks are sent
    *  only in claude mode; omitted fields fall back to the saved defaults. */
-  payload: Pick<CompileStartPayload, "ai_mode" | "claude_extract_model" | "claude_name_model">;
+  payload: CompileOverridePayload;
 };
 
 export function useCompileOverrides(): CompileOverrides {
   const [aiMode, setAiMode] = useState<AiMode>("openai");
   const [extractModel, setExtractModel] = useState<ClaudeModel>("sonnet");
   const [nameModel, setNameModel] = useState<ClaudeModel>("opus");
+  const [embeddingModel, setEmbeddingModel] = useState<EmbeddingModel>(OPENAI_EMBEDDING_MODEL);
 
   // Seed from the saved compile defaults exactly once — a background refetch
   // must never clobber a selection the user just made.
@@ -113,6 +145,7 @@ export function useCompileOverrides(): CompileOverrides {
     setAiMode(settings.data.ai_mode);
     setExtractModel(settings.data.claude_extract_model);
     setNameModel(settings.data.claude_name_model);
+    setEmbeddingModel(settings.data.embedding_model);
   }, [settings.data]);
 
   return {
@@ -122,7 +155,9 @@ export function useCompileOverrides(): CompileOverrides {
     setExtractModel,
     nameModel,
     setNameModel,
-    payload: compileOverridePayload(aiMode, extractModel, nameModel),
+    embeddingModel,
+    setEmbeddingModel,
+    payload: compileOverridePayload(aiMode, extractModel, nameModel, embeddingModel),
   };
 }
 
@@ -141,6 +176,7 @@ export function AiModePicker({
   // config already saved as `claude` still renders its own button.
   const health = useHealth();
   const claudeCli = isClaudeCliAvailable(health.data?.platform);
+  const settings = useCompileSettings();
   return (
     <div>
       <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-2", compact && "max-w-3xl")}>
@@ -171,7 +207,14 @@ export function AiModePicker({
           );
         })}
       </div>
-      <EmbeddingKeyNotice aiMode={aiMode} />
+      {aiMode !== "local" && (
+        <EmbeddingPicker
+          value={overrides.embeddingModel}
+          onChange={overrides.setEmbeddingModel}
+          saved={settings.data?.embedding_model ?? OPENAI_EMBEDDING_MODEL}
+        />
+      )}
+      <EmbeddingKeyNotice aiMode={aiMode} embeddingModel={overrides.embeddingModel} />
       {CLAUDE_MODEL_MODES.includes(aiMode) && (
         <ClaudeModelSelectors
           extractModel={overrides.extractModel}
@@ -180,6 +223,54 @@ export function AiModePicker({
           onNameChange={overrides.setNameModel}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * "Embeddings: OpenAI | On this computer" — shown under the engine picker for
+ * every LLM engine. Before this switch existed the only way to get back to
+ * OpenAI embeddings after the on-device consent path had saved bge-small as
+ * the default was Settings; adding an OpenAI key later changed nothing here.
+ * OpenAI is unselectable (not hidden) without a key so the user sees why.
+ */
+function EmbeddingPicker({
+  value,
+  onChange,
+  saved,
+}: {
+  value: EmbeddingModel;
+  onChange: (v: EmbeddingModel) => void;
+  saved: EmbeddingModel;
+}) {
+  const secrets = useSecrets();
+  const local = useLocalEmbeddings();
+  const openaiKey = findSecret(secrets.data, "OPENAI_API_KEY")?.set === true;
+  const openaiModel = embeddingModelFor("openai", saved);
+  const downloaded = local.data?.downloaded === true;
+  const sizeMb = local.data?.size_mb ?? 67;
+  const options: ReadonlyArray<{ value: EmbeddingBackend; label: string; disabled?: boolean; title?: string }> = [
+    {
+      value: "openai",
+      label: `OpenAI (${openaiModel})`,
+      disabled: !openaiKey,
+      title: openaiKey ? undefined : "Needs an OpenAI key — add one in Settings → AI & Models",
+    },
+    {
+      value: "local",
+      label: downloaded ? "On this computer" : `On this computer (${sizeMb} MB download)`,
+    },
+  ];
+  return (
+    <div className="mt-3 max-w-3xl">
+      <span className="block font-sans text-xs text-muted mb-1.5">Embeddings</span>
+      <Segmented<EmbeddingBackend>
+        value={embeddingBackendOf(value)}
+        onValueChange={(b) => onChange(embeddingModelFor(b, saved))}
+        options={options}
+        ariaLabel="Embedding model"
+        size="sm"
+      />
     </div>
   );
 }

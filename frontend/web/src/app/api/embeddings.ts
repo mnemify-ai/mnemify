@@ -21,6 +21,9 @@ export interface LocalEmbeddings {
 /** The on-device embedding model's settings value — keep in step with the
  *  backend LOCAL_EMBEDDING_MODEL. */
 export const LOCAL_EMBEDDING_MODEL = "bge-small-en-v1.5" as const;
+/** The OpenAI embedding model a "use OpenAI" pick falls back to when the saved
+ *  default isn't an OpenAI one — keep in step with backend COMPILE_DEFAULTS. */
+export const OPENAI_EMBEDDING_MODEL = "text-embedding-3-large" as const;
 
 export const localEmbeddingsQueryKey = ["embeddings", "local"] as const;
 

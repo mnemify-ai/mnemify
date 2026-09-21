@@ -202,15 +202,24 @@ async def start_compile(
     if is_local_embedding_model(embedding_model) and ai_mode != "local":
         status = local_model_status()
         if not status["downloaded"]:
+            # Typical after "add an OpenAI key later": the consent path saved
+            # the on-device model as the default, the key arrived afterwards
+            # and the download never happened. ``openai_key_set`` lets the
+            # dialog offer "use OpenAI embeddings" as a one-click way out
+            # instead of insisting on the download.
+            openai_key_set = bool(os.getenv("OPENAI_API_KEY"))
             return {
                 "ok": False,
                 "code": "local_model_missing",
                 "local_embeddings_eligible": True,
+                "openai_key_set": openai_key_set,
                 "suggested_ai_mode": ai_mode if ai_mode in ("claude", "anthropic") else None,
                 "local_embeddings": status,
                 "reason": (
                     "The on-device embedding model is not downloaded yet. Download "
-                    "it under Settings → AI & Models (about 67 MB), then compile."
+                    "it under Settings → AI & Models (about 67 MB)"
+                    + (", or compile with OpenAI embeddings — your key is set."
+                       if openai_key_set else ", then compile.")
                 ),
             }
     if ai_mode == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
@@ -242,6 +251,18 @@ async def start_compile(
     elif ai_mode in ("claude", "anthropic"):
         extract_model = claude_extract_model or defaults["claude_extract_model"]
         name_model = claude_name_model or defaults["claude_name_model"]
+
+    # The embedding model decides which vector space the map lives in, and
+    # Ask queries + scheduled/auto compiles read the *saved* default. A per-run
+    # pick (compile dialog "Embeddings" switch) therefore becomes the default,
+    # exactly like the on-device consent path already does — otherwise the
+    # next scheduled compile would silently flip the space back.
+    if ai_mode != "local" and embedding_model != defaults["embedding_model"]:
+        try:
+            from src.api.yaml_writer import upsert_compile
+            upsert_compile({**defaults, "embedding_model": embedding_model})
+        except Exception:  # noqa: BLE001 - a failed settings write must not block the compile
+            logger.warning("could not persist embedding_model=%s as the compile default", embedding_model, exc_info=True)
 
     compile_bus.reset_buffer()
     state.status = "running"

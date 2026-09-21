@@ -2,7 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import { qk } from "./keys";
 import type { ClaudeModel, EmbeddingModel } from "./compileSettings";
-import { LOCAL_EMBEDDING_MODEL, prepareLocalEmbeddings, waitForLocalEmbeddings, type LocalEmbeddings } from "./embeddings";
+import {
+  LOCAL_EMBEDDING_MODEL,
+  OPENAI_EMBEDDING_MODEL,
+  prepareLocalEmbeddings,
+  waitForLocalEmbeddings,
+  type LocalEmbeddings,
+} from "./embeddings";
 import { useLocalEmbeddingsPrompt } from "../lib/localEmbeddingsPromptStore";
 
 // ─── Types (mirror backend src/api/routes_terrain.py + compile_orchestrator) ─
@@ -125,6 +131,9 @@ export interface CompileStartResult {
   /** True when compiling with the on-device embedder would resolve the refusal
    *  (Claude engines). False for the OpenAI engine, which needs the key anyway. */
   local_embeddings_eligible?: boolean;
+  /** With `local_model_missing`: an OpenAI key is stored, so the dialog can
+   *  offer OpenAI embeddings instead of the download. */
+  openai_key_set?: boolean;
   /** Set when the saved engine is OpenAI (keyless) but a Claude engine is
    *  usable here: the dialog offers to switch to it + on-device embeddings. */
   suggested_ai_mode?: "claude" | "anthropic" | null;
@@ -159,6 +168,11 @@ export async function startCompileWithConsent(payload: CompileStartPayload): Pro
   if (!needsLocalEmbeddingsConsent(first)) return first;
 
   const decision = await useLocalEmbeddingsPrompt.getState().ask(payload, first);
+  if (decision === "openai") {
+    // The on-device default was never downloaded but a key is set: retry
+    // with OpenAI embeddings. The server makes that the saved default.
+    return postCompileStart({ ...payload, embedding_model: OPENAI_EMBEDDING_MODEL });
+  }
   if (decision !== "local") {
     return { ok: false, dismissed: true, reason: first.reason, code: first.code };
   }

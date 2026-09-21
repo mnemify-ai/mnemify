@@ -11,11 +11,13 @@ import type { CompileStartPayload, CompileStartResult } from "../api/terrain";
  * resolves it. Resolution values:
  *   - `"local"` — download the on-device model (if needed) and retry the
  *     compile with `embedding_model: "bge-small-en-v1.5"`.
+ *   - `"openai"` — (on-device default not downloaded, OpenAI key set) retry
+ *     the compile with the OpenAI embedding model instead.
  *   - `null`   — the user dismissed; the mutation resolves `{ok:false,
  *     dismissed:true}` and callers show no error toast.
  */
 
-export type LocalEmbeddingsDecision = "local" | null;
+export type LocalEmbeddingsDecision = "local" | "openai" | null;
 
 export interface LocalEmbeddingsRequest {
   payload: CompileStartPayload;

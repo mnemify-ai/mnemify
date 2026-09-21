@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { Cpu, KeyRound } from "lucide-react";
 import { findSecret, useSecrets } from "../api/secrets";
 import { LOCAL_EMBEDDING_MODEL, useLocalEmbeddings } from "../api/embeddings";
-import { useCompileSettings } from "../api/compileSettings";
+import { useCompileSettings, type EmbeddingModel } from "../api/compileSettings";
 import type { AiMode } from "../api/terrain";
 import { cn } from "../lib/cn";
 
@@ -20,14 +20,25 @@ import { cn } from "../lib/cn";
  *    Claude.
  *  - Otherwise renders nothing.
  */
-export function EmbeddingKeyNotice({ aiMode, className }: { aiMode: AiMode; className?: string }) {
+export function EmbeddingKeyNotice({
+  aiMode,
+  embeddingModel,
+  className,
+}: {
+  aiMode: AiMode;
+  /** The embedding model this compile will use (the dialog's per-run pick).
+   *  Defaults to the saved compile setting. */
+  embeddingModel?: EmbeddingModel;
+  className?: string;
+}) {
   const secrets = useSecrets();
   const settings = useCompileSettings();
   const local = useLocalEmbeddings();
   if (!secrets.data || !settings.data) return null;
 
   const openaiKey = findSecret(secrets.data, "OPENAI_API_KEY")?.set === true;
-  const localDefault = settings.data.embedding_model === LOCAL_EMBEDDING_MODEL;
+  const effectiveModel = embeddingModel ?? settings.data.embedding_model;
+  const localDefault = effectiveModel === LOCAL_EMBEDDING_MODEL;
   const downloaded = local.data?.downloaded === true;
   const sizeMb = local.data?.size_mb ?? 67;
 
@@ -77,8 +88,8 @@ export function EmbeddingKeyNotice({ aiMode, className }: { aiMode: AiMode; clas
         <KeyRound size={14} strokeWidth={1.5} className="mt-0.5 shrink-0" aria-hidden />
         <span>
           <span className="text-ink">Your OpenAI key is used for embeddings</span> (
-          {settings.data.embedding_model}); Claude does the naming and notes. To keep the whole
-          compile off OpenAI, set <SettingsLink>Embedding model to On-device in Settings</SettingsLink>.
+          {effectiveModel}); Claude does the naming and notes. To keep the whole compile off
+          OpenAI, switch Embeddings to “On this computer”.
         </span>
       </>
     );

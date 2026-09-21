@@ -24,6 +24,12 @@ export function LocalEmbeddingsDialog() {
   // switch in the same click. Otherwise the engine is already Claude.
   const suggested = request?.refusal.suggested_ai_mode ?? null;
   const switchTo = suggested && suggested !== request?.payload.ai_mode ? suggested : null;
+  // The saved default is the on-device model, it was never downloaded, and an
+  // OpenAI key *is* stored (added after the consent path saved that default):
+  // the question is no longer "no key — run locally?" but "download, or use
+  // the key?". Offer both and say so in the heading.
+  const keyedButNoModel =
+    request?.refusal.code === "local_model_missing" && request.refusal.openai_key_set === true;
   const claudeName =
     switchTo === "claude"
       ? "your logged-in Claude Code"
@@ -38,16 +44,27 @@ export function LocalEmbeddingsDialog() {
         if (!o) settle(null);
       }}
       width="520px"
-      ariaLabel="No OpenAI key configured"
+      ariaLabel={keyedButNoModel ? "On-device embedding model not downloaded" : "No OpenAI key configured"}
     >
       <DialogClose onClose={() => settle(null)} />
       <div className="p-7 pr-12">
         <p className="font-sans text-[11px] uppercase tracking-[0.14em] text-muted mb-2">
           Before compiling
         </p>
-        <h2 className="font-serif text-xl text-ink mb-3">No OpenAI key is configured</h2>
+        <h2 className="font-serif text-xl text-ink mb-3">
+          {keyedButNoModel
+            ? "Your embedding setting is on-device, but the model isn't downloaded"
+            : "No OpenAI key is configured"}
+        </h2>
         <p className="font-sans text-sm text-muted leading-relaxed">
-          {claudeName ? (
+          {keyedButNoModel ? (
+            <>
+              Compiles are set to embed on this computer, but the model was never downloaded.
+              Your OpenAI key is set, so you can embed with OpenAI instead — that becomes the
+              default for later compiles and for Ask, and you can change it under Settings → AI
+              &amp; Models or in the compile dialog.
+            </>
+          ) : claudeName ? (
             <>
               Mnemify can build your map with Claude instead, using {claudeName}. Claude writes
               the names and notes, but it can't produce embeddings — the vectors that decide how
@@ -107,25 +124,38 @@ export function LocalEmbeddingsDialog() {
           <Button variant="ghost" size="md" onClick={() => settle(null)}>
             Not now
           </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            onClick={() => {
-              settle(null);
-              navigate("/settings/ai");
-            }}
-          >
-            Add OpenAI key
-          </Button>
-          <Button variant="primary" size="md" onClick={() => settle("local")}>
-            {switchTo
-              ? downloaded
-                ? "Use Claude + on-device model"
-                : `Use Claude + download model (${sizeMb} MB)`
-              : downloaded
-                ? "Use the on-device model"
-                : `Download & use (${sizeMb} MB)`}
-          </Button>
+          {keyedButNoModel ? (
+            <>
+              <Button variant="secondary" size="md" onClick={() => settle("local")}>
+                {`Download & use on-device (${sizeMb} MB)`}
+              </Button>
+              <Button variant="primary" size="md" onClick={() => settle("openai")}>
+                Use OpenAI embeddings
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  settle(null);
+                  navigate("/settings/ai");
+                }}
+              >
+                Add OpenAI key
+              </Button>
+              <Button variant="primary" size="md" onClick={() => settle("local")}>
+                {switchTo
+                  ? downloaded
+                    ? "Use Claude + on-device model"
+                    : `Use Claude + download model (${sizeMb} MB)`
+                  : downloaded
+                    ? "Use the on-device model"
+                    : `Download & use (${sizeMb} MB)`}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </Dialog>

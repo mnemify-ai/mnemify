@@ -170,6 +170,43 @@ def test_local_model_requested_but_not_downloaded_refuses(compile_env, monkeypat
     assert res["code"] == "local_model_missing"
 
 
+def test_local_model_missing_flags_a_set_openai_key(compile_env, monkeypatch):
+    # Key added after the consent path saved the on-device default: the
+    # refusal must say the key is there so the dialog can offer OpenAI.
+    monkeypatch.setattr(le, "is_model_downloaded", lambda: False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    res = _start(ai_mode="anthropic", embedding_model=LOCAL_EMBEDDING_MODEL)
+    assert res["code"] == "local_model_missing"
+    assert res["openai_key_set"] is True
+    assert "OpenAI" in res["reason"]
+
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert _start(ai_mode="anthropic", embedding_model=LOCAL_EMBEDDING_MODEL)["openai_key_set"] is False
+
+
+def test_per_run_embedding_pick_becomes_the_saved_default(compile_env, monkeypatch):
+    # Saved default: on-device (as the consent path leaves it). The user picks
+    # OpenAI in the compile dialog with a key set → compile starts with OpenAI
+    # and the saved default follows, so Ask + schedules stay in the same space.
+    from src.api import compile_orchestrator as orch
+    from src.api.routes_settings import _compile_settings_block
+    from src.api.yaml_writer import upsert_compile
+
+    upsert_compile({**_compile_settings_block(), "embedding_model": LOCAL_EMBEDDING_MODEL})
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    captured = {}
+
+    async def fake_run(*args, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(orch, "_run_compile", fake_run)
+    res = _start(ai_mode="anthropic", embedding_model="text-embedding-3-large")
+    assert res == {"ok": True, "ai_mode": "anthropic"}
+    assert captured["embedding_model"] == "text-embedding-3-large"
+    assert _compile_settings_block()["embedding_model"] == "text-embedding-3-large"
+    orch.reset_state()
+
+
 def test_local_model_downloaded_starts_compile_without_openai_key(compile_env, monkeypatch):
     monkeypatch.setattr(le, "is_model_downloaded", lambda: True)
     from src.api import compile_orchestrator as orch

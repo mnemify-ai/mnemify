@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { compileOverridePayload, describeCompileMode } from "./AiModePicker";
+import {
+  compileOverridePayload,
+  describeCompileMode,
+  embeddingBackendOf,
+  embeddingModelFor,
+} from "./AiModePicker";
 
 describe("compileOverridePayload", () => {
   it("sends both Claude model picks in claude mode", () => {
@@ -7,6 +12,7 @@ describe("compileOverridePayload", () => {
       ai_mode: "claude",
       claude_extract_model: "haiku",
       claude_name_model: "opus",
+      embedding_model: undefined,
     });
   });
 
@@ -16,8 +22,31 @@ describe("compileOverridePayload", () => {
         ai_mode: mode,
         claude_extract_model: undefined,
         claude_name_model: undefined,
+        embedding_model: undefined,
       });
     }
+  });
+
+  it("sends the embedding pick for every LLM engine, never for local heuristics", () => {
+    for (const mode of ["openai", "claude", "anthropic"] as const) {
+      expect(compileOverridePayload(mode, "sonnet", "opus", "text-embedding-3-large").embedding_model).toBe(
+        "text-embedding-3-large",
+      );
+    }
+    expect(compileOverridePayload("local", "sonnet", "opus", "bge-small-en-v1.5").embedding_model).toBeUndefined();
+  });
+});
+
+describe("embedding backend switch", () => {
+  it("maps models to the two-way switch", () => {
+    expect(embeddingBackendOf("bge-small-en-v1.5")).toBe("local");
+    expect(embeddingBackendOf("text-embedding-3-small")).toBe("openai");
+  });
+
+  it("keeps the saved OpenAI model when switching to OpenAI, else the default", () => {
+    expect(embeddingModelFor("openai", "text-embedding-3-small")).toBe("text-embedding-3-small");
+    expect(embeddingModelFor("openai", "bge-small-en-v1.5")).toBe("text-embedding-3-large");
+    expect(embeddingModelFor("local", "text-embedding-3-large")).toBe("bge-small-en-v1.5");
   });
 });
 
