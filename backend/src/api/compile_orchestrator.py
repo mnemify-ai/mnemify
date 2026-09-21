@@ -183,10 +183,15 @@ async def start_compile(
                 ),
             }
         if needs_openai_embeddings:
+            # ``suggested_ai_mode`` is the engine this request runs with. It
+            # may be a per-run override of a saved OpenAI default (compile
+            # dialog picker); on consent the UI persists it alongside the
+            # embedding model, so the saved defaults stay a working pair.
             return {
                 "ok": False,
                 "code": "openai_key_missing",
                 "local_embeddings_eligible": True,
+                "suggested_ai_mode": ai_mode,
                 "local_embeddings": local_model_status(),
                 "reason": (
                     "OPENAI_API_KEY not set — the Claude engines use OpenAI only for "
@@ -201,6 +206,7 @@ async def start_compile(
                 "ok": False,
                 "code": "local_model_missing",
                 "local_embeddings_eligible": True,
+                "suggested_ai_mode": ai_mode if ai_mode in ("claude", "anthropic") else None,
                 "local_embeddings": status,
                 "reason": (
                     "The on-device embedding model is not downloaded yet. Download "

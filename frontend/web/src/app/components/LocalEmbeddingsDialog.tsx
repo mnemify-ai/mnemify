@@ -22,7 +22,8 @@ export function LocalEmbeddingsDialog() {
   const sizeMb = info?.size_mb ?? 67;
   // Keyless install still on the default OpenAI engine: offer the engine
   // switch in the same click. Otherwise the engine is already Claude.
-  const switchTo = request?.refusal.suggested_ai_mode ?? null;
+  const suggested = request?.refusal.suggested_ai_mode ?? null;
+  const switchTo = suggested && suggested !== request?.payload.ai_mode ? suggested : null;
   const claudeName =
     switchTo === "claude"
       ? "your logged-in Claude Code"

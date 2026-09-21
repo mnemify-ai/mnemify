@@ -17,6 +17,7 @@ import { CLAUDE_MODELS, OPENAI_MODELS } from "../../lib/modelCatalog";
 import { cn } from "../../lib/cn";
 import { LOCAL_EMBEDDING_MODEL, prepareLocalEmbeddings, useLocalEmbeddings } from "../../api/embeddings";
 import { Pill } from "../../components/ui/Pill";
+import { EmbeddingKeyNotice } from "../../components/EmbeddingKeyNotice";
 
 const AI_MODE_OPTIONS: ReadonlyArray<{ value: AiMode; label: string }> = [
   { value: "openai", label: "OpenAI" },
@@ -128,6 +129,7 @@ export function CompileSettingsSection() {
               options={aiModeOptions}
               ariaLabel="AI engine"
             />
+            <EmbeddingKeyNotice aiMode={d.ai_mode} className="max-w-prose" />
           </Field>
 
           {/* Claude models — both Claude engines (CLI + API). Two independent

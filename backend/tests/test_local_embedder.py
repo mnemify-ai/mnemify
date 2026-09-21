@@ -131,6 +131,10 @@ def test_claude_engine_without_openai_key_offers_local_embeddings(compile_env, m
     assert res["local_embeddings_eligible"] is True
     assert res["local_embeddings"]["downloaded"] is False
     assert "Settings" in res["reason"]
+    # The engine this request runs with — persisted on consent so a per-run
+    # Claude override of a saved OpenAI default doesn't leave the defaults
+    # as "OpenAI engine + local embeddings" (which can't compile without a key).
+    assert res["suggested_ai_mode"] == "anthropic"
 
 
 def test_openai_engine_without_key_offers_claude_when_available(compile_env, monkeypatch):

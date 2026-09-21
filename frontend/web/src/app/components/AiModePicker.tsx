@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ClaudeModelSelectors } from "./ClaudeModelSelectors";
+import { EmbeddingKeyNotice } from "./EmbeddingKeyNotice";
 import { useCompileSettings, type ClaudeModel } from "../api/compileSettings";
 import { CLAUDE_CLI_UNAVAILABLE_HINT, isClaudeCliAvailable, useHealth } from "../api/system";
 import type { AiMode, CompileStartPayload } from "../api/terrain";
@@ -25,18 +26,18 @@ const MODE_OPTIONS: ReadonlyArray<{ v: AiMode; label: string; desc: string }> = 
   {
     v: "anthropic",
     label: "Claude API",
-    desc: "Anthropic API — needs ANTHROPIC_API_KEY (set in Settings → AI & Models); works anywhere, incl. Windows",
+    desc: "Anthropic API — needs ANTHROPIC_API_KEY (set in Settings → AI & Models); works anywhere, incl. Windows. Embeddings: OpenAI if a key is set, else on-device",
   },
   {
     v: "claude",
     label: "Claude CLI",
-    desc: "Your logged-in claude CLI (subscription) — local only, no API cost",
+    desc: "Your logged-in claude CLI (subscription) — no API cost. Embeddings: OpenAI if a key is set, else on-device",
   },
   {
     v: "local",
     label: "Local heuristics",
-    // The only mode that needs no key at all — every other mode still
-    // embeds through OpenAI even when its naming engine is Claude.
+    // No LLM and hash vectors — a smoke-test mode, not the keyless path
+    // (that's a Claude engine + the on-device embedding model).
     desc: "no LLM and no keys — near-instant, rougher clusters & names",
   },
 ];
@@ -170,6 +171,7 @@ export function AiModePicker({
           );
         })}
       </div>
+      <EmbeddingKeyNotice aiMode={aiMode} />
       {CLAUDE_MODEL_MODES.includes(aiMode) && (
         <ClaudeModelSelectors
           extractModel={overrides.extractModel}
