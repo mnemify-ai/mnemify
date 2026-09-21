@@ -299,6 +299,13 @@ _BATCH_SUFFIX = (
 
 
 class OpenAIFeatureExtractor(OpenAIClientMixin):
+    # Why the most recent chunk came back as ``None`` from ``extract_batch``.
+    # ``extract_batch`` swallows per-chunk failures by contract (one bad piece
+    # must not sink the batch), so the compiler reads this to say *what*
+    # failed in its "compile aborted" message instead of "last error: None".
+    # Last-writer-wins across worker threads is fine — any recent cause beats none.
+    last_skip_reason: str | None = None
+
     def __init__(
         self, model: str = "gpt-5.6-luna", products=KNOWN_PRODUCTS, *,
         cache_products=(), effort: str | None = None,
@@ -346,9 +353,10 @@ class OpenAIFeatureExtractor(OpenAIClientMixin):
             except Exception as e:  # noqa: BLE001
                 if type(e).__name__ in _FATAL_EXTRACT_ERRORS:
                     raise
+                self.last_skip_reason = _describe_llm_error(e) or type(e).__name__
                 logger.warning(
                     "terrain: single-chunk extract failed, skipping: %s",
-                    _describe_llm_error(e),
+                    self.last_skip_reason,
                 )
                 return [None]
         try:

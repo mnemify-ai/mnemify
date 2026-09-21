@@ -42,11 +42,14 @@ export function OpsPill() {
 
   const harvesting = harvest.data?.status === "running";
   const compiling = compile.data?.status === "running";
+  // A failed compile outranks "N changed" / "Compiled X ago": the face would
+  // otherwise report the *previous* good build as if nothing had happened.
+  const compileFailed = compile.data?.status === "failed";
   const pending = changes.data ? totalChanges(changes.data.summary) : 0;
   const compiledAt = report.data?.exists ? report.data.generated_at : null;
 
   // Nothing to say (fresh install, nothing running) → no pill.
-  if (!harvesting && !compiling && pending === 0 && !compiledAt) return null;
+  if (!harvesting && !compiling && !compileFailed && pending === 0 && !compiledAt) return null;
 
   let done = 0;
   let total = 0;
@@ -100,6 +103,11 @@ export function OpsPill() {
     <>
       <Dot className="relative bg-sage animate-pulse motion-reduce:animate-none" />
       <span className="relative tabular-nums">{harvestLine}</span>
+    </>
+  ) : compileFailed ? (
+    <>
+      <Dot className="relative bg-rose" />
+      <span className="relative text-rose">Compile failed</span>
     </>
   ) : pending > 0 ? (
     <>
@@ -205,7 +213,9 @@ export function OpsPill() {
                 ? `Running — ${Math.round(compilePct)}%${
                     compileEta != null ? ` · ~${formatEta(compileEta)}` : ""
                   }`
-                : compiledAt
+                : compileFailed
+                  ? "Failed — see Build → Compile"
+                  : compiledAt
                   ? `Compiled ${relativeTime(compiledAt)}`
                   : "Never compiled"
             }
@@ -218,13 +228,18 @@ export function OpsPill() {
             {compiling && compileCountLine && (
               <p className="mt-0.5 text-[11px] text-muted tabular-nums">{compileCountLine}</p>
             )}
+            {compileFailed && compile.data?.error && (
+              <p className="mt-1.5 font-mono text-[11px] text-rose break-words line-clamp-3">
+                {compile.data.error}
+              </p>
+            )}
           </StatusRow>
           <StatusRow
             label="Pending changes"
             value={pending > 0 ? `${pending.toLocaleString()} pages since last compile` : "Map is up to date"}
           />
           <div className="mt-3 flex items-center gap-2 border-t border-hair pt-3">
-            {pending > 0 && !compiling ? (
+            {(pending > 0 || compileFailed) && !compiling ? (
               <>
                 <button
                   type="button"

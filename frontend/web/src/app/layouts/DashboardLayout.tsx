@@ -4,6 +4,7 @@ import { useMapData } from "../data/MapDataProvider";
 import { TopBar } from "../components/TopBar";
 import { CommandPalette } from "../components/CommandPalette";
 import { LocalEmbeddingsDialog } from "../components/LocalEmbeddingsDialog";
+import { CompileFailedNotice } from "../components/CompileFailedNotice";
 import { AskDock } from "../../ask/AskDock";
 import { AskBubble } from "../../ask/AskBubble";
 import { useAskDockStore } from "../../ask/askDockStore";
@@ -126,6 +127,9 @@ export function DashboardLayout() {
       }
     >
       <TopBar />
+      {/* A failed compile must not vanish with the progress pill — this floats
+          the error under it on every route but the report page. */}
+      <CompileFailedNotice />
       {/* Shell row: route content + the persistent Ask dock. The dock is a
           structural column (mounted once, on every route) so an in-flight
           conversation survives navigation by construction. On Home the row is

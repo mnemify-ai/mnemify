@@ -1116,13 +1116,28 @@ class TerrainCompiler:
             for index, feats in unit["items"]:
                 _add_pending(ehash, unit["embedding_text"], [index], feats)
 
+        # The most recent human-readable failure cause. ``exc`` is None when
+        # ``extract_batch`` already swallowed a per-chunk error (its contract);
+        # the extractor keeps that reason on ``last_skip_reason``, so the
+        # abort message below can still name the cause.
+        last_error: str | None = None
+
         def _bump_failures(n: int, what: str, exc: Exception | None) -> None:
-            nonlocal failures
+            nonlocal failures, last_error
             failures += n
-            logger.warning("terrain: enrich %s failed, skipping %s piece(s): %s", what, n, exc)
+            reason = (
+                describe_compile_error(exc) if exc is not None
+                else getattr(self.extractor, "last_skip_reason", None)
+            )
+            if reason:
+                last_error = reason
+            logger.warning(
+                "terrain: enrich %s failed, skipping %s piece(s): %s", what, n, reason or exc
+            )
             _p({
                 "type": "log", "level": "error", "stage": "enrich",
-                "msg": f"Skipped {n} piece(s) after a hiccup", "ts": _now_ms(),
+                "msg": f"Skipped {n} piece(s)" + (f" — {reason[:200]}" if reason else " after a hiccup"),
+                "ts": _now_ms(),
             })
             # Advance the relevant phase counter so a skipped piece doesn't
             # leave the bar permanently short of its total.
@@ -1135,7 +1150,8 @@ class TerrainCompiler:
                 # broken, and a compile built from the survivors would be junk.
                 raise RuntimeError(
                     f"AI chunk analysis failed for {failures}/{total} pieces "
-                    f"(last error: {exc}) — compile aborted. Fix the AI engine "
+                    f"(last error: {last_error or 'no detail captured — see the server log'}) "
+                    "— compile aborted. Fix the AI engine "
                     "and recompile, or switch the AI engine to Local in "
                     "Settings → AI & Models for a heuristic-only build."
                 ) from exc
