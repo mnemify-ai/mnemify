@@ -1,17 +1,13 @@
 import { Link } from "react-router-dom";
 
 /**
- * Mnemify wordmark + mark.
+ * Mnemify wordmark + logo.
  *
- * The mark is a pointy-top hexagon outline with a smaller filled inner hex
- * — the "synapse core" idea. Pairs with the serif italic wordmark. The mark
- * sits on a baseline-aligned grid with the wordmark so the two read as one
- * unit at any text size.
- *
- * Hover: the inner hex scales up slightly, and a third concentric outline
- * fades in — like the synapse firing. Honors prefers-reduced-motion via the
- * global `*:transition-duration: 0.001ms` rule + `motion-reduce:animate-none`
- * on the animated ring.
+ * The logo is the isometric "M" from `assets/icons/mnemify-mark-1024.png`
+ * (a trimmed 128px copy lives in `public/mnemify-mark.png` — the 1024px
+ * original is far too heavy for a 28px slot). It sits baseline-aligned with
+ * the serif italic wordmark so the two read as one unit at any text size.
+ * Hover nudges the logo up a touch, like the old hex "firing".
  */
 export function BrandMark() {
   return (
@@ -20,7 +16,14 @@ export function BrandMark() {
       className="flex items-center gap-2.5 group"
       aria-label="Mnemify home"
     >
-      <MnemifyMark className="h-7 w-7 shrink-0" />
+      <img
+        src="/mnemify-mark.png"
+        alt=""
+        width={28}
+        height={28}
+        draggable={false}
+        className="h-7 w-7 shrink-0 select-none transition-transform duration-base ease-out group-hover:-translate-y-px"
+      />
       <span className="font-serif italic text-[2.25rem] tracking-tight text-ink leading-none translate-y-[2px]">
         Mnemify
       </span>
@@ -29,8 +32,8 @@ export function BrandMark() {
 }
 
 /**
- * The mark only. Use this anywhere we need just the hex (favicons,
- * preview cards, future onboarding) without the wordmark.
+ * The original hex mark, kept for places that want a vector glyph (empty
+ * states, preview cards) — the TopBar now shows the PNG logo instead.
  *
  * Drawn as a pointy-top regular hexagon in a 32×32 viewbox. The outer hex
  * is an outline; the inner hex is filled magenta at 40% scale.

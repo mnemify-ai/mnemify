@@ -169,6 +169,39 @@ def test_claude_text_resolves_binary_via_which(monkeypatch):
     assert seen["cmd"][0] == r"C:\Users\me\.local\bin\claude.exe"
 
 
+def test_claude_text_keeps_prompts_off_the_command_line(monkeypatch, tmp_path):
+    """User prompt over stdin, system prompt via a file, UTF-8 both ways.
+    argv is capped at 32K on Windows and re-parsed by cmd.exe behind an npm
+    shim — chunks arrived empty ("I don't see a message from you yet")."""
+    import subprocess
+
+    from src.terrain.agents import claude_cli
+
+    seen: dict = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"], seen["kw"] = cmd, kw
+        return subprocess.CompletedProcess(cmd, 0, stdout='{"result": "ok"}', stderr="")
+
+    monkeypatch.setattr(claude_cli, "find_claude_binary", lambda: "/usr/bin/claude")
+    monkeypatch.setattr(claude_cli.subprocess, "run", fake_run)
+    monkeypatch.setattr(claude_cli.tempfile, "gettempdir", lambda: str(tmp_path))
+
+    prompt = 'chunk with "quotes", 100% & ^carets — and 日本語'
+    system = "You are a % strict \"JSON\" extractor"
+    assert claude_cli.claude_text(prompt, system=system) == "ok"
+
+    cmd, kw = seen["cmd"], seen["kw"]
+    assert kw["input"] == prompt
+    assert kw["encoding"] == "utf-8"
+    assert "-p" in cmd and prompt not in cmd and system not in cmd
+    sys_file = cmd[cmd.index("--system-prompt-file") + 1]
+    assert open(sys_file, encoding="utf-8").read() == system
+    # Same system prompt → same file, written once (hundreds of calls per compile).
+    assert claude_cli._system_prompt_file(system) == sys_file
+    assert claude_cli._system_prompt_file(system + "x") != sys_file
+
+
 def test_find_claude_binary_falls_back_to_installer_locations(monkeypatch, tmp_path):
     """A server started from a desktop icon (minimal env) or before the CLI
     was installed has a stale PATH — the installers' known locations still count."""

@@ -20,6 +20,7 @@ multi-tenant path. Production stays on BYOK (see ``ask_providers``).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -183,6 +184,23 @@ def _claude_argv(binary: str) -> list[str]:
     return [node_path, str(cli_js)]
 
 
+def _system_prompt_file(system: str) -> str:
+    """Path of a temp file holding ``system``, for ``--system-prompt-file``.
+
+    Content-addressed and written once: a compile issues hundreds of calls
+    with the same handful of system prompts, so this is a hash + stat per
+    call, not a write. Written via rename so a parallel worker never reads a
+    half-written file.
+    """
+    digest = hashlib.sha1(system.encode("utf-8")).hexdigest()[:16]
+    path = Path(tempfile.gettempdir()) / f"mnemify-claude-system-{digest}.txt"
+    if not path.is_file():
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(system, encoding="utf-8")
+        os.replace(tmp, path)
+    return str(path)
+
+
 def claude_text(
     user_prompt: str,
     *,
@@ -208,9 +226,16 @@ def claude_text(
             "ai_mode='claude'",
             kind="missing_cli",
         )
+    # The prompts deliberately stay OFF the command line. The user prompt is a
+    # chunk of arbitrary document text and goes over stdin (`-p` with no
+    # positional reads it); the system prompt goes through a file. On Windows
+    # argv is the wrong place for either: CreateProcess caps the command line
+    # at 32K characters, and an npm `claude.cmd` shim re-parses it through
+    # cmd.exe, where `"`, `%`, `&` and `^` in the text are shell syntax. The
+    # symptom was chunks arriving *empty* — Claude answering "I don't see a
+    # message from you yet" — and the compile aborting on the skips.
     cmd = _claude_argv(binary) + [
         "-p",
-        user_prompt,
         "--model",
         model,
         # Drop user/project/local setting sources so no CLAUDE.md, hooks, or
@@ -223,18 +248,30 @@ def claude_text(
     if system:
         # Override (not append) the default Claude Code agent system prompt so
         # the model behaves as a pure completion function with our instructions.
-        cmd += ["--system-prompt", system]
+        cmd += ["--system-prompt-file", _system_prompt_file(system)]
     if effort:
         cmd += ["--effort", str(effort)]
+
+    run_kwargs: dict = {}
+    if sys.platform == "win32":
+        # The server may run windowless (launcher shortcut); without this every
+        # `claude` call would flash a console window.
+        run_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
     try:
         proc = subprocess.run(
             cmd,
+            input=user_prompt,
             capture_output=True,
-            text=True,
+            # Explicit UTF-8 both ways: Windows' locale default (cp1252) can't
+            # encode most non-Latin document text and mangles Claude's output
+            # (the "â€”" dashes seen in error reports).
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             # Neutral cwd: avoids loading the project's CLAUDE.md / .claude config.
             cwd=tempfile.gettempdir(),
+            **run_kwargs,
         )
     except FileNotFoundError as e:
         raise ClaudeCLIUnavailableError(
