@@ -237,3 +237,20 @@ def test_embed_batch_preserves_order_even_if_api_reorders():
 def test_embed_batch_empty_returns_empty():
     client = OpenAIEmbeddingClient(model="stub")
     assert client.embed_batch([]) == []
+
+
+def test_single_chunk_failure_records_the_reason_for_the_compiler():
+    """A per-chunk ``None`` is silent by contract, so the *why* has to survive
+    somewhere the compiler can read it — otherwise the abort message says
+    "last error: None" and the user has nothing to fix."""
+    class _Boom:
+        class responses:  # noqa: N801
+            @staticmethod
+            def parse(**_kw):
+                raise RuntimeError("model returned malformed JSON")
+
+    ex = OpenAIFeatureExtractor(model="stub")
+    ex._client = lambda: _Boom()  # type: ignore[method-assign]
+    assert ex.last_skip_reason is None
+    assert ex.extract_batch([_chunk(0)]) == [None]
+    assert "malformed JSON" in (ex.last_skip_reason or "")

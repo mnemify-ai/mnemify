@@ -324,6 +324,9 @@ def describe_compile_error(exc: BaseException) -> str:
         return f"AI engine authentication failed — fix the login/API key, then resume. ({base[:220]})"
     if kind == "missing_cli":
         return f"Claude CLI not found — install it or switch the AI engine in Settings. ({base[:220]})"
+    if kind == "transport":
+        # Already a full, actionable sentence from claude_cli.self_test.
+        return base
     return base
 
 
@@ -517,6 +520,8 @@ class TerrainCompiler:
         # on-device bge-small (no key; see utils/local_embedder.py).
         if embedder is None and ai_mode != "local":
             embedder = _make_embedder(embedding_model)
+        # Set True only by the claude branch below (real CLI-backed extractor).
+        self._claude_transport_check = False
         if ai_mode == "openai":
             openai_model = llm_model or "gpt-5.6-luna"
             self.extractor = extractor or OpenAIFeatureExtractor(
@@ -560,6 +565,9 @@ class TerrainCompiler:
             self.extractor = extractor or ClaudeFeatureExtractor(
                 model=extractor_model, effort=self.extract_effort
             )
+            # Only a real CLI-backed extractor gets the startup transport
+            # check; tests inject fakes and must not shell out.
+            self._claude_transport_check = extractor is None
             self.embedder = embedder
             self.namer = namer or ClaudeClusterNamer(
                 self.store, model=namer_model, effort=self.name_effort
@@ -615,6 +623,23 @@ class TerrainCompiler:
             }
         )
         try:
+            if self._claude_transport_check:
+                # Say which `claude` this build talks to and which Mnemify
+                # build is running, then prove the transport with one call —
+                # a broken one otherwise shows up as a quarter of the chunks
+                # "failing" minutes later with no cause attached.
+                from src import build_commit
+                from src.terrain.agents import claude_cli
+
+                t = claude_cli.describe_transport() or {}
+                _p_log(
+                    _p, "load",
+                    f"Claude CLI: {t.get('binary', 'not found')} — {t.get('via', '')} · "
+                    f"Mnemify build {build_commit() or 'unknown'}",
+                )
+                claude_cli.self_test(model=getattr(self.extractor, "model", DEFAULT_CLAUDE_MODEL))
+                _p_log(_p, "load", "Claude CLI transport check passed")
+
             logger.info("terrain: loading harvested documents")
             documents = TerrainReader(self.manifest_path).load(source=source)
             logger.info("terrain: loaded %s documents", len(documents))
@@ -1116,13 +1141,28 @@ class TerrainCompiler:
             for index, feats in unit["items"]:
                 _add_pending(ehash, unit["embedding_text"], [index], feats)
 
+        # The most recent human-readable failure cause. ``exc`` is None when
+        # ``extract_batch`` already swallowed a per-chunk error (its contract);
+        # the extractor keeps that reason on ``last_skip_reason``, so the
+        # abort message below can still name the cause.
+        last_error: str | None = None
+
         def _bump_failures(n: int, what: str, exc: Exception | None) -> None:
-            nonlocal failures
+            nonlocal failures, last_error
             failures += n
-            logger.warning("terrain: enrich %s failed, skipping %s piece(s): %s", what, n, exc)
+            reason = (
+                describe_compile_error(exc) if exc is not None
+                else getattr(self.extractor, "last_skip_reason", None)
+            )
+            if reason:
+                last_error = reason
+            logger.warning(
+                "terrain: enrich %s failed, skipping %s piece(s): %s", what, n, reason or exc
+            )
             _p({
                 "type": "log", "level": "error", "stage": "enrich",
-                "msg": f"Skipped {n} piece(s) after a hiccup", "ts": _now_ms(),
+                "msg": f"Skipped {n} piece(s)" + (f" — {reason[:200]}" if reason else " after a hiccup"),
+                "ts": _now_ms(),
             })
             # Advance the relevant phase counter so a skipped piece doesn't
             # leave the bar permanently short of its total.
@@ -1135,7 +1175,8 @@ class TerrainCompiler:
                 # broken, and a compile built from the survivors would be junk.
                 raise RuntimeError(
                     f"AI chunk analysis failed for {failures}/{total} pieces "
-                    f"(last error: {exc}) — compile aborted. Fix the AI engine "
+                    f"(last error: {last_error or 'no detail captured — see the server log'}) "
+                    "— compile aborted. Fix the AI engine "
                     "and recompile, or switch the AI engine to Local in "
                     "Settings → AI & Models for a heuristic-only build."
                 ) from exc

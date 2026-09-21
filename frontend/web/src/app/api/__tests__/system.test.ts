@@ -2,24 +2,20 @@ import { describe, expect, it } from "vitest";
 import { isClaudeCliAvailable, isShuttingDown } from "../system";
 
 describe("isClaudeCliAvailable", () => {
-  it("is false on every spelling of Windows", () => {
-    for (const p of ["win32", "Win32", "windows", "WIN64"]) {
-      expect(isClaudeCliAvailable(p)).toBe(false);
-    }
+  it("is false when the server found no claude binary on its PATH", () => {
+    expect(isClaudeCliAvailable({ claude_cli: false })).toBe(false);
   });
 
-  it("is true where the claude CLI ships", () => {
-    expect(isClaudeCliAvailable("darwin")).toBe(true);
-    expect(isClaudeCliAvailable("linux")).toBe(true);
-    expect(isClaudeCliAvailable("freebsd13")).toBe(true);
+  it("is true when the server found the binary — on any OS", () => {
+    expect(isClaudeCliAvailable({ claude_cli: true })).toBe(true);
   });
 
-  it("shows everything while the platform is still unknown", () => {
-    // /api/health hasn't answered yet — hiding an option from a Mac user for
-    // a beat is worse than showing one Windows user a mode for a beat.
+  it("shows everything while health is still unknown or from an older server", () => {
+    // /api/health hasn't answered yet — hiding an option for a beat is worse
+    // than showing a mode that then fails with a clear "not installed" error.
     expect(isClaudeCliAvailable(undefined)).toBe(true);
     expect(isClaudeCliAvailable(null)).toBe(true);
-    expect(isClaudeCliAvailable("")).toBe(true);
+    expect(isClaudeCliAvailable({})).toBe(true);
   });
 });
 

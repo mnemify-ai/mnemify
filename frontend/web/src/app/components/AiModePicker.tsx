@@ -29,7 +29,7 @@ const MODE_OPTIONS: ReadonlyArray<{ v: AiMode; label: string; desc: string }> = 
   {
     v: "anthropic",
     label: "Claude API",
-    desc: "Anthropic API — needs ANTHROPIC_API_KEY (set in Settings → AI & Models); works anywhere, incl. Windows. Embeddings: OpenAI if a key is set, else on-device",
+    desc: "Anthropic API — needs ANTHROPIC_API_KEY (set in Settings → AI & Models); no local install needed. Embeddings: OpenAI if a key is set, else on-device",
   },
   {
     v: "claude",
@@ -171,11 +171,12 @@ export function AiModePicker({
   compact?: boolean;
 }) {
   const { aiMode, setAiMode } = overrides;
-  // The claude CLI is macOS/Linux only. Disabled rather than hidden so a
-  // Windows user sees *why* the mode they read about isn't there — and so a
-  // config already saved as `claude` still renders its own button.
+  // The claude CLI mode needs the binary on the server's PATH (health probes
+  // for it). Disabled rather than hidden so the user sees *why* the mode they
+  // read about isn't there — and so a config already saved as `claude` still
+  // renders its own button.
   const health = useHealth();
-  const claudeCli = isClaudeCliAvailable(health.data?.platform);
+  const claudeCli = isClaudeCliAvailable(health.data);
   const settings = useCompileSettings();
   return (
     <div>

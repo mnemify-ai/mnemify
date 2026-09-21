@@ -85,12 +85,11 @@ def snapshot() -> dict[str, Any]:
 
 def _suggest_claude_engine() -> str | None:
     """Which Claude engine could replace a keyless OpenAI engine right now:
-    ``"claude"`` (subscription CLI on PATH, not Windows), ``"anthropic"``
-    (ANTHROPIC_API_KEY set), or None."""
-    import shutil
-    import sys
+    ``"claude"`` (subscription CLI on PATH — any OS, the CLI ships native
+    Windows builds too), ``"anthropic"`` (ANTHROPIC_API_KEY set), or None."""
+    from src.terrain.agents.claude_cli import find_claude_binary
 
-    if not sys.platform.startswith("win") and shutil.which("claude"):
+    if find_claude_binary():
         return "claude"
     if os.getenv("ANTHROPIC_API_KEY"):
         return "anthropic"
@@ -220,6 +219,23 @@ async def start_compile(
                     "it under Settings → AI & Models (about 67 MB)"
                     + (", or compile with OpenAI embeddings — your key is set."
                        if openai_key_set else ", then compile.")
+                ),
+            }
+    if ai_mode == "claude":
+        # Pre-flight, not mid-build: without the binary every LLM call fails,
+        # so refuse up front with a typed code the UI can explain. Health
+        # reports the same probe (`claude_cli`) so the picker disables the
+        # mode before the user even gets here; this catches stale tabs,
+        # schedules and API callers.
+        from src.terrain.agents.claude_cli import find_claude_binary
+        if find_claude_binary() is None:
+            return {
+                "ok": False,
+                "code": "claude_cli_missing",
+                "reason": (
+                    "The `claude` CLI is not installed on this computer (not on the "
+                    "server's PATH). Install Claude Code and restart Mnemify, or pick "
+                    "the Claude API or OpenAI engine in Settings → Compile."
                 ),
             }
     if ai_mode == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):

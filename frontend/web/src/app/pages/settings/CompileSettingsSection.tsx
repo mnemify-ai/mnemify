@@ -56,10 +56,10 @@ const inputCls =
 export function CompileSettingsSection() {
   const { data, isLoading } = useCompileSettings();
   const update = useUpdateCompileSettings();
-  // The claude CLI is macOS/Linux only — on Windows the mode stays visible but
-  // unselectable, so the hint below can say what to use instead.
+  // The claude CLI mode needs the binary on the server's PATH. Without it the
+  // mode stays visible but unselectable, so the hint can say what to do.
   const health = useHealth();
-  const claudeCli = isClaudeCliAvailable(health.data?.platform);
+  const claudeCli = isClaudeCliAvailable(health.data);
   const aiModeOptions = claudeCli
     ? AI_MODE_OPTIONS
     : AI_MODE_OPTIONS.map((o) =>

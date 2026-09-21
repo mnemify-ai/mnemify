@@ -126,8 +126,9 @@ export interface CompileStartResult {
   ai_mode?: AiMode;
   reason?: string;
   /** Typed refusal. `openai_key_missing`: no OPENAI_API_KEY for embeddings;
-   *  `local_model_missing`: the on-device model is selected but not downloaded. */
-  code?: "openai_key_missing" | "local_model_missing";
+   *  `local_model_missing`: the on-device model is selected but not downloaded;
+   *  `claude_cli_missing`: CLI engine picked but no `claude` binary on the server. */
+  code?: "openai_key_missing" | "local_model_missing" | "claude_cli_missing";
   /** True when compiling with the on-device embedder would resolve the refusal
    *  (Claude engines). False for the OpenAI engine, which needs the key anyway. */
   local_embeddings_eligible?: boolean;

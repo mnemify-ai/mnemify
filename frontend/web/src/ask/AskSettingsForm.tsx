@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-import { apiFetch } from "../app/api/client";
 import { isAskProviderKeySet, useSecrets } from "../app/api/secrets";
 import { cn } from "../app/lib/cn";
 import { PROVIDER_LABELS } from "./ModelQuickSwitch";
@@ -7,10 +5,7 @@ import { MODEL_CATALOG } from "./models";
 import { ModelSelect } from "../app/components/ModelSelect";
 import { useAskSettingsStore } from "./askSettingsStore";
 import type { AskEngine } from "./types";
-
-/** Backend-side Claude Code detection (GET /api/ask/claude-status).
- *  `authenticated` is null when login state can't be read from disk. */
-type ClaudeStatus = { installed: boolean; authenticated: boolean | null };
+import { isClaudeReady, useClaudeStatus } from "./useClaudeStatus";
 
 /**
  * The Ask engine/model/key form — the full settings surface for chat, shown
@@ -31,20 +26,11 @@ type ClaudeStatus = { installed: boolean; authenticated: boolean | null };
 export function AskSettingsForm() {
   const settings = useAskSettingsStore((s) => s.settings);
   const onChange = useAskSettingsStore((s) => s.setSettings);
-  const [claudeStatus, setClaudeStatus] = useState<ClaudeStatus | null>(null);
+  // Shared with the composer pill so both report the same Claude Code state.
+  const claudeStatus = useClaudeStatus();
   const secrets = useSecrets();
   const serverKeySet = isAskProviderKeySet(secrets.data, settings.provider);
-
-  // Probe for a local Claude Code install once, so the Claude option can say
-  // whether the API key is actually needed.
-  useEffect(() => {
-    apiFetch<ClaudeStatus>("/api/ask/claude-status")
-      .then(setClaudeStatus)
-      .catch(() => setClaudeStatus(null));
-  }, []);
-
-  const claudeReady =
-    claudeStatus?.installed === true && claudeStatus.authenticated !== false;
+  const claudeReady = isClaudeReady(claudeStatus);
 
   const setProvider = (provider: AskEngine) => {
     onChange({ ...settings, provider, model: MODEL_CATALOG[provider][0].id });
@@ -85,7 +71,7 @@ export function AskSettingsForm() {
               aria-hidden
               className={cn(
                 "mt-[3px] h-2 w-2 shrink-0 rounded-full",
-                claudeStatus === null
+                claudeStatus === undefined
                   ? "animate-pulse bg-muted/50"
                   : claudeReady
                     ? "bg-success"
@@ -93,7 +79,7 @@ export function AskSettingsForm() {
               )}
             />
             <p className="text-[11px] leading-relaxed text-muted">
-              {claudeStatus === null ? (
+              {claudeStatus === undefined ? (
                 "Checking for Claude Code on this machine…"
               ) : claudeReady ? (
                 <>
@@ -102,7 +88,7 @@ export function AskSettingsForm() {
                   login. Adding a key below is optional and bills your
                   Anthropic API account instead.
                 </>
-              ) : claudeStatus.installed ? (
+              ) : claudeStatus?.installed ? (
                 <>
                   <span className="font-medium text-ink">
                     Claude Code is installed but not logged in.
@@ -149,7 +135,7 @@ export function AskSettingsForm() {
       <label className="block max-w-md space-y-1">
         <span className="text-xs uppercase tracking-wide text-muted">
           {settings.provider === "claude"
-            ? claudeStatus !== null && !claudeReady
+            ? claudeStatus !== undefined && !claudeReady
               ? "Anthropic API key"
               : "Anthropic API key (optional)"
             : serverKeySet

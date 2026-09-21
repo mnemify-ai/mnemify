@@ -2,9 +2,13 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Check, ChevronDown, KeyRound } from "lucide-react";
 import { Popover } from "../app/components/ui/Popover";
+import { Tooltip } from "../app/components/ui/Tooltip";
+import { useSecrets } from "../app/api/secrets";
 import { cn } from "../app/lib/cn";
+import { describeAuthRoute, resolveAuthRoute, type AuthRouteTone } from "./authRoute";
 import { MODEL_CATALOG, findModel, modelLabel } from "./models";
 import type { AskEngine, AskSettings } from "./types";
+import { useClaudeStatus } from "./useClaudeStatus";
 
 export const PROVIDER_LABELS: Record<AskEngine, string> = {
   claude: "Claude",
@@ -22,9 +26,23 @@ type Props = {
  * status live in the full settings surface, not here. Rows come from the
  * shared model catalog; a custom id typed in Settings shows up as its own
  * (active) row so the pill never lies about what's selected.
+ *
+ * The pill also names how the next request authenticates — "Claude Code"
+ * (the local CLI login) vs "API key" — because the Claude engine can mean
+ * either and the difference is who gets billed. See `authRoute.ts`.
  */
 export function ModelQuickSwitch({ settings, onChange }: Props) {
   const [open, setOpen] = useState(false);
+  const claudeStatus = useClaudeStatus();
+  const secrets = useSecrets();
+  const route = resolveAuthRoute(settings, secrets.data);
+  const auth = describeAuthRoute(route, claudeStatus);
+  // What the *Claude* section would use if picked — the CLI unless a browser
+  // key is set — so the header can say so before the user switches.
+  const claudeAuth = describeAuthRoute(
+    settings.anthropicKey.trim() ? "browserKey" : "cli",
+    claudeStatus,
+  );
 
   const pick = (provider: AskEngine, model: string) => {
     onChange({ ...settings, provider, model });
@@ -44,9 +62,16 @@ export function ModelQuickSwitch({ settings, onChange }: Props) {
         <button
           type="button"
           className="flex items-center gap-1 rounded-full border border-hair bg-bone/60 px-2.5 py-1 font-sans text-[11px] text-muted transition-colors hover:text-ink"
-          aria-label={`Model: ${PROVIDER_LABELS[settings.provider]} ${label}. Change model`}
+          aria-label={`Model: ${PROVIDER_LABELS[settings.provider]} ${label}, via ${auth.label}. Change model`}
         >
           {label}
+          <span aria-hidden className="text-muted/60">·</span>
+          <Tooltip content={auth.detail} side="top">
+            <span className="flex items-center gap-1">
+              <StatusDot tone={auth.tone} />
+              {auth.label}
+            </span>
+          </Tooltip>
           <ChevronDown size={11} strokeWidth={1.5} aria-hidden />
         </button>
       }
@@ -54,8 +79,14 @@ export function ModelQuickSwitch({ settings, onChange }: Props) {
       <div className="w-64 py-1 font-sans text-sm">
         {(["claude", "openai"] as const).map((provider) => (
           <div key={provider}>
-            <div className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wide text-muted">
-              {PROVIDER_LABELS[provider]}
+            <div className="flex items-center justify-between gap-2 px-3 pb-1 pt-2 text-[10px] uppercase tracking-wide text-muted">
+              <span>{PROVIDER_LABELS[provider]}</span>
+              {provider === "claude" ? (
+                <span className="flex items-center gap-1 normal-case tracking-normal" title={claudeAuth.detail}>
+                  <StatusDot tone={claudeAuth.tone} />
+                  via {claudeAuth.label}
+                </span>
+              ) : null}
             </div>
             {MODEL_CATALOG[provider].map((m) => {
               const active = settings.provider === provider && settings.model === m.id;
@@ -91,6 +122,20 @@ export function ModelQuickSwitch({ settings, onChange }: Props) {
         </div>
       </div>
     </Popover>
+  );
+}
+
+function StatusDot({ tone }: { tone: AuthRouteTone }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+        tone === "ok" && "bg-success",
+        tone === "warn" && "bg-warning",
+        tone === "pending" && "animate-pulse bg-muted/50",
+      )}
+    />
   );
 }
 

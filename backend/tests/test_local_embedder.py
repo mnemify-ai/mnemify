@@ -140,6 +140,7 @@ def test_claude_engine_without_openai_key_offers_local_embeddings(compile_env, m
 def test_openai_engine_without_key_offers_claude_when_available(compile_env, monkeypatch):
     # compile_env sets ANTHROPIC_API_KEY; pretend no `claude` CLI on PATH.
     monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("src.terrain.agents.claude_cli._well_known_claude_locations", lambda: [])
     monkeypatch.setattr(le, "is_model_downloaded", lambda: False)
     res = _start(ai_mode="openai")
     assert res["ok"] is False
@@ -156,6 +157,7 @@ def test_openai_engine_without_key_offers_claude_when_available(compile_env, mon
 def test_openai_engine_without_key_or_claude_is_not_eligible(compile_env, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("src.terrain.agents.claude_cli._well_known_claude_locations", lambda: [])
     res = _start(ai_mode="openai")
     assert res["ok"] is False
     assert res["code"] == "openai_key_missing"
