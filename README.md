@@ -37,6 +37,29 @@ Mnemify is **AI context infrastructure**: a portable, persistent knowledge graph
 
 Everything Mnemify generates lives in one folder on your machine, outside this repo. Nothing is written back to your sources.
 
+## Features
+
+- **Three connectors** — Notion, Confluence, and Obsidian.
+- **3D knowledge map** — an emergent hex terrain where regions and peaks come from embedding similarity.
+- **Chat over your map** — grounded answers that start from regions, topics, and entities, and cite the exact source passages they used.
+- **Attention signals** — **todos**, **risks**, **decisions**, **open questions,** and **owners** pulled from your content, rolled into an urgency score per region and shown in the **Burning** overlay.
+- **Action items** — every **open todo** across all sources are clustered into one list, bucketed by deadline against today's date.
+- **What changed** — documents harvested or deleted since your last compile, so you always know what the map doesn't know yet.
+- **Documents browser** — search and filter everything harvested, open the clean-markdown version, and view attachments in place.
+- **Schedules** — **daily updates on your documents**, so your map stays fresh without you remembering to run anything.
+- **Bring your own model** — OpenAI, a Claude subscription through the `claude` CLI, or a fully offline local mode; embeddings from OpenAI or an on-device model.
+- **Local-first** — all data and keys stay in one folder on your machine; **nothing is ever written back to your sources**.
+- **Data retention** — auto-purge of old raw documents and a type-to-confirm full reset, both under **Settings → Data**.
+- **Audit log** — a paginated record of every harvest event, so you can see exactly what was fetched and when.
+- **Runs itself** — starts from a desktop icon, stops after 30 idle minutes, and updates by re-running setup.
+
+## Coming next
+
+- [ ] **You decide the regions** — **pin**, **rename**, **split**, or **merge** regions and have the compiler respect *your* structure, not only HDBSCAN's.
+- [ ] **Real World map** — project your knowledge onto **cities**, **districts**, and **streets**, and explore documents **street-view style**.
+- [ ] **Sync between sources** — push selected information from one source to another, e.g. a **Notion** decision into a **Confluence** page.
+- [ ] **More connectors** — **Jira**, **Slack**, **Gmail**, and **Google Meet Notes** are built and tested; they ship once the wizards are polished.
+
 ---
 
 ## Install
