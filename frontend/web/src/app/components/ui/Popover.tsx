@@ -40,6 +40,10 @@ export function Popover({
           sideOffset={sideOffset}
           className={cn(
             "z-50 outline-none",
+            // Radix reports how much room is left between the anchor and the
+            // viewport edge; cap at that and scroll inside so a tall menu (the
+            // 14-row model picker) never runs off a short window.
+            "max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain",
             "bg-cream border border-hair rounded-xl shadow-lg",
             "p-2 font-sans text-sm text-ink",
             "data-[state=open]:animate-fade-in",
