@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import { qk } from "./keys";
-import type { ClaudeModel } from "./compileSettings";
+import type { ClaudeModel, EmbeddingModel } from "./compileSettings";
+import {
+  LOCAL_EMBEDDING_MODEL,
+  OPENAI_EMBEDDING_MODEL,
+  prepareLocalEmbeddings,
+  waitForLocalEmbeddings,
+  type LocalEmbeddings,
+} from "./embeddings";
+import { useLocalEmbeddingsPrompt } from "../lib/localEmbeddingsPromptStore";
 
 // ─── Types (mirror backend src/api/routes_terrain.py + compile_orchestrator) ─
 
@@ -109,7 +117,7 @@ export interface CompileStartPayload {
   claude_extract_model?: ClaudeModel | null;
   claude_name_model?: ClaudeModel | null;
   openai_model?: string | null;
-  embedding_model?: "text-embedding-3-small" | "text-embedding-3-large" | null;
+  embedding_model?: EmbeddingModel | null;
   llm_concurrency?: number | null;
 }
 
@@ -117,6 +125,75 @@ export interface CompileStartResult {
   ok: boolean;
   ai_mode?: AiMode;
   reason?: string;
+  /** Typed refusal. `openai_key_missing`: no OPENAI_API_KEY for embeddings;
+   *  `local_model_missing`: the on-device model is selected but not downloaded. */
+  code?: "openai_key_missing" | "local_model_missing";
+  /** True when compiling with the on-device embedder would resolve the refusal
+   *  (Claude engines). False for the OpenAI engine, which needs the key anyway. */
+  local_embeddings_eligible?: boolean;
+  /** With `local_model_missing`: an OpenAI key is stored, so the dialog can
+   *  offer OpenAI embeddings instead of the download. */
+  openai_key_set?: boolean;
+  /** Set when the saved engine is OpenAI (keyless) but a Claude engine is
+   *  usable here: the dialog offers to switch to it + on-device embeddings. */
+  suggested_ai_mode?: "claude" | "anthropic" | null;
+  local_embeddings?: LocalEmbeddings | null;
+  /** Set client-side when the user closed the local-embeddings dialog without
+   *  choosing: not an error, so callers skip their error toast. */
+  dismissed?: boolean;
+}
+
+/** Whether a refusal is one the local-embeddings consent dialog can resolve. */
+export function needsLocalEmbeddingsConsent(res: CompileStartResult): boolean {
+  return (
+    !res.ok &&
+    res.local_embeddings_eligible === true &&
+    (res.code === "openai_key_missing" || res.code === "local_model_missing")
+  );
+}
+
+async function postCompileStart(payload: CompileStartPayload): Promise<CompileStartResult> {
+  return apiFetch<CompileStartResult>("/api/terrain/build", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Start a compile; if the server refuses for want of an OpenAI key, ask the
+ *  user (LocalEmbeddingsDialog) whether to run embeddings on this machine,
+ *  download the model on a yes, and retry with it. Shared by every compile
+ *  button via `useStartCompile`. */
+export async function startCompileWithConsent(payload: CompileStartPayload): Promise<CompileStartResult> {
+  const first = await postCompileStart(payload);
+  if (!needsLocalEmbeddingsConsent(first)) return first;
+
+  const decision = await useLocalEmbeddingsPrompt.getState().ask(payload, first);
+  if (decision === "openai") {
+    // The on-device default was never downloaded but a key is set: retry
+    // with OpenAI embeddings. The server makes that the saved default.
+    return postCompileStart({ ...payload, embedding_model: OPENAI_EMBEDDING_MODEL });
+  }
+  if (decision !== "local") {
+    return { ok: false, dismissed: true, reason: first.reason, code: first.code };
+  }
+  // Download (idempotent when already present) and make it the default so
+  // scheduled / auto compiles and Ask queries use the same embedding space.
+  const aiMode = first.suggested_ai_mode ?? undefined;
+  const started = await prepareLocalEmbeddings({ setDefault: true, aiMode });
+  const settled = started.status === "ready" ? started : await waitForLocalEmbeddings();
+  if (settled.status !== "ready") {
+    return {
+      ok: false,
+      reason: settled.error
+        ? `Couldn't download the on-device embedding model: ${settled.error}`
+        : "Couldn't download the on-device embedding model.",
+    };
+  }
+  return postCompileStart({
+    ...payload,
+    embedding_model: LOCAL_EMBEDDING_MODEL,
+    ...(aiMode ? { ai_mode: aiMode } : {}),
+  });
 }
 
 // ─── Hooks ──────────────────────────────────────────────────────────────
@@ -152,13 +229,11 @@ export function useTerrainRuns() {
 export function useStartCompile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: CompileStartPayload = {}) =>
-      apiFetch<CompileStartResult>("/api/terrain/build", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      }),
+    mutationFn: (payload: CompileStartPayload = {}) => startCompileWithConsent(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.terrainCurrent() });
+      // The consent path may have saved a new embedding default.
+      qc.invalidateQueries({ queryKey: ["compileSettings"] });
     },
   });
 }

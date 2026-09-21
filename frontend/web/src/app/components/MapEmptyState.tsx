@@ -106,6 +106,7 @@ export function MapEmptyState({
       {
         onSuccess: (res) => {
           setCompileOpen(false);
+          if (res.dismissed) return; // closed the local-embeddings dialog
           if (!res.ok) {
             toast.error("Couldn't start compile", {
               description: res.reason ?? "Open the Compile page for options.",

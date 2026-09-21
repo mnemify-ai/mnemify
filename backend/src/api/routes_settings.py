@@ -6,6 +6,7 @@ import logging
 import shutil
 from typing import Literal
 from src.terrain.agents.anthropic_clients import CLAUDE_MODEL_PATTERN, is_claude_model_ref
+from src.terrain.utils.local_embedder import EMBEDDING_MODEL_CHOICES
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -91,6 +92,11 @@ _PRESET_TO_MODELS: dict[str, tuple[str, str]] = {
     "haiku": ("haiku", "haiku"),
 }
 
+# OpenAI text-embedding-3-* (OPENAI_API_KEY) or the on-device bge-small
+# (no key; English; see terrain/utils/local_embedder.py). Keep the Literal in
+# step with EMBEDDING_MODEL_CHOICES — pydantic needs the spelled-out form.
+EmbeddingModelName = Literal["text-embedding-3-small", "text-embedding-3-large", "bge-small-en-v1.5"]
+
 # "" = provider default (no effort parameter sent).
 EFFORT_CHOICES = ("", "low", "medium", "high")
 EffortLevel = Literal["", "low", "medium", "high"]
@@ -103,7 +109,7 @@ COMPILE_DEFAULTS: dict = {
     "claude_extract_model": "sonnet",
     "claude_name_model": "opus",
     "openai_model": "gpt-5.6-luna",
-    "embedding_model": "text-embedding-3-large",
+    "embedding_model": "text-embedding-3-small",
     "llm_concurrency": 16,
     "extract_batch_size": 4,
     # Reasoning effort per step, for every LLM engine (OpenAI reasoning.effort,
@@ -146,7 +152,7 @@ def _compile_settings_block() -> dict:
         out["claude_name_model"] = name_model
 
     embedding = block.get("embedding_model")
-    if embedding in ("text-embedding-3-small", "text-embedding-3-large"):
+    if embedding in EMBEDDING_MODEL_CHOICES:
         out["embedding_model"] = embedding
 
     openai_model = block.get("openai_model")
@@ -190,7 +196,7 @@ class CompileSettingsUpdate(BaseModel):
     claude_extract_model: str = Field(default="sonnet", pattern=CLAUDE_MODEL_PATTERN, max_length=100)
     claude_name_model: str = Field(default="opus", pattern=CLAUDE_MODEL_PATTERN, max_length=100)
     openai_model: str = Field(min_length=1, max_length=100)
-    embedding_model: Literal["text-embedding-3-small", "text-embedding-3-large"]
+    embedding_model: EmbeddingModelName
     llm_concurrency: int = Field(ge=1, le=32)
     # Optional + defaulted so pre-existing settings payloads (sent before the UI
     # exposes this knob) still validate instead of 422-ing.

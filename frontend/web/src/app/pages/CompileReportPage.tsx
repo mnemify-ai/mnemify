@@ -90,6 +90,7 @@ export function CompileReportPage() {
       { ...overrides.payload, fresh },
       {
         onSuccess: (res) => {
+          if (res.dismissed) return; // closed the local-embeddings dialog
           if (!res.ok) {
             toast.error("Couldn't start compile", { description: res.reason });
           } else {
@@ -117,6 +118,7 @@ export function CompileReportPage() {
       { source: resumeTarget.source, ai_mode: resumeTarget.ai_mode, fresh: false },
       {
         onSuccess: (res) => {
+          if (res.dismissed) return;
           if (!res.ok) {
             toast.error("Couldn't resume compile", { description: res.reason });
           } else {
