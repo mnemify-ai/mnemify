@@ -122,6 +122,9 @@ def test_claude_cli_passes_effort_flag_and_records_envelope(monkeypatch):
         return SimpleNamespace(returncode=0, stdout=json.dumps(env).encode("utf-8"), stderr=b"")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    # The CLI itself is stubbed above; stub the lookup too so the test does
+    # not depend on `claude` being installed on the machine running it (CI).
+    monkeypatch.setattr(claude_cli, "find_claude_binary", lambda: "/usr/bin/claude")
     ledger.reset()
     ledger.set_stage("extract")
     assert claude_cli.claude_text("hi", model="sonnet", effort="low") == "ok"
