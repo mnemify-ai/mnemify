@@ -15,6 +15,12 @@ is meant to be run directly — run `setup.sh` / `setup.bat` or `mnemify.sh` /
 
 - **`setup.*` is idempotent.** Re-running it is the update path, so every step
   has to be safe to repeat.
+- **A release ZIP needs no Node.js.** `.github/workflows/release.yml` builds
+  the web app once and ships `frontend/web/dist/` with a
+  `.mnemify-prebuilt` marker (first line: the version). Both `setup.*` skip
+  the Node check and the npm steps when the marker and `dist/index.html`
+  exist; `--rebuild-frontend` / `-RebuildFrontend` forces a build anyway. A
+  git checkout never has the marker, so developers always get a fresh build.
 - **`mnemify.*` is dumb.** No git, no network, no updates, no port logic. It
   fixes up `PATH`, checks that setup has run, and hands over to `mnemify up`.
   The server owns the port, the "already running" case, the browser, and the

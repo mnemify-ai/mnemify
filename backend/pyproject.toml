@@ -1,6 +1,6 @@
 [project]
 name = "mnemify"
-version = "1.0.0"
+version = "0.5.0"
 description = "Mnemify Harvester — source connectors for professional knowledge infrastructure"
 requires-python = ">=3.11"
 readme = "README.md"

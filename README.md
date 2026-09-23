@@ -64,15 +64,16 @@ Everything Mnemify generates lives in one folder on your machine, outside this r
 
 ## Install
 
-You need **Node.js 18 or newer**. Setup installs **[uv](https://docs.astral.sh/uv/)** for you if it's missing, and uv brings its own Python 3.11+.
+Setup installs **[uv](https://docs.astral.sh/uv/)** for you if it's missing, and uv brings its own Python 3.11+. **Node.js 18+** is only needed if you build the web app yourself (clone or `main.zip`); the release download ships it prebuilt.
 
 | | |
 |---|---|
-| **Clone** | `git clone https://github.com/mnemify-ai/mnemify && cd mnemify && sh setup.sh`<br>Windows: clone it, then double-click `setup.bat`. |
-| **Download ZIP** | [`main.zip`](https://github.com/mnemify-ai/mnemify/archive/refs/heads/main.zip) → unzip → `sh setup.sh` in the unzipped folder (Windows: double-click `setup.bat`). |
+| **Download a release** (recommended) | Grab `mnemify-vX.Y.Z.zip` from the [latest release](https://github.com/mnemify-ai/mnemify/releases/latest), unzip it somewhere permanent, then `sh setup.sh` in that folder (Windows: double-click `setup.bat`). No Node.js needed. |
+| **Clone** | `git clone https://github.com/mnemify-ai/mnemify && cd mnemify && sh setup.sh`<br>Windows: clone it, then double-click `setup.bat`. Needs Node.js 18+. |
+| **Download `main.zip`** | [`main.zip`](https://github.com/mnemify-ai/mnemify/archive/refs/heads/main.zip) → unzip → `sh setup.sh` in the unzipped folder (Windows: double-click `setup.bat`). Needs Node.js 18+. |
 | **Developers** | Two terminals, hot reload: `cd backend && uv sync && uv run mnemify up --reload --no-browser` and `cd frontend/web && npm install && npm run dev` → <http://localhost:5173>. |
 
-Setup installs the backend, builds the web app, creates a **Mnemify** icon (macOS: `~/Applications`; Linux: your app menu; Windows: Desktop + Start Menu), and opens the app on <http://127.0.0.1:8783>.
+Setup installs the backend, builds the web app (or uses the prebuilt one from a release ZIP), creates a **Mnemify** icon (macOS: `~/Applications`; Linux: your app menu; Windows: Desktop + Start Menu), and opens the app on <http://127.0.0.1:8783>. The first run needs an internet connection to download the Python packages.
 
 On Windows, double-clicking `setup.bat` is fine. It runs PowerShell with `-ExecutionPolicy Bypass` for that one process only — nothing in your system settings is read or changed.
 
@@ -108,7 +109,7 @@ The folder is created on first launch. The repo folder holds nothing but code: d
 
 ## Updating
 
-1. Get the new code — `git pull`, or unzip a fresh [`main.zip`](https://github.com/mnemify-ai/mnemify/archive/refs/heads/main.zip) over the folder.
+1. Get the new code — unzip a newer [release](https://github.com/mnemify-ai/mnemify/releases/latest) over the folder, `git pull`, or unzip a fresh [`main.zip`](https://github.com/mnemify-ai/mnemify/archive/refs/heads/main.zip).
 2. Run `sh setup.sh` again (Windows: `setup.bat`).
 
 That's the whole update story. Setup is idempotent, and your data lives elsewhere, so nothing is lost.

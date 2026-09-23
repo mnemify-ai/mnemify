@@ -1,0 +1,115 @@
+name: release
+
+# A tag `vX.Y.Z` becomes a GitHub Release with one downloadable ZIP that a
+# tester can unzip and run without Node.js: the web app is built here once
+# (it is static files, so one Linux build serves every OS) and shipped inside
+# frontend/web/dist together with a `.mnemify-prebuilt` marker. setup.sh /
+# setup.bat see the marker and skip the Node check and the npm steps.
+#
+# The ZIP is the repo tree minus what nobody needs on a fresh machine (git
+# metadata, node_modules, tests, CI, caches) under a short top-level folder
+# `mnemify-vX.Y.Z/` - short on purpose: Windows Explorer's built-in unzip has
+# a 260-character path limit and node_modules-style depth is what hits it.
+#
+# Cutting a release is: bump both version fields, merge, then
+#   git tag vX.Y.Z && git push origin vX.Y.Z
+# The tag must equal the version in backend/pyproject.toml, or this fails
+# before it builds anything.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag must match the version in pyproject.toml
+        run: |
+          sh .github/scripts/check-version-sync.sh
+          version=$(sed -n 's/^version = "\([^"]*\)".*$/\1/p' backend/pyproject.toml | head -1)
+          tag="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "$tag" != "v$version" ]; then
+            echo "Tag $tag does not match pyproject version $version (expected v$version)." >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+
+      - name: Build the web app
+        working-directory: frontend/web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          test -f dist/index.html
+          printf 'v%s\n%s\n' "$VERSION" "$GITHUB_SHA" > dist/.mnemify-prebuilt
+
+      - name: Assemble the ZIP
+        run: sh .github/scripts/make-release-zip.sh "$VERSION" "$RUNNER_TEMP/out"
+
+      - name: Prove the ZIP installs without Node
+        # Unpack the artifact somewhere Node is invisible and run setup the
+        # way a tester would. Node is still on this runner, so it is hidden
+        # from PATH for this step: if setup asks for it, the step fails.
+        env:
+          MNEMIFY_NONINTERACTIVE: "1"
+        run: |
+          mkdir -p "$RUNNER_TEMP/verify" && cd "$RUNNER_TEMP/verify"
+          unzip -q "$RUNNER_TEMP/out/mnemify-v$VERSION.zip"
+          cd "mnemify-v$VERSION"
+          mkdir -p "$RUNNER_TEMP/nonode"
+          printf '#!/bin/sh\necho "node must not be needed for a release zip" >&2\nexit 1\n' > "$RUNNER_TEMP/nonode/node"
+          cp "$RUNNER_TEMP/nonode/node" "$RUNNER_TEMP/nonode/npm"
+          chmod +x "$RUNNER_TEMP/nonode/node" "$RUNNER_TEMP/nonode/npm"
+          MNEMIFY_HOME="$RUNNER_TEMP/home" MNEMIFY_LAUNCHER_DIR="$RUNNER_TEMP/launchers" \
+            PATH="$RUNNER_TEMP/nonode:$PATH" sh setup.sh --no-launch
+          test -f frontend/web/dist/index.html
+          (cd backend && uv run --no-sync python -c "import src; print('backend version', src.__version__)")
+
+      - name: Release notes
+        run: |
+          {
+            echo "## Mnemify v$VERSION"
+            echo
+            echo "**Download** \`mnemify-v$VERSION.zip\` below, unzip it somewhere permanent, then:"
+            echo
+            echo "- macOS / Linux: open a terminal in the folder and run \`sh setup.sh\`"
+            echo "- Windows: double-click \`setup.bat\`"
+            echo
+            echo "The web app is prebuilt in this ZIP, so **Node.js is not required**. Setup installs [uv](https://docs.astral.sh/uv/) (which brings Python) and the backend packages, then opens Mnemify at <http://127.0.0.1:8783>. An internet connection is needed for that first run."
+            echo
+            echo "Your data lives outside the folder (see the README), so you can delete or replace the folder at any time. To update, unzip a newer release over it and run setup again."
+            echo
+            echo "Commit: \`$GITHUB_SHA\`"
+          } > "$RUNNER_TEMP/notes.md"
+
+      - name: Publish the GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" \
+            "$RUNNER_TEMP/out/mnemify-v$VERSION.zip" \
+            --title "Mnemify v$VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --verify-tag
+
+      - name: Keep the ZIP as a workflow artifact (manual runs)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mnemify-v${{ env.VERSION }}
+          path: ${{ runner.temp }}/out/*.zip
