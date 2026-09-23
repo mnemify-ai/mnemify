@@ -20,6 +20,12 @@
 .PARAMETER SkipFrontend
     Skip the web build (developers; needs a frontend\web\dist already).
 
+.PARAMETER RebuildFrontend
+    Build the web app even in a release download. Release ZIPs from GitHub
+    Releases ship frontend\web\dist already built, marked by
+    frontend\web\dist\.mnemify-prebuilt; then Node.js is not needed and
+    the npm steps are skipped. A git checkout never has the marker.
+
 .NOTES
     Windows PowerShell 5.1 compatible: no ternaries, no null-coalescing,
     no ForEach-Object -Parallel.
@@ -27,7 +33,8 @@
 [CmdletBinding()]
 param(
     [switch]$NoLaunch,
-    [switch]$SkipFrontend
+    [switch]$SkipFrontend,
+    [switch]$RebuildFrontend
 )
 
 $ErrorActionPreference = 'Stop'
@@ -163,8 +170,22 @@ if (Get-Command uv -ErrorAction SilentlyContinue) {
     Write-Host ("Installed: " + (& uv --version))
 }
 
+# A release ZIP ships frontend\web\dist already built, plus a marker file
+# naming the version it was built from. Then Node.js is not needed at all.
+$prebuilt = ''
+$prebuiltMarker = Join-Path $Repo 'frontend\web\dist\.mnemify-prebuilt'
+if ((-not $SkipFrontend) -and (-not $RebuildFrontend) -and
+    (Test-Path $prebuiltMarker) -and (Test-Path (Join-Path $Repo 'frontend\web\dist\index.html'))) {
+    try { $prebuilt = (Get-Content $prebuiltMarker -TotalCount 1).Trim() } catch { $prebuilt = 'unknown' }
+    if (-not $prebuilt) { $prebuilt = 'unknown' }
+    Write-Host ("Web app: prebuilt (" + $prebuilt + ") - Node.js is not required.")
+}
+
 # ------------------------------------------------------------------- 3. Node
 Write-Step 'checking Node.js'
+if ($prebuilt) {
+    Write-Host 'Skipped - the web app is already built.'
+} else {
 $nodeMajor = 0
 $nodeRaw = ''
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
@@ -190,6 +211,7 @@ Write-Host ("Node.js " + $nodeRaw + " - ok.")
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Stop-Setup 'npm was not found.' 'Reinstall Node.js from https://nodejs.org (npm ships with it), then re-run setup.bat.'
 }
+}
 
 # --------------------------------------------------------------- 4. backend
 Write-Step 'installing the backend (uv sync)'
@@ -200,7 +222,9 @@ Write-Host ("Backend ready: " + (Join-Path $Repo 'backend\.venv'))
 
 # -------------------------------------------------------------- 5. frontend
 Write-Step 'building the web app (npm ci && npm run build)'
-if ($SkipFrontend) {
+if ($prebuilt) {
+    Write-Host ("Skipped - using the prebuilt web app (" + $prebuilt + "). Pass -RebuildFrontend to build it yourself.")
+} elseif ($SkipFrontend) {
     Write-Host 'Skipped (-SkipFrontend).'
 } else {
     Write-Host 'Installing web dependencies and building the app.'

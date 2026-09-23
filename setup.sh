@@ -4,6 +4,12 @@
 #   sh setup.sh              install everything, create the desktop icon, start the app
 #   sh setup.sh --no-launch  install only
 #   sh setup.sh --skip-frontend   skip the web build (developers; needs a dist/ already)
+#   sh setup.sh --rebuild-frontend  build the web app even in a release download
+#
+# Release downloads (the ZIP from GitHub Releases) ship the web app already
+# built, marked by frontend/web/dist/.mnemify-prebuilt. In that case Node.js
+# is not needed and the npm steps are skipped. A git checkout never has the
+# marker, so developers always get a fresh build.
 #
 # Re-running this script is also how you update: get the new code
 # (git pull, or unzip a fresh download over the folder) and run it again.
@@ -39,10 +45,12 @@ step() {
 # ---------------------------------------------------------------- 0. arguments
 NO_LAUNCH=0
 SKIP_FRONTEND=0
+REBUILD_FRONTEND=0
 for arg in "$@"; do
     case "$arg" in
         --no-launch) NO_LAUNCH=1 ;;
         --skip-frontend) SKIP_FRONTEND=1 ;;
+        --rebuild-frontend) REBUILD_FRONTEND=1 ;;
         -h|--help)
             cat <<'HELP'
 Mnemify - one-time setup (macOS / Linux).
@@ -50,6 +58,10 @@ Mnemify - one-time setup (macOS / Linux).
   sh setup.sh                  install everything, create the desktop icon, start the app
   sh setup.sh --no-launch      install only
   sh setup.sh --skip-frontend  skip the web build (developers; needs a dist/ already)
+  sh setup.sh --rebuild-frontend  build the web app even in a release download
+
+Release downloads ship the web app already built, so they need no Node.js
+and setup skips the npm steps. A git checkout is always rebuilt.
 
 Re-running this script is also how you update: get the new code
 (git pull, or unzip a fresh download over the folder) and run it again.
@@ -82,6 +94,16 @@ if [ ! -f backend/pyproject.toml ] || [ ! -f frontend/web/package.json ]; then
     step "locating the repo" "Run this script from inside the mnemify folder (sh setup.sh)."
     printf 'This does not look like a Mnemify checkout.\n' >&2
     exit 1
+fi
+
+# A release ZIP ships frontend/web/dist already built, plus a marker file
+# naming the version it was built from. Then Node.js is not needed at all.
+PREBUILT_MARKER="frontend/web/dist/.mnemify-prebuilt"
+PREBUILT=""
+if [ "$SKIP_FRONTEND" -eq 0 ] && [ "$REBUILD_FRONTEND" -eq 0 ] \
+   && [ -f "$PREBUILT_MARKER" ] && [ -f frontend/web/dist/index.html ]; then
+    PREBUILT=$(head -n 1 "$PREBUILT_MARKER" 2>/dev/null || echo "unknown")
+    printf 'Web app: prebuilt (%s) — Node.js is not required.\n' "$PREBUILT"
 fi
 
 # ------------------------------------------------ 2. macOS: the download flag
@@ -137,6 +159,9 @@ fi
 
 # ------------------------------------------------------------------- 4. Node
 step "checking Node.js" "Install Node.js 18 or newer, then re-run this script."
+if [ -n "$PREBUILT" ]; then
+    printf 'Skipped — the web app is already built.\n'
+else
 NODE_MAJOR=0
 NODE_RAW=""
 if command -v node >/dev/null 2>&1; then
@@ -169,6 +194,7 @@ if ! command -v npm >/dev/null 2>&1; then
     printf 'npm was not found.\n' >&2
     exit 1
 fi
+fi
 
 # --------------------------------------------------------------- 5. backend
 step "installing the backend (uv sync)" "Check the uv output above. A failed download is usually a network or proxy problem — re-run the script."
@@ -178,7 +204,9 @@ printf 'Backend ready: %s/backend/.venv\n' "$REPO"
 
 # -------------------------------------------------------------- 6. frontend
 step "building the web app (npm ci && npm run build)" "Check the npm output above. If it complains about node_modules, delete frontend/web/node_modules and re-run."
-if [ "$SKIP_FRONTEND" -eq 1 ]; then
+if [ -n "$PREBUILT" ]; then
+    printf 'Skipped — using the prebuilt web app (%s). Pass --rebuild-frontend to build it yourself.\n' "$PREBUILT"
+elif [ "$SKIP_FRONTEND" -eq 1 ]; then
     printf 'Skipped (--skip-frontend).\n'
     if [ ! -d frontend/web/dist ]; then
         printf 'Note: frontend/web/dist does not exist, so the app will have no UI to serve.\n'
