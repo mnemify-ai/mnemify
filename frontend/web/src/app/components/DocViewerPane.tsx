@@ -475,7 +475,7 @@ export function RenderedContent({
   if (source === "confluence") {
     return <HtmlRender html={content} attachments={attachments} />;
   }
-  if (source === "obsidian") {
+  if (source === "obsidian" || source === "localfiles") {
     return <MarkdownRender source={content} attachments={attachments} />;
   }
   return <RawRender content={content} />;

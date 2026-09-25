@@ -12,6 +12,7 @@ import type { RenderData } from '../types';
 import { CameraAnimator } from './CameraAnimator';
 import { CartographerPaper } from './CartographerPaper';
 import { HexField } from './HexField';
+import { HighlightBeacons } from './HighlightBeacons';
 import { RegionLabels } from './RegionLabels';
 import { useTheme } from '../util/useTheme';
 
@@ -203,6 +204,10 @@ export function Scene({ data }: { data: RenderData }) {
           budget of the most prominent ones that fit without overlapping — the
           home look distance is the zoom=1 reference for that budget. */}
       <RegionLabels data={data} yScale={Y_SCALE} homeLookDist={layout.lookDist} />
+
+      {/* Orbs + light columns over the spires the last Ask answer cited.
+          Outside the y-scale group like the labels — see the component. */}
+      <HighlightBeacons yScale={Y_SCALE} />
 
       {/* "Also resembles" now lives in the right panel's Tag → Related tab, so
           no floating card obstructs the map (was <TagRelationPopover />). */}

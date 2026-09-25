@@ -19,6 +19,7 @@ import { computeSiblingInfo, shadeColor } from '../util/regionShade';
 import { regionTerrainFor } from '../util/regionTerrain';
 import { resolveHoverChild } from '../util/hoverRegion';
 import { isClickNotDrag } from '../util/pointerGesture';
+import { HIGHLIGHT_ACCENT } from './HighlightBeacons';
 
 const HEX_FIELDS_PER_HEX = 5;
 
@@ -34,6 +35,7 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
   const hoveredInstanceId = useKnowledgeMapStore((s) => s.hoveredInstanceId);
   const legendHoverIdx = useKnowledgeMapStore((s) => s.legendHoverIdx);
   const focusRegionIdx = useKnowledgeMapStore((s) => s.focusRegionIdx);
+  const askHighlight = useKnowledgeMapStore((s) => s.askHighlight);
 
   // Decode hexes once per data load. Returns per-instance buffers + a
   // lookup so picker handlers can map instanceId → raw hex offset. Theme
@@ -90,6 +92,20 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
   // so the focused region reads in full colour while everything else recedes.
   const GREY_MIX = 0.88;   // 0 = keep colour, 1 = full greyscale
   const GREY_DIM = 0.5;    // overall darkening of the greyed regions
+  // Ask-answer highlight. Cited spires are pulled most of the way to the hot
+  // accent (HIGHLIGHT_ACCENT — a hue no region uses) and pushed past bloom
+  // threshold; the regions they sit in keep their colour at full strength;
+  // everything else goes near-monochrome and dark. The contrast is
+  // deliberately harder than the focus grey: at the home framing a subtle
+  // brighten of the region tint was invisible, and the whole point is to read
+  // the answer's footprint at a glance. HighlightBeacons adds orbs on top.
+  const HL_ACCENT = new Color(HIGHLIGHT_ACCENT);
+  const HL_ACCENT_MIX = 0.7;
+  const HL_GLOW = 1.35;
+  const HL_LIFT = 0.12;
+  const HL_REGION_GLOW = 1.08;
+  const HL_GREY_MIX = 0.92;
+  const HL_GREY_DIM = 0.36;
   const prevHoverTopRef = useRef<number | null>(null);
   useEffect(() => {
     const mesh = ref.current;
@@ -110,13 +126,53 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
     // than greying the whole world for a selection nothing can highlight.
     const dimAgainst = terrain.resolveTerrainRegionIdx(focusRegionIdx);
 
+    // Region indices (any level) the highlight keeps in colour: the cited
+    // regions themselves plus every region a cited spire stands in.
+    const hlTags = askHighlight?.tagIds ?? null;
+    const hlRegions = new Set<number>(askHighlight?.regionIdxs ?? []);
+    if (hlTags) {
+      for (let i = 0; i < count; i++) {
+        const t = instanceLookup[i].tagId;
+        if (t !== null && hlTags.has(t)) hlRegions.add(instanceLookup[i].regionIdx);
+      }
+    }
+    const hlActive = hlTags !== null && (hlTags.size > 0 || hlRegions.size > 0);
+
     const c = new Color();
     for (let i = 0; i < count; i++) {
       const r = baseColors[i * 3], g = baseColors[i * 3 + 1], b = baseColors[i * 3 + 2];
       let cr: number, cg: number, cb: number;
-      if (dimAgainst === null) {
+      const meta = instanceLookup[i];
+      const inFocus =
+        dimAgainst === null || (ancestorsOf[meta.regionIdx]?.includes(dimAgainst) ?? false);
+      if (hlActive) {
+        const litTag = meta.tagId !== null && hlTags!.has(meta.tagId);
+        let litRegion = false;
+        if (!litTag) {
+          for (const a of ancestorsOf[meta.regionIdx] ?? []) {
+            if (hlRegions.has(a)) { litRegion = true; break; }
+          }
+        }
+        if (litTag) {
+          const mr = r + (HL_ACCENT.r - r) * HL_ACCENT_MIX;
+          const mg = g + (HL_ACCENT.g - g) * HL_ACCENT_MIX;
+          const mb = b + (HL_ACCENT.b - b) * HL_ACCENT_MIX;
+          cr = Math.min(1, mr * HL_GLOW + HL_LIFT);
+          cg = Math.min(1, mg * HL_GLOW + HL_LIFT);
+          cb = Math.min(1, mb * HL_GLOW + HL_LIFT);
+        } else if (litRegion && inFocus) {
+          cr = Math.min(1, r * HL_REGION_GLOW);
+          cg = Math.min(1, g * HL_REGION_GLOW);
+          cb = Math.min(1, b * HL_REGION_GLOW);
+        } else {
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          cr = (r + (lum - r) * HL_GREY_MIX) * HL_GREY_DIM;
+          cg = (g + (lum - g) * HL_GREY_MIX) * HL_GREY_DIM;
+          cb = (b + (lum - b) * HL_GREY_MIX) * HL_GREY_DIM;
+        }
+      } else if (dimAgainst === null) {
         cr = r; cg = g; cb = b;
-      } else if (ancestorsOf[instanceLookup[i].regionIdx]?.includes(dimAgainst) ?? false) {
+      } else if (inFocus) {
         // Focused subtree: keep full colour with a slight glow.
         cr = Math.min(1, r * FOCUS_GLOW + 0.02);
         cg = Math.min(1, g * FOCUS_GLOW + 0.02);
@@ -136,7 +192,7 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
     // cleanly on the next pointer move.
     prevHoverTopRef.current = null;
     invalidate();
-  }, [decoded, terrain, baseColors, focusRegionIdx, invalidate]);
+  }, [decoded, terrain, baseColors, focusRegionIdx, askHighlight, invalidate]);
 
   // Hover highlight: brighten the whole footprint of the region under the
   // cursor AT THE CURRENT LEVEL — the top-level region at the map root, the
@@ -181,7 +237,7 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
     // focusRegionIdx: the focus repaint above resets prevHoverTopRef, so a hover
     // that survives a focus change (sidebar row still under the pointer) must
     // re-apply on top of the fresh display colours.
-  }, [hoverTarget, decoded, baseColors, focusRegionIdx, invalidate]);
+  }, [hoverTarget, decoded, baseColors, focusRegionIdx, askHighlight, invalidate]);
 
   const geometry = useMemo(() => {
     const radius = (2 * data.hexSize) / Math.sqrt(3);

@@ -490,7 +490,7 @@ class KnowledgeMap(BaseModel):
 
 
 NoteSource = Literal[
-    "obsidian", "notion", "confluence", "jira", "gmail", "slack", "calendar"
+    "obsidian", "notion", "confluence", "localfiles", "jira", "gmail", "slack", "calendar"
 ]
 
 

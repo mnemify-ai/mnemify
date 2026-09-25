@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   ChevronRight,
+  FileText,
   Folder,
   FolderOpen,
   Home,
@@ -106,6 +107,11 @@ export function FolderBrowser({
               This folder is a vault
             </Badge>
           )}
+          {!vaultsOnly && data && (data.file_count ?? 0) > 0 && (
+            <Badge tone="sage" className="ml-2">
+              {data.file_count} readable file{data.file_count === 1 ? "" : "s"} here
+            </Badge>
+          )}
         </div>
       </header>
 
@@ -118,9 +124,11 @@ export function FolderBrowser({
           <div className="m-3 px-4 py-3 rounded-lg bg-rose/10 border border-rose/30 font-sans text-sm text-rose">
             {data.error}
           </div>
-        ) : !data || data.entries.length === 0 ? (
+        ) : !data || (data.entries.length === 0 && (vaultsOnly || (data.files?.length ?? 0) === 0)) ? (
           <div className="py-12 text-center font-sans text-sm text-muted">
-            No subfolders here. Navigate up or pick this folder if it's a vault.
+            {vaultsOnly
+              ? "No subfolders here. Navigate up or pick this folder if it's a vault."
+              : "Nothing readable here — no sub-folders and no .md / .txt / .pdf files."}
           </div>
         ) : (
           <ul>
@@ -151,6 +159,11 @@ export function FolderBrowser({
                       vault
                     </Badge>
                   )}
+                  {!vaultsOnly && (e.file_count ?? 0) > 0 && (
+                    <span className="shrink-0 font-mono text-[10px] text-muted tabular-nums">
+                      {e.file_count} file{e.file_count === 1 ? "" : "s"}
+                    </span>
+                  )}
                   <ChevronRight
                     size={14}
                     strokeWidth={1.5}
@@ -160,6 +173,27 @@ export function FolderBrowser({
                 </button>
               </li>
             ))}
+            {/* Files in this folder (local-folder mode only). Inert rows: the
+                unit of choice is the folder; these show what it holds. */}
+            {!vaultsOnly && (data.files?.length ?? 0) > 0 && (
+              <li className="mt-1 border-t border-hair/60 pt-1">
+                <p className="px-3 pt-1.5 pb-1 eyebrow">Files here</p>
+                <ul>
+                  {data.files!.map((f) => (
+                    <li
+                      key={f.name}
+                      className="flex items-center gap-3 px-3 py-1.5 rounded-lg text-left"
+                    >
+                      <FileText size={15} strokeWidth={1.5} className="shrink-0 text-muted/70" aria-hidden />
+                      <span className="font-sans text-[13px] text-ink truncate flex-1">{f.name}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-muted tabular-nums">
+                        {f.format} · {f.size}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            )}
           </ul>
         )}
       </div>
@@ -173,7 +207,7 @@ export function FolderBrowser({
               "Navigate into a folder marked with the vault badge, then pick it."
             )
           ) : (
-            "Pick any folder."
+            "Pick any folder. Counts are the .md / .txt / .pdf files directly inside; sub-folders are included when you harvest."
           )}
         </p>
         <div className="flex items-center gap-2">

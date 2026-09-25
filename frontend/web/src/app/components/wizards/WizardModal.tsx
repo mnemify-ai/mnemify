@@ -47,7 +47,7 @@ export function WizardModal({
     <Dialog
       open={open}
       onOpenChange={(v) => !v && onClose()}
-      ariaLabel={`Connect ${meta.label}`}
+      ariaLabel={`${meta.verb.add} ${meta.label}`}
       width="560px"
     >
       <DialogClose onClose={onClose} />
@@ -63,7 +63,7 @@ export function WizardModal({
               {meta.label.charAt(0)}
             </span>
           </span>
-          <span className="font-serif text-lg text-ink">Connect {meta.label}</span>
+          <span className="font-serif text-lg text-ink">{meta.verb.add} {meta.label}</span>
         </div>
         <StepIndicator current={step} total={totalSteps} />
         {eyebrow && <p className="eyebrow mt-4 mb-1">{eyebrow}</p>}

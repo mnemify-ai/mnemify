@@ -4,6 +4,8 @@ import { newLocalId, useActiveThreadMessages, useAskThreadStore } from "./askThr
 import type { AgentStep, AskMessage, AskSettings, Citation } from "./types";
 import { activeKey, wireProvider } from "./types";
 import { useMapPulseStore } from "../app/lib/mapPulseStore";
+import { useMapHighlightStore } from "../app/lib/mapHighlightStore";
+import { highlightFromCitations, usedCitations } from "./askHighlight";
 
 /**
  * The in-flight request's abort handle, module-level for the same reason
@@ -72,6 +74,10 @@ export function useAskStream(settings: AskSettings) {
         .map((m) => ({ role: m.role, content: m.text }));
 
       store.appendMessages(threadId, [userMsg, placeholder]);
+      // A new question retires the previous answer's map highlight; the
+      // fresh one lands with this answer's `citations` event.
+      useMapHighlightStore.getState().clear();
+      let lastCitations: Citation[] = [];
 
       store.setStreamingThread(threadId);
       const controller = new AbortController();
@@ -100,7 +106,17 @@ export function useAskStream(settings: AskSettings) {
         }
         await consumeSseStream(response.body, {
           onCitations: (citations) => {
+            lastCitations = citations;
             patch(assistantId, (m) => ({ ...m, citations }));
+            // Light the map with everything retrieval touched. The agentic
+            // path re-sends citations cumulatively as tools register items,
+            // so keep one token per answer: first arrival frames the camera,
+            // later ones only widen the set.
+            const ids = highlightFromCitations(citations);
+            const hl = useMapHighlightStore.getState();
+            if (hl.highlight === null) hl.setHighlight({ ...ids, label: query.trim() });
+            else hl.narrow(ids);
+            useMapPulseStore.getState().pulseRegions(ids.regionIds);
           },
           onDelta: (text) => {
             patch(assistantId, (m) => {
@@ -134,6 +150,11 @@ export function useAskStream(settings: AskSettings) {
               usedCitationIds: used,
               citationsFallback: fallback,
             }));
+            // Narrow the map to what the answer actually leaned on. Same
+            // token, so the camera stays where the first framing put it.
+            useMapHighlightStore
+              .getState()
+              .narrow(highlightFromCitations(usedCitations(lastCitations, used)));
           },
           onError: (msg) => {
             patch(assistantId, (m) => ({ ...m, error: msg, pending: false }));

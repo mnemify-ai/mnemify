@@ -160,6 +160,25 @@ async def list_connections() -> list[dict[str, Any]]:
             # Page-subtree scope lives in a second key; the dialog prefill
             # and the pending-scope diff both need the full picture.
             scope_list += [str(p) for p in (block.get("page_ids") or [])]
+        roots_out: list[dict[str, Any]] | None = None
+        if name == "localfiles":
+            from src.harvester.localfiles.models import LocalFilesConfig
+            lf = LocalFilesConfig.from_yaml(block)
+            # Flat ``<root>::<entry>`` ids — what Manage Scope edits and what
+            # the pending-scope diff compares against the last snapshot.
+            scope_list = lf.scope_ids()
+            roots_out = [
+                {
+                    "path": r.key,
+                    "name": Path(r.key).name or r.key,
+                    "watch_folders": list(r.watch_folders),
+                    "exists": Path(r.key).is_dir(),
+                }
+                for r in lf.roots
+            ]
+            n = len(roots_out)
+            if n:
+                summary_bits.append(f"{n} folder{'s' if n != 1 else ''}")
         out.append({
             "source": name,
             "status": status,
@@ -173,6 +192,9 @@ async def list_connections() -> list[dict[str, Any]]:
             # docs yet. Drives the "scope changed — Harvest to pull them in"
             # nudge on the Connections card after Manage Scope edits.
             "pending_scope_count": _pending_scope_count(name, scope_list),
+            # Local files only: the linked folders, for the card's list and
+            # the Manage Scope root picker.
+            **({"roots": roots_out} if roots_out is not None else {}),
         })
     return out
 
@@ -182,6 +204,7 @@ _SCOPE_KEY = {
     "notion": "scope",
     "confluence": "space_keys",
     "obsidian": "watch_folders",
+    "localfiles": "roots",  # flat ``<root>::<entry>`` ids in and out — see update_scope
     "jira": "project_keys",
 }
 
@@ -216,7 +239,44 @@ def _sanitize_scope(source: str, scope: list[str]) -> tuple[list[str], list[str]
             else:
                 rejected.append(s)
         return kept, rejected
+    if source == "localfiles":
+        # Flat ids must name a root; the picker's "N files here" rows are
+        # virtual (`files:<folder>`) and mean nothing to the scanner.
+        from src.harvester.localfiles.models import split_scope_id
+        kept: list[str] = []
+        rejected: list[str] = []
+        for s in scope:
+            parts = split_scope_id(s) if isinstance(s, str) else None
+            if parts and not parts[1].startswith("files:"):
+                kept.append(s)
+            else:
+                rejected.append(s)
+        return kept, rejected
     return list(scope), []
+
+
+def _drop_virtual_scope(scope: list[str]) -> list[str]:
+    return [s for s in scope if isinstance(s, str) and s and not s.startswith("files:")]
+
+
+def _localfiles_block(block: dict, roots: list) -> dict[str, Any]:
+    """The ``sources.localfiles`` YAML block for ``roots`` (LocalRoot list),
+    preserving unrelated keys and dropping the legacy single-root keys."""
+    out: dict[str, Any] = {
+        k: v for k, v in (block or {}).items()
+        if k not in ("root_path", "watch_folders", "ignore_patterns", "roots", "enabled")
+    }
+    out["enabled"] = bool(roots)
+    out.setdefault("concurrency", 10)
+    out["roots"] = [
+        {
+            "path": r.path,
+            **({"watch_folders": list(r.watch_folders)} if r.watch_folders else {}),
+            **({"ignore_patterns": list(r.ignore_patterns)} if r.ignore_patterns else {}),
+        }
+        for r in roots
+    ]
+    return out
 
 
 def _split_confluence_scope(scope: list[str]) -> tuple[list[str], list[str]]:
@@ -239,6 +299,14 @@ async def update_scope(source: str, body: ScopeUpdate):
         raise HTTPException(404, f"{source} is not configured")
     kept, rejected = _sanitize_scope(source, body.scope)
     new_block = dict(block)
+    if source == "localfiles":
+        # Rebuild the roots list from the flat ids: a root absent from the
+        # list is unlinked, a root named only by ``<root>::`` is whole.
+        from src.harvester.localfiles.models import LocalFilesConfig, roots_from_scope_ids
+        existing = LocalFilesConfig.from_yaml(block).roots
+        new_block = _localfiles_block(block, roots_from_scope_ids(kept, existing))
+        upsert_source("localfiles", new_block)
+        return {"ok": True, "scope": kept, "rejected": rejected}
     if source == "confluence":
         # Mixed scope: space keys harvest whole spaces, numeric page ids
         # harvest that page + its descendants. Persist them under separate
@@ -763,35 +831,22 @@ class ObsidianDiscover(BaseModel):
     vault_path: str | None = None
 
 
-@router.post("/connections/obsidian/discover")
-async def discover_obsidian(body: ObsidianDiscover | None = None):
-    """Walk an Obsidian vault and return every subfolder as a tree-shaped
-    list of items, so the frontend's tree picker can show a hierarchical
-    folder selector.
-
-    Returns items with ``parent_id`` set to the parent folder's relative
-    path (or ``None`` for top-level folders). Hidden folders (``.obsidian``,
-    ``.git``, etc.) are skipped. Capped at 4000 entries to keep responses
-    bounded for huge vaults.
-    """
-    raw = (body.vault_path or "").strip() if body else ""
-    if not raw:
-        cfg = load_config_file()
-        raw = (cfg.get("sources", {}).get("obsidian", {}) or {}).get("vault_path", "")
-    if not raw:
-        return {"items": [], "error": "no vault path saved"}
-
+def _walk_subfolders(raw: str) -> dict[str, Any]:
+    """Every subfolder under ``raw`` as a tree-shaped item list for the
+    frontend's tree picker (``parent_id`` = parent's relative path, ``None``
+    at the top level). Hidden folders are skipped. Capped at 4000 entries,
+    breadth-first, so a huge tree clips deep layers rather than breadth.
+    Shared by the Obsidian and local-folder discover routes."""
     try:
         root = Path(os.path.expanduser(raw)).resolve()
     except Exception as e:  # noqa: BLE001
-        return {"items": [], "error": f"Invalid vault path: {e}"}
+        return {"items": [], "error": f"Invalid path: {e}"}
 
     if not root.is_dir():
-        return {"items": [], "error": "vault path is not a directory"}
+        return {"items": [], "error": "path is not a directory"}
 
     HARD_CAP = 4000
     items: list[dict[str, Any]] = []
-    # Walk breadth-first so the cap clips deeper layers, not breadth.
     queue: list[Path] = [root]
     while queue and len(items) < HARD_CAP:
         current = queue.pop(0)
@@ -827,6 +882,23 @@ async def discover_obsidian(body: ObsidianDiscover | None = None):
     return {"items": items, "total_accessible": len(items)}
 
 
+@router.post("/connections/obsidian/discover")
+async def discover_obsidian(body: ObsidianDiscover | None = None):
+    """Walk an Obsidian vault and return its subfolders as a tree — see
+    ``_walk_subfolders``. With no ``vault_path`` in the body, uses the saved
+    one (Manage Scope on an already-connected vault)."""
+    raw = (body.vault_path or "").strip() if body else ""
+    if not raw:
+        cfg = load_config_file()
+        raw = (cfg.get("sources", {}).get("obsidian", {}) or {}).get("vault_path", "")
+    if not raw:
+        return {"items": [], "error": "no vault path saved"}
+    out = _walk_subfolders(raw)
+    if out.get("error") == "path is not a directory":
+        out["error"] = "vault path is not a directory"
+    return out
+
+
 class ObsidianSave(BaseModel):
     vault_path: str
     scope: list[str] = []  # watch_folders
@@ -854,6 +926,241 @@ async def save_obsidian(body: ObsidianSave):
         new_block["ignore_patterns"] = block["ignore_patterns"]
     upsert_source("obsidian", new_block)
     return {"ok": True}
+
+
+# ─── local files (any folder of .md / .txt / .pdf) ─────────────────
+
+
+class LocalFilesValidate(BaseModel):
+    root_path: str
+
+
+@router.post("/connections/localfiles/validate")
+async def validate_localfiles(body: LocalFilesValidate):
+    """Check a folder exists and count the files Mnemify can read in it.
+
+    Returns ``by_format`` (``{"md": 12, "txt": 3, "pdf": 5}``) so the wizard
+    can tell the user what it found before they commit."""
+    from src.harvester.localfiles.models import LocalFilesConfig
+    from src.harvester.localfiles.plugin import LocalFilesHarvesterPlugin
+
+    root_path = (body.root_path or "").strip()
+    if not root_path:
+        return {"ok": False, "reason": "root_path required", "file_count": 0, "by_format": {}}
+    try:
+        plugin = LocalFilesHarvesterPlugin(LocalFilesConfig(root_path=root_path))
+        status = await plugin.test_connection()
+        if status.healthy:
+            details = status.details or {}
+            return {
+                "ok": True,
+                "file_count": int(details.get("file_count", 0)),
+                "by_format": details.get("by_format", {}),
+                "root_path": details.get("root_path", root_path),
+            }
+        return {"ok": False, "reason": status.message, "file_count": 0, "by_format": {}}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "reason": str(e), "file_count": 0, "by_format": {}}
+
+
+class LocalFilesDiscover(BaseModel):
+    root_path: str | None = None
+
+
+def _walk_supported_tree(raw: str) -> dict[str, Any]:
+    """Folders AND the supported files inside them, as one tree for the
+    scope picker — so the user can see *what* Mnemify would read and pick
+    single files as well as folders. Folder items carry a ``subtitle`` with
+    their recursive counts per format. A folder's files sit under one
+    collapsible ``kind="filegroup"`` row (``id="files:<folder>"``, virtual —
+    never saved) as ``kind="file"`` items whose id is ``file:<relpath>``,
+    which is exactly what the scanner accepts in ``watch_folders``. Hidden
+    folders and the scanner's default ignores are skipped. Capped at 4000
+    entries, breadth-first."""
+    from src.harvester.localfiles.scanner import DEFAULT_IGNORE, FILE_SCOPE_PREFIX, format_for
+
+    try:
+        root = Path(os.path.expanduser(raw)).resolve()
+    except Exception as e:  # noqa: BLE001
+        return {"items": [], "error": f"Invalid path: {e}"}
+    if not root.is_dir():
+        return {"items": [], "error": "path is not a directory"}
+
+    ignored_dirs = {p[:-2] for p in DEFAULT_IGNORE if p.endswith("/*")}
+
+    def rel(p: Path) -> str:
+        return p.relative_to(root).as_posix()
+
+    # Pass 1: recursive per-folder counts by format (so a parent folder
+    # summarises everything beneath it).
+    counts: dict[str, dict[str, int]] = {}
+    total_files = 0
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = sorted(
+            d for d in dirnames
+            if not d.startswith(".") and rel(Path(dirpath) / d) not in ignored_dirs
+        )
+        for name in filenames:
+            if name.startswith("."):
+                continue
+            fmt = format_for(Path(name))
+            if fmt is None:
+                continue
+            total_files += 1
+            cur = Path(dirpath)
+            while True:
+                key = "" if cur == root else rel(cur)
+                bucket = counts.setdefault(key, {})
+                bucket[fmt] = bucket.get(fmt, 0) + 1
+                if cur == root:
+                    break
+                cur = cur.parent
+
+    def summary(key: str) -> str:
+        c = counts.get(key, {})
+        if not c:
+            return "no supported files"
+        parts = [f"{n} {fmt}" for fmt, n in sorted(c.items(), key=lambda kv: -kv[1])]
+        return " · ".join(parts)
+
+    HARD_CAP = 4000
+    items: list[dict[str, Any]] = []
+    queue: list[Path] = [root]
+    while queue and len(items) < HARD_CAP:
+        current = queue.pop(0)
+        try:
+            children = sorted(current.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
+        except (PermissionError, OSError):
+            continue
+        parent_rel = None if current == root else rel(current)
+        file_items: list[dict[str, Any]] = []
+        for child in children:
+            if child.name.startswith("."):
+                continue
+            if child.is_dir():
+                r = rel(child)
+                if r in ignored_dirs:
+                    continue
+                items.append({
+                    "id": r,
+                    "title": child.name,
+                    "kind": "folder",
+                    "subtitle": summary(r),
+                    "parent_id": parent_rel,
+                    "count": sum(counts.get(r, {}).values()),
+                })
+                queue.append(child)
+            elif child.is_file() and not child.is_symlink():
+                fmt = format_for(child)
+                if fmt is None:
+                    continue
+                try:
+                    size = child.stat().st_size
+                except OSError:
+                    size = 0
+                file_items.append({
+                    "id": f"{FILE_SCOPE_PREFIX}{rel(child)}",
+                    "title": child.name,
+                    "kind": "file",
+                    "subtitle": f"{fmt} · {_human_size(size)}",
+                    "parent_id": None,  # filled below with the group id
+                    "count": 0,
+                })
+            if len(items) >= HARD_CAP:
+                break
+        if file_items and len(items) < HARD_CAP:
+            group_id = f"files:{parent_rel or ''}"
+            n = len(file_items)
+            items.append({
+                "id": group_id,
+                "title": f"{n} file{'s' if n != 1 else ''} here",
+                "kind": "filegroup",
+                "subtitle": "pick single files, or the whole folder above",
+                "parent_id": parent_rel,
+                "count": n,
+            })
+            for fi in file_items:
+                fi["parent_id"] = group_id
+            items.extend(file_items[: max(0, HARD_CAP - len(items))])
+
+    return {
+        "items": items,
+        "total_accessible": len(items),
+        "file_count": total_files,
+        "by_format": counts.get("", {}),
+    }
+
+
+def _human_size(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GB"
+
+
+@router.post("/connections/localfiles/discover")
+async def discover_localfiles(body: LocalFilesDiscover | None = None):
+    """Sub-folders plus the supported files in each, for the scope picker.
+    With no ``root_path`` in the body, uses the saved one."""
+    raw = (body.root_path or "").strip() if body else ""
+    if not raw:
+        from src.harvester.localfiles.models import LocalFilesConfig
+        cfg = load_config_file()
+        roots = LocalFilesConfig.from_yaml(cfg.get("sources", {}).get("localfiles", {}) or {}).roots
+        raw = roots[0].key if roots else ""
+    if not raw:
+        return {"items": [], "error": "no folder linked yet"}
+    return _walk_supported_tree(raw)
+
+
+class LocalFilesSave(BaseModel):
+    root_path: str
+    scope: list[str] = []  # root-relative folders and ``file:<relpath>`` entries
+
+
+@router.post("/connections/localfiles/save")
+async def save_localfiles(body: LocalFilesSave):
+    """Link a folder (or re-scope one already linked). Other linked folders
+    are untouched — the local-files source is a *list* of roots. No secrets
+    involved; the paths are the whole configuration."""
+    from src.harvester.localfiles.models import LocalFilesConfig, LocalRoot, root_key
+
+    block = read_config().get("sources", {}).get("localfiles", {}) or {}
+    roots = LocalFilesConfig.from_yaml(block).roots
+    key = root_key(body.root_path.strip())
+    scope = _drop_virtual_scope(body.scope)
+    replaced = False
+    for i, r in enumerate(roots):
+        if r.key == key:
+            roots[i] = LocalRoot(path=key, watch_folders=scope, ignore_patterns=r.ignore_patterns)
+            replaced = True
+            break
+    if not replaced:
+        roots.append(LocalRoot(path=key, watch_folders=scope))
+    upsert_source("localfiles", _localfiles_block(block, roots))
+    return {"ok": True, "root_path": key, "root_count": len(roots)}
+
+
+class LocalFilesRemoveRoot(BaseModel):
+    root_path: str
+
+
+@router.post("/connections/localfiles/remove-root")
+async def remove_localfiles_root(body: LocalFilesRemoveRoot):
+    """Unlink one folder. Its documents fall out of scope on the next
+    harvest (scope-aware deletion); the folder itself is never touched.
+    Removing the last root disables the source, same as Remove on the card."""
+    from src.harvester.localfiles.models import LocalFilesConfig, root_key
+
+    block = read_config().get("sources", {}).get("localfiles", {}) or {}
+    roots = LocalFilesConfig.from_yaml(block).roots
+    key = root_key(body.root_path.strip())
+    remaining = [r for r in roots if r.key != key]
+    if len(remaining) == len(roots):
+        raise HTTPException(404, "that folder is not linked")
+    upsert_source("localfiles", _localfiles_block(block, remaining))
+    return {"ok": True, "root_count": len(remaining)}
 
 
 class BrowseDir(BaseModel):
@@ -903,6 +1210,43 @@ async def browse_dir(body: BrowseDir):
             "error": f"Permission denied: {p}",
         }
 
+    from src.harvester.localfiles.scanner import format_for
+
+    def _supported_here(d: Path) -> int:
+        """Supported files DIRECTLY in ``d`` (non-recursive — cheap enough
+        to run for every row of the folder picker)."""
+        try:
+            return sum(
+                1
+                for f in d.iterdir()
+                if f.is_file() and not f.name.startswith(".") and format_for(f) is not None
+            )
+        except (PermissionError, OSError):
+            return 0
+
+    def _files_here(d: Path, cap: int = 300) -> list[dict[str, Any]]:
+        """Supported files DIRECTLY in ``d`` for the picker to display, so the
+        user can see what a folder holds before choosing it."""
+        out: list[dict[str, Any]] = []
+        try:
+            kids = sorted(d.iterdir(), key=lambda x: x.name.lower())
+        except (PermissionError, OSError):
+            return out
+        for f in kids:
+            if len(out) >= cap:
+                break
+            if not f.is_file() or f.name.startswith("."):
+                continue
+            fmt = format_for(f)
+            if fmt is None:
+                continue
+            try:
+                size = f.stat().st_size
+            except OSError:
+                size = 0
+            out.append({"name": f.name, "format": fmt, "size": _human_size(size)})
+        return out
+
     is_self_vault = (p / ".obsidian").is_dir()
     entries: list[dict[str, Any]] = []
     for child in children:
@@ -918,7 +1262,11 @@ async def browse_dir(body: BrowseDir):
                 is_vault = (child / ".obsidian").is_dir()
             except (PermissionError, OSError):
                 is_vault = False
-            entries.append({"name": name, "is_vault": is_vault})
+            entries.append({
+                "name": name,
+                "is_vault": is_vault,
+                "file_count": _supported_here(child),
+            })
         except (PermissionError, OSError):
             continue
 
@@ -927,6 +1275,8 @@ async def browse_dir(body: BrowseDir):
         "parent": str(p.parent) if p.parent != p else None,
         "entries": entries,
         "is_self_vault": is_self_vault,
+        "file_count": _supported_here(p),
+        "files": _files_here(p),
     }
 
 
