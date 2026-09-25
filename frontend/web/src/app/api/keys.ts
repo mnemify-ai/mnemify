@@ -5,6 +5,8 @@ export const qk = {
     ["connections", "confluence", "discover", creds] as const,
   obsidianDiscover: (vaultPath: string | null) =>
     ["connections", "obsidian", "discover", vaultPath] as const,
+  localFilesDiscover: (rootPath: string | null) =>
+    ["connections", "localfiles", "discover", rootPath] as const,
   harvestCurrent: () => ["harvest", "current"] as const,
   harvestHistory: () => ["harvest", "history"] as const,
   documents: (params?: { source?: string | null; search?: string | null; page?: number }) =>

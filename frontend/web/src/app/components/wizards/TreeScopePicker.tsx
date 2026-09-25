@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Bookmark,
   ChevronRight,
   Database,
   FileText,
+  Files,
   Folder,
   Minus,
   Search,
@@ -18,8 +19,17 @@ export interface TreeItem {
   id: string;
   title: string;
   subtitle?: string;
+  /** `"filegroup"` rows are virtual: a collapsible "N files here" bucket that
+   *  holds a folder's `"file"` rows. Toggling it toggles its files, its
+   *  check state is derived from them, and its id is never part of the
+   *  selection — only real folders and files are saved. */
   kind?: string;
   parent_id?: string | null;
+}
+
+/** Virtual rows (see `TreeItem.kind`): never selected themselves. */
+export function isVirtual(item: TreeItem): boolean {
+  return item.kind === "filegroup";
 }
 
 interface TreeScopePickerProps {
@@ -28,6 +38,10 @@ interface TreeScopePickerProps {
   onChange: (next: string[]) => void;
   emptyMessage?: string;
   maxHeight?: number;
+  /** Rows at depth < this start expanded (0 = everything collapsed). The
+   *  local-folder picker uses 1 so the root's files and first-level folders
+   *  are visible without clicking. */
+  defaultExpandDepth?: number;
 }
 
 const ROW_HEIGHT = 44;
@@ -38,6 +52,7 @@ function kindIcon(kind: string | undefined): LucideIcon {
   if (kind === "space") return Bookmark;
   if (kind === "personal_space") return User;
   if (kind === "folder") return Folder;
+  if (kind === "filegroup") return Files;
   return FileText;
 }
 
@@ -68,7 +83,7 @@ function buildTree(items: TreeItem[]): NodeShape[] {
  * Collect the id of `node` and every descendant.
  */
 function descendantIds(node: NodeShape, out: string[] = []): string[] {
-  out.push(node.id);
+  if (!isVirtual(node.item)) out.push(node.id);
   for (const child of node.children) descendantIds(child, out);
   return out;
 }
@@ -128,11 +143,13 @@ export function expandScopeWithDescendants(scope: string[], items: TreeItem[]): 
 type CheckState = "checked" | "unchecked" | "indeterminate";
 
 function nodeCheckState(node: NodeShape, selected: Set<string>): CheckState {
+  const virtual = isVirtual(node.item);
   if (node.children.length === 0) {
-    return selected.has(node.id) ? "checked" : "unchecked";
+    return !virtual && selected.has(node.id) ? "checked" : "unchecked";
   }
-  let allChecked = selected.has(node.id);
-  let anyChecked = selected.has(node.id);
+  // A virtual group has no vote of its own — its state is purely its files'.
+  let allChecked = virtual ? true : selected.has(node.id);
+  let anyChecked = virtual ? false : selected.has(node.id);
   for (const child of node.children) {
     const cs = nodeCheckState(child, selected);
     if (cs === "checked") {
@@ -177,12 +194,32 @@ export function TreeScopePicker({
   onChange,
   emptyMessage = "Nothing to pick yet.",
   maxHeight = 360,
+  defaultExpandDepth = 0,
 }: TreeScopePickerProps) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const tree = useMemo(() => buildTree(items), [items]);
+
+  // Seed the expanded set once items arrive (they load async). Only ever
+  // adds, so a user's collapse of a seeded row isn't undone on re-render.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || defaultExpandDepth <= 0 || tree.length === 0) return;
+    seededRef.current = true;
+    const seed = new Set<string>();
+    function walk(nodes: NodeShape[], depth: number) {
+      for (const n of nodes) {
+        if (depth < defaultExpandDepth && n.children.length > 0) {
+          seed.add(n.id);
+          walk(n.children, depth + 1);
+        }
+      }
+    }
+    walk(tree, 0);
+    setExpanded((prev) => new Set([...prev, ...seed]));
+  }, [tree, defaultExpandDepth]);
 
   // When searching, we collapse to a flat-filter view: every node whose title
   // matches (or whose descendant matches) is shown, with ancestors expanded.
@@ -252,13 +289,17 @@ export function TreeScopePicker({
     const next = new Set<string>();
     function walk(nodes: NodeShape[]) {
       for (const n of nodes) {
-        next.add(n.id);
+        if (!isVirtual(n.item)) next.add(n.id);
         walk(n.children);
       }
     }
     walk(tree);
     onChange([...next]);
   }
+  const selectableCount = useMemo(
+    () => items.filter((it) => !isVirtual(it)).length,
+    [items],
+  );
   function deselectAll() {
     onChange([]);
   }
@@ -312,7 +353,7 @@ export function TreeScopePicker({
 
       <div className="flex items-center justify-between font-sans text-[11px] text-muted mb-2">
         <span>
-          {selectedSet.size.toLocaleString()} / {items.length.toLocaleString()} selected
+          {selectedSet.size.toLocaleString()} / {selectableCount.toLocaleString()} selected
         </span>
         {search && (
           <span className="tabular-nums">{rows.length.toLocaleString()} matches</span>
@@ -336,6 +377,8 @@ export function TreeScopePicker({
               const row = rows[vrow.index];
               const node = row.node;
               const Icon = kindIcon(node.item.kind);
+              const isFile = node.item.kind === "file";
+              const isGroup = isVirtual(node.item);
               const state = nodeCheckState(node, selectedSet);
               const isExpanded = effectiveExpanded.has(node.id);
               return (
@@ -392,9 +435,23 @@ export function TreeScopePicker({
                         <Minus size={11} strokeWidth={3} className="text-magenta" />
                       )}
                     </span>
-                    <Icon size={14} strokeWidth={1.5} className="text-muted shrink-0" aria-hidden />
+                    <Icon
+                      size={14}
+                      strokeWidth={1.5}
+                      className={cn("shrink-0", isGroup ? "text-magenta/70" : "text-muted")}
+                      aria-hidden
+                    />
                     <span className="flex-1 min-w-0">
-                      <span className="block font-serif text-sm text-ink truncate">
+                      <span
+                        className={cn(
+                          "block truncate",
+                          isFile
+                            ? "font-sans text-[13px] text-ink"
+                            : isGroup
+                              ? "font-sans text-[12px] uppercase tracking-eyebrow text-muted"
+                              : "font-serif text-sm text-ink",
+                        )}
+                      >
                         {node.item.title}
                       </span>
                       {node.item.subtitle && (

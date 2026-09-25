@@ -59,6 +59,7 @@ DEFAULT_CONCURRENCY = 10  # was 5; bigger pool drains lists faster
 # backs off on 429/Retry-After, but a higher default would mostly burn retries.
 _SOURCE_DEFAULT_CONCURRENCY: dict[str, int] = {
     "obsidian": 32,
+    "localfiles": 32,
 }
 
 
@@ -69,6 +70,7 @@ _SCOPE_KEY = {
     "notion": "scope",
     "confluence": "space_keys",
     "obsidian": "watch_folders",
+    "localfiles": "roots",  # encoded per root — see _active_scope_ids_for
     "jira": "project_keys",
 }
 
@@ -145,6 +147,11 @@ def _active_scope_ids_for(source: str, source_cfg: dict) -> list[str] | None:
         )
     elif source == "obsidian":
         ids = source_cfg.get("watch_folders") or []
+    elif source == "localfiles":
+        # Many roots, each with its own narrowing: flat ``<root>::<entry>``
+        # ids, ``<root>::`` for a whole root (see localfiles.models).
+        from src.harvester.localfiles.models import LocalFilesConfig
+        ids = LocalFilesConfig.from_yaml(source_cfg).scope_ids()
     elif source == "jira":
         ids = source_cfg.get("project_keys") or []
     else:
@@ -177,6 +184,7 @@ def _apply_scope_ids_to_source_cfg(
                      ``filter.include_databases`` instead, which combined with
                      the YAML's wider ``scope`` to intersect to ~0–1 items.
       • obsidian    → ``watch_folders``
+      • localfiles  → ``watch_folders``
       • jira        → ``project_keys``
     """
     cfg = dict(source_cfg)
@@ -189,6 +197,15 @@ def _apply_scope_ids_to_source_cfg(
         cfg["scope"] = list(ids)
     elif source == "obsidian":
         cfg["watch_folders"] = list(ids)
+    elif source == "localfiles":
+        from src.harvester.localfiles.models import LocalFilesConfig, roots_from_scope_ids
+        existing = LocalFilesConfig.from_yaml(source_cfg).roots
+        cfg.pop("root_path", None)
+        cfg.pop("watch_folders", None)
+        cfg["roots"] = [
+            {"path": r.path, "watch_folders": r.watch_folders, "ignore_patterns": r.ignore_patterns}
+            for r in roots_from_scope_ids(list(ids), existing)
+        ]
     elif source == "jira":
         cfg["project_keys"] = list(ids)
     return cfg
@@ -800,6 +817,9 @@ async def _run_one(
             try:
                 scope_key = _SCOPE_KEY.get(source, "scope")
                 yaml_scope = list(full_source_cfg.get(scope_key, []) or [])
+                if source == "localfiles":
+                    from src.harvester.localfiles.models import LocalFilesConfig
+                    yaml_scope = LocalFilesConfig.from_yaml(full_source_cfg).scope_ids()
                 if source == "confluence":
                     # Page-subtree scope lives in a second key; the
                     # pending-scope diff compares against the full set.

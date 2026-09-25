@@ -13,9 +13,10 @@ import { sourceMeta } from "../../components/SourceBadge";
 import { NotionWizard } from "../../components/wizards/NotionWizard";
 import { ConfluenceWizard } from "../../components/wizards/ConfluenceWizard";
 import { ObsidianWizard } from "../../components/wizards/ObsidianWizard";
+import { LocalFilesWizard } from "../../components/wizards/LocalFilesWizard";
 import { PageShell } from "../../layouts/PageShell";
 
-const SUPPORTED = ["notion", "obsidian", "confluence"] as const;
+const SUPPORTED = ["notion", "obsidian", "confluence", "localfiles"] as const;
 const COMING_SOON = [
   "jira",
   "gmail",
@@ -88,7 +89,7 @@ export function ConnectionsSection() {
     const src = disconnectTarget;
     disconnect.mutate(src, {
       onSuccess: () => {
-        toast.success(`${sourceMeta(src).label} disconnected.`, {
+        toast.success(`${sourceMeta(src).label} ${sourceMeta(src).verb.past}.`, {
           description: "Harvested data is preserved on disk.",
         });
         setDisconnectTarget(null);
@@ -164,6 +165,7 @@ export function ConnectionsSection() {
       <NotionWizard open={openWizardFor === "notion"} onClose={closeWizard} />
       <ConfluenceWizard open={openWizardFor === "confluence"} onClose={closeWizard} />
       <ObsidianWizard open={openWizardFor === "obsidian"} onClose={closeWizard} />
+      <LocalFilesWizard open={openWizardFor === "localfiles"} onClose={closeWizard} />
 
       {scopeConn && (
         <ManageScopeDialog
@@ -171,15 +173,31 @@ export function ConnectionsSection() {
           open={scopeTarget !== null}
           onClose={() => setScopeTarget(null)}
           currentScope={scopeConn.scope ?? []}
+          roots={scopeConn.roots}
         />
       )}
 
       <AlertDialog
         open={disconnectTarget !== null}
         onOpenChange={(v) => !v && setDisconnectTarget(null)}
-        title={disconnectTarget ? `Disconnect ${sourceMeta(disconnectTarget).label}?` : "Disconnect"}
+        title={
+          disconnectTarget
+            ? `${sourceMeta(disconnectTarget).verb.remove} ${sourceMeta(disconnectTarget).label}?`
+            : "Disconnect"
+        }
         description={
-          disconnectTarget && (
+          disconnectTarget &&
+          (disconnectTarget === "localfiles" ? (
+            <>
+              Mnemify will stop reading this folder and disable it in your{" "}
+              <code className="font-mono text-xs">mnemify.yaml</code>. The folder itself is
+              untouched.
+              <br />
+              <br />
+              <strong className="text-ink">Already-harvested data stays on disk.</strong> Add the
+              folder again any time to pick up where you left off.
+            </>
+          ) : (
             <>
               Mnemify will remove the credentials from{" "}
               <code className="font-mono text-xs">.env</code> and disable the source in your{" "}
@@ -189,9 +207,9 @@ export function ConnectionsSection() {
               <strong className="text-ink">Already-harvested data stays on disk.</strong> Reconnect any
               time to pick up where you left off.
             </>
-          )
+          ))
         }
-        confirmLabel="Disconnect"
+        confirmLabel={disconnectTarget ? sourceMeta(disconnectTarget).verb.remove : "Disconnect"}
         tone="destructive"
         confirming={disconnect.isPending}
         onConfirm={confirmDisconnect}

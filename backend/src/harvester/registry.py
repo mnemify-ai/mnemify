@@ -20,7 +20,7 @@ must close in its ``finally`` block (e.g. the Notion HTTP client).  Plugins
 with no long-lived resources return ``None`` as the second element.
 
 Which plugins get imported (and therefore registered) is decided by
-``src.sources.enabled_sources()`` — this build ships Notion, Confluence and
+``src.sources.enabled_sources()`` — this build ships Notion, Confluence, local files and
 Obsidian. The other plugin packages remain importable by hand; they just
 aren't auto-registered. See ``src/sources.py``.
 """

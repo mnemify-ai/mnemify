@@ -1,4 +1,17 @@
 import { Link } from "react-router-dom";
+import { useMapFocusStore } from "../lib/mapFocusStore";
+import { useMapHighlightStore } from "../lib/mapHighlightStore";
+import { useMapPulseStore } from "../lib/mapPulseStore";
+
+/** The brand mark is the "start over" button for the map: home route with no
+ *  query (drops `?tag=`), no region focus, no answer highlight, no agent
+ *  pulses, and a camera re-frame. Safe to call from any route — the stores
+ *  outlive route mounts and HomePage / KnowledgeMap consume them on mount. */
+export function resetMapView() {
+  useMapHighlightStore.getState().clear();
+  useMapPulseStore.getState().clear();
+  useMapFocusStore.getState().requestReset();
+}
 
 /**
  * Mnemify wordmark + logo.
@@ -13,8 +26,10 @@ export function BrandMark() {
   return (
     <Link
       to="/"
+      onClick={resetMapView}
       className="flex items-center gap-2.5 group"
       aria-label="Mnemify home"
+      title="Home: reset the map"
     >
       <img
         src="/mnemify-mark.png"

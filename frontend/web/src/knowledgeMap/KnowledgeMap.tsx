@@ -42,6 +42,7 @@ import { RegionHoverPreview } from './chrome/RegionHoverPreview';
 import { RightPanel } from './chrome/RightPanel';
 import { BottomBar } from './chrome/BottomBar';
 import { ResetViewButton } from './chrome/ResetViewButton';
+import { AskHighlightPill } from './chrome/AskHighlightPill';
 import { useRenderData } from './data/useRenderData';
 import { recolorRegions } from './util/regionColors';
 import { Scene } from './scene/Scene';
@@ -51,6 +52,8 @@ import {
   useLocalKnowledgeMapStore,
 } from './store';
 import { useEscapeHandler } from './input/useEscapeHandler';
+import { useAskHighlightSync } from './util/askHighlight';
+import { useMapFocusStore } from '../app/lib/mapFocusStore';
 import type { RenderData } from './types';
 
 export type KnowledgeMapProps = {
@@ -152,6 +155,18 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
   useEscapeHandler();
   useControlledFocusBridge(data, props.focusRegionId, props.onFocusChange);
   useControlledTagBridge(data, props.selectedTagId, props.onTagSelect);
+  // The Ask dock's answer highlight → this bake's spires + one camera framing.
+  useAskHighlightSync(data, props.notesUrl ?? DEFAULT_NOTES_URL);
+  // Brand-mark reset: wipe nav state and re-frame. Skips the mount value so
+  // landing on Home doesn't fight a deep link's `?tag=` / focus.
+  const resetTick = useMapFocusStore((s) => s.resetTick);
+  const home = useKnowledgeMapStore((s) => s.home);
+  const seenResetRef = useRef(resetTick);
+  useEffect(() => {
+    if (resetTick === seenResetRef.current) return;
+    seenResetRef.current = resetTick;
+    home();
+  }, [resetTick, home]);
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLElement>(null);
@@ -251,6 +266,7 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
           <CartographerDecorations />
           {!props.hideHeader && <Header data={data} />}
           <ResetViewButton />
+          <AskHighlightPill />
           {/* On-map breadcrumb removed — navigation now lives in the right
               panel's nav header (Back + breadcrumb). */}
           <HexTooltip

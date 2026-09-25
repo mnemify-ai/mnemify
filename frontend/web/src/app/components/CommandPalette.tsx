@@ -297,6 +297,17 @@ export function CommandPalette() {
               }
             />
             <PaletteItem
+              value="add local files folder wizard"
+              icon={<Plug size={15} strokeWidth={1.5} />}
+              label="Add local files…"
+              hint="Wizard"
+              onSelect={() =>
+                run(() =>
+                  navigate("/build/sources?connect=localfiles"),
+                )
+              }
+            />
+            <PaletteItem
               value="connect confluence wizard"
               icon={<Plug size={15} strokeWidth={1.5} />}
               label="Connect Confluence…"
@@ -333,6 +344,13 @@ export function CommandPalette() {
               label="Re-harvest Obsidian"
               hint="Start a new run"
               onSelect={() => requestHarvest("obsidian")}
+            />
+            <PaletteItem
+              value="action reharvest local files folder"
+              icon={<Sparkles size={15} strokeWidth={1.5} />}
+              label="Re-harvest local files"
+              hint="Start a new run"
+              onSelect={() => requestHarvest("localfiles")}
             />
             <PaletteItem
               value="action reharvest confluence"

@@ -1,4 +1,5 @@
 // Esc key handler — drives the single nav layer:
+//   0. If an Ask answer is lighting the map, clear that highlight first.
 //   1. If there's nav history, step Back one screen (region ← sub ← tag ← doc).
 //   2. Otherwise, if anything is focused/selected, reset to the map root (home) view.
 //
@@ -7,6 +8,7 @@
 
 import { useEffect } from 'react';
 import { useKnowledgeMapStore } from '../store';
+import { useMapHighlightStore } from '../../app/lib/mapHighlightStore';
 
 export function useEscapeHandler() {
   const back = useKnowledgeMapStore((s) => s.back);
@@ -15,14 +17,17 @@ export function useEscapeHandler() {
   const atRoot = useKnowledgeMapStore(
     (s) => s.focusRegionIdx === null && s.selectedTagId === null && s.docNoteId === null,
   );
+  const highlighted = useMapHighlightStore((s) => s.highlight !== null);
+  const clearHighlight = useMapHighlightStore((s) => s.clear);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return;
-      if (hasHistory) back();
+      if (highlighted) clearHighlight();
+      else if (hasHistory) back();
       else if (!atRoot) resetNav();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [hasHistory, atRoot, back, resetNav]);
+  }, [highlighted, clearHighlight, hasHistory, atRoot, back, resetNav]);
 }

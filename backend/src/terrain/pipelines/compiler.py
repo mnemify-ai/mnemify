@@ -430,6 +430,7 @@ _SOURCE_MAP: dict[str, NoteSource] = {
     "obsidian": "obsidian",
     "notion": "notion",
     "confluence": "confluence",
+    "localfiles": "localfiles",
     "jira": "jira",
     "gmail": "gmail",
     "calendar": "calendar",
@@ -3278,10 +3279,11 @@ class TerrainCompiler:
            when there is no frontmatter.
 
         The harvest mtime stays the fallback for everything else, so
-        non-Obsidian sources (which already carry real modified times) are
-        unaffected.
+        network sources (which already carry real modified times) are
+        unaffected. Local folders share the bulk-mtime problem, so they
+        take the same path.
         """
-        if doc.source_type != "obsidian":
+        if doc.source_type not in ("obsidian", "localfiles"):
             return doc.source_modified
         metadata = doc.metadata or {}
         for key in ("Date", "date", "created", "Created", "date_created", "updated"):

@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 _EXT_MAP: dict[str, str] = {
     "json": ".json",
     "md": ".md",
+    "txt": ".txt",
+    "pdf": ".pdf",
     "xml": ".xml",
     "html": ".html",
 }

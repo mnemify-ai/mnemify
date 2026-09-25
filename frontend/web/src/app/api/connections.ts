@@ -12,11 +12,29 @@ export interface Connection {
   doc_count: number;
   scope_summary: string | null;
   /** Raw "what to harvest" list — Notion page/db ids, Confluence space keys,
-   *  Obsidian watch folders, Jira project keys. */
+   *  Obsidian / local-folder watch folders, Jira project keys. */
   scope: string[];
   /** Configured scope ids that have no harvested docs yet. Non-zero after a
    *  Manage Scope edit until the user clicks Harvest. */
   pending_scope_count: number;
+  /** Local files only: every linked folder. `scope` for this source is the
+   *  flat `<root>::<entry>` form (`<root>::` = the whole folder). */
+  roots?: LocalRoot[];
+}
+
+export interface LocalRoot {
+  /** Resolved absolute path — the key every scope id and document uses. */
+  path: string;
+  name: string;
+  watch_folders: string[];
+  exists: boolean;
+}
+
+/** Split a local-files scope id into its root and root-relative entry. */
+export function splitLocalScopeId(id: string): { root: string; entry: string } | null {
+  const i = id.indexOf("::");
+  if (i <= 0) return null;
+  return { root: id.slice(0, i), entry: id.slice(i + 2) };
 }
 
 export type ValidateResult =
@@ -27,10 +45,16 @@ export type ObsidianValidateResult =
   | { ok: true; file_count: number; has_obsidian_dir: true }
   | { ok: false; reason: string; file_count?: number; has_obsidian_dir?: boolean };
 
+export type LocalFilesValidateResult =
+  | { ok: true; file_count: number; by_format: Record<string, number>; root_path?: string }
+  | { ok: false; reason: string; file_count?: number; by_format?: Record<string, number> };
+
 export interface DiscoverItem {
   id: string;
   title: string;
-  kind: string; // 'page' | 'database' | 'space' | 'personal_space' | 'folder'
+  /** Secondary line: per-format counts for a folder, format + size for a file. */
+  subtitle?: string | null;
+  kind: string; // 'page' | 'database' | 'space' | 'personal_space' | 'folder' | 'file'
   /** Parent's id, or null for top-level items. Powers the tree picker. */
   parent_id?: string | null;
   count: number;
@@ -39,6 +63,9 @@ export interface DiscoverItem {
 export interface DiscoverResult {
   items: DiscoverItem[];
   total_accessible: number;
+  /** Local folder only: supported files under the root, and per-format counts. */
+  file_count?: number;
+  by_format?: Record<string, number>;
   error?: string | null;
 }
 
@@ -91,6 +118,16 @@ export function useValidateObsidian() {
   });
 }
 
+export function useValidateLocalFiles() {
+  return useMutation({
+    mutationFn: (root_path: string) =>
+      apiFetch<LocalFilesValidateResult>("/api/connections/localfiles/validate", {
+        method: "POST",
+        body: JSON.stringify({ root_path }),
+      }),
+  });
+}
+
 // ─── Discover (queries — enabled on demand) ────────────────────────────
 
 /** Discover Notion pages/databases. Pass `token === null` to discover with the
@@ -118,6 +155,21 @@ export function useDiscoverObsidian(vaultPath: string | null, enabled: boolean) 
       apiFetch<DiscoverResult>("/api/connections/obsidian/discover", {
         method: "POST",
         body: JSON.stringify({ vault_path: vaultPath }),
+      }),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/** Discover a local folder's sub-folders. Pass `rootPath === null` to use
+ *  the *saved* folder (Manage Scope). */
+export function useDiscoverLocalFiles(rootPath: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: qk.localFilesDiscover(rootPath),
+    queryFn: () =>
+      apiFetch<DiscoverResult>("/api/connections/localfiles/discover", {
+        method: "POST",
+        body: JSON.stringify({ root_path: rootPath }),
       }),
     enabled,
     staleTime: 60_000,
@@ -154,6 +206,10 @@ export interface ConfluenceSavePayload extends ConfluenceCreds {
 }
 export interface ObsidianSavePayload {
   vault_path: string;
+  scope: string[]; // watch_folders
+}
+export interface LocalFilesSavePayload {
+  root_path: string;
   scope: string[]; // watch_folders
 }
 
@@ -193,11 +249,39 @@ export function useSaveObsidian() {
   });
 }
 
-// ─── Folder browser (Obsidian wizard) ─────────────────────────────────
+export function useSaveLocalFiles() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: LocalFilesSavePayload) =>
+      apiFetch<{ ok: true; root_path: string; root_count: number }>("/api/connections/localfiles/save", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.connections() }),
+  });
+}
+
+/** Unlink one local folder. Its documents fall out of scope on the next
+ *  harvest; nothing on disk is touched. */
+export function useRemoveLocalFilesRoot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (root_path: string) =>
+      apiFetch<{ ok: true; root_count: number }>("/api/connections/localfiles/remove-root", {
+        method: "POST",
+        body: JSON.stringify({ root_path }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.connections() }),
+  });
+}
+
+// ─── Folder browser (Obsidian + local-folder wizards) ─────────────────
 
 export interface BrowseDirEntry {
   name: string;
   is_vault: boolean;
+  /** Supported files (.md / .txt / .pdf) directly inside, non-recursive. */
+  file_count?: number;
 }
 
 export interface BrowseDirResult {
@@ -206,6 +290,10 @@ export interface BrowseDirResult {
   entries: BrowseDirEntry[];
   /** True when the currently-listed directory itself is a vault. */
   is_self_vault?: boolean;
+  /** Supported files directly in the listed directory. */
+  file_count?: number;
+  /** Those files, for display (capped server-side). */
+  files?: { name: string; format: string; size: string }[];
   error?: string;
 }
 

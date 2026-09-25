@@ -24,6 +24,18 @@ export type NavSnapshot = {
   docNoteId: string | null;
 };
 
+/** The last Ask answer's sources, resolved against THIS bake (see
+ *  util/askHighlight.ts). Tag ids light their spires; region indices (any
+ *  level) keep their terrain in colour; everything else dims. */
+export type ResolvedHighlight = {
+  tagIds: Set<string>;
+  regionIdxs: Set<number>;
+  /** Question text for the on-canvas pill. */
+  label: string;
+  /** Mirrors MapHighlight.token — one camera framing per token. */
+  token: number;
+};
+
 export type FocusState = {
   /** null = map root (top-level) scope. Otherwise an index into RegionEntry[]. */
   focusRegionIdx: number | null;
@@ -56,6 +68,8 @@ export type FocusState = {
    *  Built once by HexField on data load so overlays (e.g. the tag-relation
    *  popover) can anchor to a tag without reaching into HexField internals. */
   tagSummitPos: Map<string, { x: number; y: number; z: number }>;
+  /** Ask-answer highlight, or null when the map shows plain terrain. */
+  askHighlight: ResolvedHighlight | null;
 };
 
 export type KnowledgeMapState = FocusState & {
@@ -69,6 +83,7 @@ export type KnowledgeMapState = FocusState & {
   /** Set/clear the sidebar/label-hovered region (any level). */
   setLegendHover: (idx: number | null) => void;
   setTagSummitPos: (m: Map<string, { x: number; y: number; z: number }>) => void;
+  setAskHighlight: (h: ResolvedHighlight | null) => void;
   /** The single nav layer. Pushes the current snapshot to history, applies the
    *  patch atomically, and (by default) zooms the map when focus changes. This
    *  is the ONLY thing that should write focus/tag/doc from UI navigation. */
@@ -99,6 +114,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
     legendHoverIdx: initial?.legendHoverIdx ?? null,
     zoomToRegion: initial?.zoomToRegion ?? null,
     tagSummitPos: initial?.tagSummitPos ?? new Map(),
+    askHighlight: initial?.askHighlight ?? null,
     setFocusRegion: (idx) => set({ focusRegionIdx: idx }),
     setSelectedTag: (id) => set({ selectedTagId: id }),
     setHoveredInstance: (id) => set({ hoveredInstanceId: id }),
@@ -107,6 +123,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
     requestZoomToRegion: (idx) =>
       set((s) => ({ zoomToRegion: { idx, tick: (s.zoomToRegion?.tick ?? 0) + 1 } })),
     setTagSummitPos: (m) => set({ tagSummitPos: m }),
+    setAskHighlight: (h) => set({ askHighlight: h }),
     navigate: (next, opts) =>
       set((s) => {
         const cur: NavSnapshot = {

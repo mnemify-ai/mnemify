@@ -1,7 +1,8 @@
 """Which source connectors this build ships.
 
-Mnemify's tree carries eight harvester plugins, but the released build
-exposes **three**: Notion, Confluence and Obsidian. That is a *release
+Mnemify's tree carries nine harvester plugins, but the released build
+exposes **four**: Notion, Confluence, Obsidian and a local folder
+(``localfiles`` — .md / .txt / .pdf on disk). That is a *release
 scope* decision, not a code-quality one — the other five (Jira, Slack,
 GitHub, Gmail, Calendar) are complete, tested, and stay in the tree. They
 are hidden because shipping them would mean supporting five more credential
@@ -33,7 +34,7 @@ import os
 SOURCES_ENV = "MNEMIFY_SOURCES"
 
 #: Connectors the shipped build exposes.
-ENABLED_SOURCES: tuple[str, ...] = ("notion", "confluence", "obsidian")
+ENABLED_SOURCES: tuple[str, ...] = ("notion", "confluence", "obsidian", "localfiles")
 
 #: Present in the tree, deliberately not exposed. Listed for documentation
 #: and so ``MNEMIFY_SOURCES`` users know what names are available.

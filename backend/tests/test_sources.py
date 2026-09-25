@@ -19,7 +19,7 @@ from src.harvester import registry
 # ── default set ───────────────────────────────────────────────────
 
 def test_default_enabled_sources_are_the_three_shipped_connectors():
-    assert sources.ENABLED_SOURCES == ("notion", "confluence", "obsidian")
+    assert sources.ENABLED_SOURCES == ("notion", "confluence", "obsidian", "localfiles")
 
 
 def test_enabled_sources_returns_the_default_without_the_env_var(monkeypatch):
@@ -89,6 +89,7 @@ def test_registry_imports_only_the_enabled_plugins(monkeypatch, recorded_imports
         "src.harvester.notion",
         "src.harvester.confluence",
         "src.harvester.obsidian",
+        "src.harvester.localfiles",
     ]
 
 

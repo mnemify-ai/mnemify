@@ -11,9 +11,16 @@ import { create } from "zustand";
 type MapFocusState = {
   focusRegionId: string | null;
   setFocusRegion: (id: string | null) => void;
+  /** Nonce for "show me the whole map, from scratch": bumped by the brand
+   *  mark in the top bar. KnowledgeMap watches it and runs `home()` — clears
+   *  focus, tag, open doc and history, and re-frames the camera. */
+  resetTick: number;
+  requestReset: () => void;
 };
 
 export const useMapFocusStore = create<MapFocusState>((set) => ({
   focusRegionId: null,
   setFocusRegion: (focusRegionId) => set({ focusRegionId }),
+  resetTick: 0,
+  requestReset: () => set((s) => ({ focusRegionId: null, resetTick: s.resetTick + 1 })),
 }));

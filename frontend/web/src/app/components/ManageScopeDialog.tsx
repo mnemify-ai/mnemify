@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogClose } from "./ui/Dialog";
 import { Button } from "./ui/Button";
@@ -10,37 +10,57 @@ import {
 } from "./wizards/TreeScopePicker";
 import { sourceMeta } from "./SourceBadge";
 import {
+  splitLocalScopeId,
   useDiscoverConfluence,
   useDiscoverNotion,
   useDiscoverObsidian,
+  useDiscoverLocalFiles,
   useUpdateScope,
+  type LocalRoot,
 } from "../api/connections";
 
 interface ManageScopeDialogProps {
-  source: string; // "notion" | "confluence" | "obsidian"
+  source: string; // "notion" | "confluence" | "obsidian" | "localfiles"
   open: boolean;
   onClose: () => void;
-  /** The source's currently-saved scope (page/db ids, space keys, watch folders). */
+  /** The source's currently-saved scope (page/db ids, space keys, watch
+   *  folders; for local files the flat `<root>::<entry>` ids). */
   currentScope: string[];
+  /** Local files only: the linked folders, one tree each. */
+  roots?: LocalRoot[];
 }
 
 /** Re-pick what an already-connected source harvests — no creds re-entry. */
-export function ManageScopeDialog({ source, open, onClose, currentScope }: ManageScopeDialogProps) {
+export function ManageScopeDialog({ source, open, onClose, currentScope, roots }: ManageScopeDialogProps) {
   const meta = sourceMeta(source);
+  const isLocal = source === "localfiles";
+
+  // Local files: one tree per linked folder; the picker chooses which.
+  const [activeRoot, setActiveRoot] = useState<string | null>(roots?.[0]?.path ?? null);
+  useEffect(() => {
+    if (open) setActiveRoot(roots?.[0]?.path ?? null);
+  }, [open, roots]);
 
   // Discover against the *saved* credentials (token === null → .env fallback).
   const discoverNotion = useDiscoverNotion(null, open && source === "notion");
   const discoverConfluence = useDiscoverConfluence(null, open && source === "confluence");
   const discoverObsidian = useDiscoverObsidian(null, open && source === "obsidian");
+  const discoverLocalFiles = useDiscoverLocalFiles(activeRoot, open && isLocal && activeRoot !== null);
+  const isFolderSource = source === "obsidian" || isLocal;
   const discover =
     source === "notion"
       ? discoverNotion
       : source === "confluence"
         ? discoverConfluence
-        : discoverObsidian;
+        : source === "localfiles"
+          ? discoverLocalFiles
+          : discoverObsidian;
 
   const update = useUpdateScope();
 
+  // Local files keep the WHOLE flat scope in `selected` (every root), but
+  // the picker shows one root at a time — so the tree gets that root's
+  // entries decoded, and edits are re-encoded back into the full list.
   const [selected, setSelected] = useState<string[]>(currentScope);
   const [hydrated, setHydrated] = useState(false);
 
@@ -52,10 +72,27 @@ export function ManageScopeDialog({ source, open, onClose, currentScope }: Manag
     }
   }, [open, currentScope]);
 
+  const localEntriesFor = (root: string): string[] =>
+    selected
+      .map(splitLocalScopeId)
+      .filter((p): p is { root: string; entry: string } => p !== null && p.root === root && p.entry !== "")
+      .map((p) => p.entry);
+  const treeSelected = isLocal && activeRoot ? localEntriesFor(activeRoot) : selected;
+  const setTreeSelected = (next: string[]) => {
+    if (!isLocal || !activeRoot) {
+      setSelected(next);
+      return;
+    }
+    const others = selected.filter((id) => splitLocalScopeId(id)?.root !== activeRoot);
+    const mine = next.length > 0 ? next.map((e) => `${activeRoot}::${e}`) : [`${activeRoot}::`];
+    setSelected([...others, ...mine]);
+  };
+
   const items: TreeItem[] =
     discover?.data?.items?.map((it) => ({
       id: it.id,
       title: it.title || it.id,
+      subtitle: it.subtitle ?? undefined,
       kind: it.kind,
       parent_id: it.parent_id ?? null,
     })) ?? [];
@@ -89,7 +126,10 @@ export function ManageScopeDialog({ source, open, onClose, currentScope }: Manag
       { source, scope },
       {
         onSuccess: () => {
-          const noun = source === "obsidian" ? "folder" : "item";
+          const noun = isFolderSource ? "folder" : "item";
+          const scopeSize = isLocal
+            ? scope.filter((id) => splitLocalScopeId(id)?.entry).length
+            : scope.length;
           if (added.length > 0) {
             // Scope-change no longer auto-harvests — the user chooses when to
             // pull. The Connections card surfaces a "pending" indicator until
@@ -100,16 +140,18 @@ export function ManageScopeDialog({ source, open, onClose, currentScope }: Manag
               `Added ${added.length} new ${noun}${added.length === 1 ? "" : "s"} to scope.`,
               { description: "Click Harvest on this connection to pull them in." },
             );
-          } else if (scope.length === 0) {
+          } else if (scopeSize === 0) {
             toast.success(`${meta.label} scope updated.`, {
               description:
                 source === "obsidian"
                   ? "Harvesting the whole vault on the next run."
+                  : source === "localfiles"
+                    ? "Harvesting the whole folder on the next run."
                   : "Harvesting everything the integration can see on the next run.",
             });
           } else {
             toast.success(`${meta.label} scope updated.`, {
-              description: `${scope.length} ${noun}${scope.length === 1 ? "" : "s"} in scope. Click Harvest to refresh.`,
+              description: `${scopeSize} ${noun}${scopeSize === 1 ? "" : "s"} in scope. Click Harvest to refresh.`,
             });
           }
           onClose();
@@ -127,10 +169,28 @@ export function ManageScopeDialog({ source, open, onClose, currentScope }: Manag
       source={source}
       discover={discover}
       items={items}
-      selected={selected}
-      setSelected={setSelected}
+      selected={treeSelected}
+      setSelected={setTreeSelected}
       handleSave={handleSave}
       update={update}
+      rootPicker={
+        isLocal && roots && roots.length > 0 ? (
+          <label className="mt-4 flex items-center gap-3 font-sans text-xs text-muted">
+            Folder
+            <select
+              value={activeRoot ?? ""}
+              onChange={(e) => setActiveRoot(e.target.value || null)}
+              className="min-w-0 flex-1 rounded-lg border border-hair bg-bone/60 px-2.5 py-1.5 font-mono text-xs text-ink focus:outline-none focus:border-magenta/60"
+            >
+              {roots.map((r) => (
+                <option key={r.path} value={r.path}>
+                  {r.name} ({r.path})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null
+      }
     />
   );
 }
@@ -146,6 +206,7 @@ function ManageScopeDialogShell({
   setSelected,
   handleSave,
   update,
+  rootPicker,
 }: {
   open: boolean;
   onClose: () => void;
@@ -157,6 +218,7 @@ function ManageScopeDialogShell({
   setSelected: (next: string[]) => void;
   handleSave: () => void;
   update: { isPending: boolean };
+  rootPicker?: ReactNode;
 }) {
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()} ariaLabel={`Manage ${meta.label} scope`} width="560px">
@@ -167,10 +229,13 @@ function ManageScopeDialogShell({
         <p className="font-sans text-sm text-muted mt-2 max-w-prose">
           {source === "obsidian"
             ? "Which vault folders should Mnemify harvest? Pick a parent folder to include everything beneath it. Leave empty to harvest the whole vault."
+            : source === "localfiles"
+              ? "Which parts of each linked folder should Mnemify harvest? Pick sub-folders or single files; leave everything unchecked to harvest that whole folder."
             : source === "confluence"
               ? "Which spaces or pages should Mnemify harvest? Picking a page includes everything beneath it; picking a space includes the whole space. (Uses your saved credentials.)"
               : "Which pages & databases should Mnemify harvest? Expand a row to see its sub-pages — picking a parent includes everything beneath it."}
         </p>
+        {rootPicker}
       </header>
 
       <div className="px-7 py-6 overflow-y-auto flex-1 min-h-0">
@@ -188,9 +253,12 @@ function ManageScopeDialogShell({
                 ? "No spaces visible — check that the account has access."
                 : source === "obsidian"
                   ? "No folders found in the vault."
+                  : source === "localfiles"
+                    ? "No sub-folders — the whole folder is harvested."
                   : "No pages shared with the integration yet."
             }
             maxHeight={360}
+            defaultExpandDepth={source === "localfiles" ? 1 : 0}
           />
         )}
       </div>

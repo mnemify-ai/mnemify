@@ -67,7 +67,7 @@ def _compute_path(
     the document itself.
 
     Strategy per source:
-      • Obsidian — split ``metadata.folder`` (already vault-relative).
+      • Obsidian / local files — split ``metadata.folder`` (root-relative).
       • Confluence — start with the space name/key, then walk
         ``metadata.ancestors`` (already root-first per the Confluence API).
       • Notion — walk ``parent_id`` chain. Uses ``by_source_id`` when
@@ -80,9 +80,9 @@ def _compute_path(
     src = r.get("source_type")
     md = _parse_metadata(r)
 
-    if src == "obsidian":
+    if src in ("obsidian", "localfiles"):
         folder = md.get("folder") or ""
-        titles = [seg for seg in folder.split("/") if seg]
+        titles = [seg for seg in folder.replace("\\", "/").split("/") if seg]
         return titles, ["" for _ in titles]
 
     if src == "confluence":
@@ -502,6 +502,19 @@ async def get_content(doc_id: str):
         raise HTTPException(404, "not found")
     raw = row.get("raw_path")
     raw_format = (row.get("raw_format") or "text").lower()
+    if raw_format == "pdf":
+        # The raw bytes are a PDF; the viewer wants text. Serve the
+        # normalized markdown the harvester extracted (empty when the PDF
+        # had no text layer, in which case the row was never normalized).
+        normalized = row.get("normalized_path")
+        if normalized and Path(normalized).is_file():
+            md = Path(normalized).read_text(encoding="utf-8", errors="replace")
+            return {"id": doc_id, "content": md[:_CONTENT_CAP_BYTES], "format": "markdown"}
+        return {
+            "id": doc_id,
+            "content": "This PDF has no extractable text layer (scanned PDFs are not supported yet).",
+            "format": "text",
+        }
     if raw and Path(raw).is_file():
         try:
             text = Path(raw).read_text(encoding="utf-8", errors="replace")

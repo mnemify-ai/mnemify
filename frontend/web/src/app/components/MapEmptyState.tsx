@@ -11,11 +11,12 @@ import { AiModePicker, useCompileOverrides } from "./AiModePicker";
 import { NotionWizard } from "./wizards/NotionWizard";
 import { ConfluenceWizard } from "./wizards/ConfluenceWizard";
 import { ObsidianWizard } from "./wizards/ObsidianWizard";
+import { LocalFilesWizard } from "./wizards/LocalFilesWizard";
 import { useHarvestCurrent, useStartHarvest } from "../api/harvest";
 import { useStartCompile, useTerrainCurrent } from "../api/terrain";
 import { qk } from "../api/keys";
 
-type ConnectSource = "notion" | "confluence" | "obsidian";
+type ConnectSource = "notion" | "confluence" | "obsidian" | "localfiles";
 
 interface StepConfig {
   n: number;
@@ -257,7 +258,7 @@ export function MapEmptyState({
                 </Button>
                 {/* Supported sources — each chip jumps straight into its wizard. */}
                 <ul className="mt-4 flex flex-wrap items-center gap-2" aria-label="Supported sources">
-                  {(["notion", "obsidian", "confluence"] as const).map((src) => (
+                  {(["notion", "obsidian", "confluence", "localfiles"] as const).map((src) => (
                     <li key={src}>
                       <button
                         type="button"
@@ -325,7 +326,7 @@ export function MapEmptyState({
             Mnemify reads from these. Tokens stay on this machine.
           </p>
           <div className="grid gap-2">
-            {(["notion", "confluence", "obsidian"] as const).map((src) => (
+            {(["notion", "confluence", "obsidian", "localfiles"] as const).map((src) => (
               <button
                 key={src}
                 type="button"
@@ -346,6 +347,7 @@ export function MapEmptyState({
       <NotionWizard open={connectSource === "notion"} onClose={() => setConnectSource(null)} />
       <ConfluenceWizard open={connectSource === "confluence"} onClose={() => setConnectSource(null)} />
       <ObsidianWizard open={connectSource === "obsidian"} onClose={() => setConnectSource(null)} />
+      <LocalFilesWizard open={connectSource === "localfiles"} onClose={() => setConnectSource(null)} />
 
       <Dialog
         open={compileOpen}

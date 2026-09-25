@@ -730,7 +730,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--source",
         default=None,
         help=(
-            "Source type (notion | obsidian | confluence | jira | gmail | calendar | slack | github). "
+            "Source type (notion | obsidian | confluence | localfiles | jira | gmail | calendar | slack | github). "
             "Omit to harvest every source with `enabled: true` in mnemify.yaml."
         ),
     )

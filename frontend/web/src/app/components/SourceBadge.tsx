@@ -4,10 +4,18 @@ interface SourceMeta {
   label: string;
   /** Tailwind classes for the brand dot. */
   dotClass: string;
+  /** Verb pair for the connection lifecycle. Network sources are
+   *  "connected"; a folder on disk is simply "added". */
+  verb?: { add: string; remove: string; past: string };
 }
 
 const SOURCE_META: Record<string, SourceMeta> = {
   obsidian:        { label: "Obsidian",        dotClass: "bg-[#7E66E3]" },
+  localfiles:      {
+    label: "Local files",
+    dotClass: "bg-[#B45309]",
+    verb: { add: "Add", remove: "Remove", past: "removed" },
+  },
   notion:          { label: "Notion",          dotClass: "bg-ink" },
   confluence:      { label: "Confluence",      dotClass: "bg-[#2563EB]" },
   jira:            { label: "Jira",            dotClass: "bg-[#0052CC]" },
@@ -23,8 +31,11 @@ const SOURCE_META: Record<string, SourceMeta> = {
   linear:          { label: "Linear",          dotClass: "bg-[#5E6AD2]" },
 };
 
-export function sourceMeta(source: string): SourceMeta {
-  return SOURCE_META[source] ?? { label: capitalize(source), dotClass: "bg-muted" };
+const DEFAULT_VERB = { add: "Connect", remove: "Disconnect", past: "disconnected" } as const;
+
+export function sourceMeta(source: string): Required<SourceMeta> {
+  const meta = SOURCE_META[source] ?? { label: capitalize(source), dotClass: "bg-muted" };
+  return { ...meta, verb: meta.verb ?? DEFAULT_VERB };
 }
 
 function capitalize(s: string) {
