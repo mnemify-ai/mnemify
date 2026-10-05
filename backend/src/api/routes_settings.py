@@ -367,6 +367,7 @@ async def reset(body: ResetConfirm):
     delete_secrets(
         [
             "NOTION_TOKEN",
+            "NOTION_REFRESH_TOKEN",
             "CONFLUENCE_EMAIL",
             "CONFLUENCE_API_TOKEN",
             "JIRA_EMAIL",

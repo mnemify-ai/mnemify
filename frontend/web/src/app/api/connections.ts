@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "./client";
+import { API_BASE, apiFetch } from "./client";
 import { qk } from "./keys";
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -125,6 +125,39 @@ export function useValidateLocalFiles() {
         method: "POST",
         body: JSON.stringify({ root_path }),
       }),
+  });
+}
+
+// ─── Notion OAuth ("Connect with Notion") ──────────────────────────────
+
+export type NotionOAuthStatus =
+  | { status: "pending" }
+  | { status: "connected"; workspace_name: string | null }
+  | { status: "error"; reason: string }
+  | { status: "unknown" };
+
+/** The page that starts a Notion sign-in. Open it in a new tab straight from
+ *  the click handler (a plain GET, so no popup-blocked await first); the
+ *  backend redirects on to Notion via the mnemify.ai broker. */
+export function notionOAuthAuthorizeUrl(flow: string): string {
+  return `${API_BASE}/api/connections/notion/oauth/authorize?flow=${encodeURIComponent(flow)}`;
+}
+
+/** Poll a sign-in started with `notionOAuthAuthorizeUrl` until it settles. */
+export function useNotionOAuthStatus(flow: string | null) {
+  return useQuery({
+    queryKey: qk.notionOAuthStatus(flow),
+    queryFn: () =>
+      apiFetch<NotionOAuthStatus>(
+        `/api/connections/notion/oauth/status?flow=${encodeURIComponent(flow ?? "")}`,
+      ),
+    enabled: flow !== null,
+    refetchInterval: (query) => {
+      const s = query.state.data?.status;
+      return s === "connected" || s === "error" ? false : 1500;
+    },
+    refetchIntervalInBackground: true,
+    staleTime: 0,
   });
 }
 

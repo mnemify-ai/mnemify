@@ -1,6 +1,7 @@
 export const qk = {
   connections: () => ["connections"] as const,
   notionDiscover: (token: string | null) => ["connections", "notion", "discover", token] as const,
+  notionOAuthStatus: (flow: string | null) => ["connections", "notion", "oauth", flow] as const,
   confluenceDiscover: (creds: { baseUrl: string; email: string; token: string } | null) =>
     ["connections", "confluence", "discover", creds] as const,
   obsidianDiscover: (vaultPath: string | null) =>

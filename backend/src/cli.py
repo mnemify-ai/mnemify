@@ -1515,7 +1515,7 @@ def _cmd_reset(args: argparse.Namespace) -> None:
             from src.api.credential_store import delete_secrets
 
             delete_secrets([
-                "NOTION_TOKEN",
+                "NOTION_TOKEN", "NOTION_REFRESH_TOKEN",
                 "CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN",
                 "JIRA_EMAIL", "JIRA_API_TOKEN",
             ])
