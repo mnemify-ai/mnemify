@@ -37,6 +37,7 @@ from . import (
     routes_connections,
     routes_documents,
     routes_harvest,
+    routes_notion_oauth,
     routes_schedules,
     routes_secrets,
     routes_settings,
@@ -268,6 +269,7 @@ def create_app() -> FastAPI:
     app.add_middleware(HostGuardMiddleware)
 
     app.include_router(routes_connections.router, prefix="/api")
+    app.include_router(routes_notion_oauth.router, prefix="/api")
     app.include_router(routes_harvest.router, prefix="/api")
     app.include_router(routes_documents.router, prefix="/api")
     app.include_router(routes_settings.router, prefix="/api")

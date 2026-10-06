@@ -152,7 +152,8 @@ async def list_connections() -> list[dict[str, Any]]:
             host = str(block["base_url"]).replace("https://", "").replace("http://", "").split("/")[0]
             workspace = host
         else:
-            workspace = None
+            # Notion OAuth stores the workspace Notion reported at sign-in.
+            workspace = block.get("workspace_name") or None
 
         scope_key = _SCOPE_KEY.get(name, "scope")
         scope_list = list(block.get(scope_key, []) or [])
@@ -728,6 +729,8 @@ class NotionSave(BaseModel):
 async def save_notion(body: NotionSave):
     save_secret("NOTION_TOKEN", body.token.strip())
     os.environ["NOTION_TOKEN"] = body.token.strip()
+    # A pasted integration token replaces any earlier OAuth sign-in.
+    delete_secrets(["NOTION_REFRESH_TOKEN"])
     block = read_config().get("sources", {}).get("notion", {}) or {}
     block = {
         "enabled": True,
@@ -1284,7 +1287,7 @@ async def browse_dir(body: BrowseDir):
 async def disconnect(source: str):
     disable_source(source)
     if source == "notion":
-        delete_secrets(["NOTION_TOKEN"])
+        delete_secrets(["NOTION_TOKEN", "NOTION_REFRESH_TOKEN"])
     elif source == "confluence":
         delete_secrets(["CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN"])
     elif source == "jira":

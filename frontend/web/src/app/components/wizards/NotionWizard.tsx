@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { Eye, EyeOff, RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ChevronRight, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { toastSynapse } from "../../lib/toast";
 import { WizardModal } from "./WizardModal";
@@ -12,7 +13,11 @@ import {
   useValidateNotion,
   useDiscoverNotion,
   useSaveNotion,
+  useUpdateScope,
+  useNotionOAuthStatus,
+  notionOAuthAuthorizeUrl,
 } from "../../api/connections";
+import { qk } from "../../api/keys";
 import { cn } from "../../lib/cn";
 
 interface NotionWizardProps {
@@ -25,6 +30,10 @@ type ValidatedState =
   | { kind: "ok"; workspace: string; visible: number }
   | { kind: "error"; reason: string };
 
+/** How step 1 connected: Notion sign-in (token already saved server-side) or
+ *  a pasted internal-integration token (saved on the final step). */
+type ConnectedVia = "oauth" | "token" | null;
+
 export function NotionWizard({ open, onClose }: NotionWizardProps) {
   const [step, setStep] = useState(1);
   const [token, setToken] = useState("");
@@ -32,6 +41,11 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
   const [validated, setValidated] = useState<ValidatedState>({ kind: "idle" });
   const [scope, setScope] = useState<string[]>([]);
   const [scopeInitialized, setScopeInitialized] = useState(false);
+  const [connectedVia, setConnectedVia] = useState<ConnectedVia>(null);
+  // Non-null while a Notion sign-in tab is open and we're polling for it.
+  const [oauthFlow, setOauthFlow] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [showTokenForm, setShowTokenForm] = useState(false);
   // First-ever-connect particle burst. Gated by localStorage so it fires at
   // most once per browser profile. Per the E5 scoping decision, only the
   // NotionWizard wires the burst (Notion is the most common entry point in
@@ -43,12 +57,17 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
   // we want "first synapse" to mean "first of any kind".
   const [burstActive, setBurstActive] = useState(false);
 
+  const qc = useQueryClient();
   const validate = useValidateNotion();
+  // After a Notion sign-in the token lives only on the server, so discover
+  // with the saved one (null) rather than anything typed here.
   const discover = useDiscoverNotion(
-    token || null,
+    connectedVia === "oauth" ? null : token || null,
     open && validated.kind === "ok",
   );
   const save = useSaveNotion();
+  const updateScope = useUpdateScope();
+  const oauth = useNotionOAuthStatus(open ? oauthFlow : null);
 
   // Force a re-validate whenever the token changes after a previous result.
   function updateToken(next: string) {
@@ -68,6 +87,10 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
       setValidated({ kind: "idle" });
       setScope([]);
       setScopeInitialized(false);
+      setConnectedVia(null);
+      setOauthFlow(null);
+      setOauthError(null);
+      setShowTokenForm(false);
       validate.reset();
     }
     // we deliberately don't include reset functions in deps
@@ -82,6 +105,31 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
     }
   }, [discover.data, scopeInitialized]);
 
+  // A Notion sign-in finished in the other tab.
+  useEffect(() => {
+    const result = oauth.data;
+    if (!oauthFlow || !result) return;
+    if (result.status === "connected") {
+      setOauthFlow(null);
+      setConnectedVia("oauth");
+      setValidated({ kind: "ok", workspace: result.workspace_name ?? "Notion", visible: 0 });
+      // Also drops any cached discover result for the previously saved token.
+      qc.invalidateQueries({ queryKey: qk.connections() });
+      setStep(2);
+    } else if (result.status === "error") {
+      setOauthFlow(null);
+      setOauthError(result.reason);
+    }
+  }, [oauth.data, oauthFlow, qc]);
+
+  function startOAuth() {
+    const flow = crypto.randomUUID();
+    setOauthError(null);
+    setOauthFlow(flow);
+    // Opened synchronously from the click, so popup blockers allow it.
+    window.open(notionOAuthAuthorizeUrl(flow), "_blank");
+  }
+
   function validateAndAdvance() {
     setValidated({ kind: "idle" });
     validate.mutate(token.trim(), {
@@ -92,6 +140,7 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
             workspace: res.workspace_name,
             visible: res.visible_count,
           });
+          setConnectedVia("token");
           setStep(2);
         } else {
           setValidated({ kind: "error", reason: res.reason });
@@ -107,17 +156,21 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
     // the workspace label by value since `validated` resets on close.
     const workspaceLabel = validated.kind === "ok" ? validated.workspace : "Notion";
     const burstGate = shouldShowFirstSynapseBurst();
-    save.mutate(
-      { token: token.trim(), scope },
-      {
-        onSuccess: () => {
-          toastSynapse(workspaceLabel);
-          if (burstGate) setBurstActive(true);
-        },
-        onError: (err) =>
-          toast.error("Couldn't save Notion connection", { description: String(err) }),
+    const callbacks = {
+      onSuccess: () => {
+        toastSynapse(workspaceLabel);
+        if (burstGate) setBurstActive(true);
       },
-    );
+      onError: (err: unknown) =>
+        toast.error("Couldn't save Notion connection", { description: String(err) }),
+    };
+    if (connectedVia === "oauth") {
+      // Sign-in already saved the token and enabled the source; only the
+      // page selection is left.
+      updateScope.mutate({ source: "notion", scope }, callbacks);
+    } else {
+      save.mutate({ token: token.trim(), scope }, callbacks);
+    }
     onClose();
   }
 
@@ -172,16 +225,42 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
         (step === 2 && scope.length === 0)
       }
       continueLabel={step === 2 ? `Save (${scope.length})` : undefined}
-      pending={save.isPending || (step === 1 && validate.isPending)}
+      pending={save.isPending || updateScope.isPending || (step === 1 && validate.isPending)}
     >
       {step === 1 && (
-        <Step1Setup
-          token={token}
-          revealToken={revealToken}
-          onToken={updateToken}
-          onReveal={() => setRevealToken((v) => !v)}
-          validated={validated}
-        />
+        <div className="space-y-5">
+          <OAuthConnect
+            waiting={oauthFlow !== null}
+            error={oauthError}
+            onConnect={startOAuth}
+            onCancel={() => setOauthFlow(null)}
+          />
+          <div className="border-t border-hair pt-4">
+            <button
+              type="button"
+              onClick={() => setShowTokenForm((v) => !v)}
+              aria-expanded={showTokenForm}
+              className="flex items-center gap-1.5 font-sans text-xs text-muted hover:text-ink"
+            >
+              <ChevronRight
+                size={14}
+                className={cn("transition-transform", showTokenForm && "rotate-90")}
+              />
+              Advanced: use an internal integration token instead
+            </button>
+            {showTokenForm && (
+              <div className="mt-4">
+                <Step1Setup
+                  token={token}
+                  revealToken={revealToken}
+                  onToken={updateToken}
+                  onReveal={() => setRevealToken((v) => !v)}
+                  validated={validated}
+                />
+              </div>
+            )}
+          </div>
+        </div>
       )}
       {step === 2 && (
         <Step2Scope
@@ -200,6 +279,54 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
 }
 
 // ─── Step components ───────────────────────────────────────────────────
+
+function OAuthConnect({
+  waiting,
+  error,
+  onConnect,
+  onCancel,
+}: {
+  waiting: boolean;
+  error: string | null;
+  onConnect: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="font-sans text-sm text-muted max-w-prose">
+        Sign in to Notion in a new tab and choose which pages Mnemify can read.
+        You can narrow the selection on the next step.
+      </p>
+      <div className="flex items-center gap-3">
+        <Button size="lg" onClick={onConnect} loading={waiting} disabled={waiting}>
+          {waiting ? "Waiting for Notion…" : "Connect with Notion"}
+        </Button>
+        {waiting && (
+          <Button variant="link" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+      </div>
+      {waiting && (
+        <p className="font-sans text-xs text-muted">
+          Finish signing in in the Notion tab. This dialog moves on by itself.
+          If the tab didn't open, click Cancel and allow pop-ups for Mnemify.
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="font-sans text-xs text-danger">
+          {error}
+        </p>
+      )}
+      <LocalTrustNote>
+        Your Notion access token is stored in a local{" "}
+        <code className="font-mono text-[11px]">.env</code> on this machine. Sign-in
+        passes through mnemify.ai only to complete the handshake; nothing is
+        stored there.
+      </LocalTrustNote>
+    </div>
+  );
+}
 
 function Step1Setup({
   token,
