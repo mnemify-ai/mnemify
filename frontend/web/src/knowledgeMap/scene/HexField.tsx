@@ -14,6 +14,7 @@ import { useThree, type ThreeEvent } from '@react-three/fiber';
 import type { RenderData } from '../types';
 import { hexToWorld } from '../util/hexGeometry';
 import { useKnowledgeMapStore } from '../store';
+import { changedBy, isBornBy } from '../util/timeline';
 import type { Theme } from '../util/useTheme';
 import { computeSiblingInfo, shadeColor } from '../util/regionShade';
 import { regionTerrainFor } from '../util/regionTerrain';
@@ -22,6 +23,9 @@ import { isClickNotDrag } from '../util/pointerGesture';
 import { HIGHLIGHT_ACCENT } from './HighlightBeacons';
 
 const HEX_FIELDS_PER_HEX = 5;
+/** Height of a hex the timeline has not yet "born" — a visible sliver, not
+ *  a hole, so the region footprint still reads under the ghost tint. */
+const TL_UNBORN_HEIGHT = 0.08;
 
 export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: Theme }) {
   const ref = useRef<InstancedMesh>(null);
@@ -36,6 +40,8 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
   const legendHoverIdx = useKnowledgeMapStore((s) => s.legendHoverIdx);
   const focusRegionIdx = useKnowledgeMapStore((s) => s.focusRegionIdx);
   const askHighlight = useKnowledgeMapStore((s) => s.askHighlight);
+  const timeline = useKnowledgeMapStore((s) => s.timeline);
+  const timelineIndex = useKnowledgeMapStore((s) => s.timelineIndex);
 
   // Decode hexes once per data load. Returns per-instance buffers + a
   // lookup so picker handlers can map instanceId → raw hex offset. Theme
@@ -61,18 +67,24 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
   // fight. Rebuilt whenever decode changes; repainted on focus change.
   const displayColors = useRef<Float32Array>(new Float32Array(0));
 
-  // Set per-instance transforms once per decode. Colour is owned by the focus
-  // effect below (which also runs on mount, focus = null → base colours).
+  // Set per-instance transforms once per decode — and again when the
+  // timeline cutoff moves: hexes not yet born at the cutoff drop to a flat
+  // sliver so dragging the scrubber replays the terrain growing. Colour is
+  // owned by the focus effect below (which also runs on mount).
+  const tl = timeline && timelineIndex ? { cutoff: timeline.cutoff, idx: timelineIndex } : null;
+  const tlCutoff = tl?.cutoff ?? null;
   useEffect(() => {
     const mesh = ref.current;
     if (!mesh) return;
     const dummy = new Object3D();
-    const { positions, heights } = decoded;
+    const { positions, heights, instanceLookup } = decoded;
     const count = positions.length / 2;
     for (let i = 0; i < count; i++) {
       const x = positions[i * 2];
       const z = positions[i * 2 + 1];
-      const h = Math.max(0.1, heights[i]);
+      const meta = instanceLookup[i];
+      const born = tl === null || isBornBy(tl.idx, meta.tagIdx, meta.regionIdx, tl.cutoff);
+      const h = born ? Math.max(0.1, heights[i]) : TL_UNBORN_HEIGHT;
       dummy.position.set(x, h / 2, z);
       dummy.scale.set(1, h, 1);
       dummy.updateMatrix();
@@ -80,7 +92,8 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
     }
     mesh.instanceMatrix.needsUpdate = true;
     invalidate();
-  }, [decoded, invalidate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decoded, tlCutoff, timelineIndex, invalidate]);
 
   // Focus selection: when a region (top-level OR sub-region) is focused, glow
   // its subtree and dim everything else so the selection reads clearly on the
@@ -106,6 +119,15 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
   const HL_REGION_GLOW = 1.08;
   const HL_GREY_MIX = 0.92;
   const HL_GREY_DIM = 0.36;
+  // Timeline: unborn hexes are a flat, pale ghost of their region (so the
+  // eventual footprint still reads); hexes touched inside the changes window
+  // take the same hot accent the Ask highlight uses.
+  const TL_GHOST_MIX = 0.85;
+  const TL_GHOST_DIM = 0.55;
+  const TL_CHANGED_MIX = 0.75;
+  const TL_CHANGED_GLOW = 1.3;
+  const TL_CHANGED_LIFT = 0.1;
+  const TL_UNCHANGED_DIM = 0.78;
   const prevHoverTopRef = useRef<number | null>(null);
   useEffect(() => {
     const mesh = ref.current;
@@ -137,6 +159,7 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
       }
     }
     const hlActive = hlTags !== null && (hlTags.size > 0 || hlRegions.size > 0);
+    const showChanges = tl !== null && timeline?.showChanges === true;
 
     const c = new Color();
     for (let i = 0; i < count; i++) {
@@ -145,7 +168,24 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
       const meta = instanceLookup[i];
       const inFocus =
         dimAgainst === null || (ancestorsOf[meta.regionIdx]?.includes(dimAgainst) ?? false);
-      if (hlActive) {
+      const born = tl === null || isBornBy(tl.idx, meta.tagIdx, meta.regionIdx, tl.cutoff);
+      if (!born) {
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        cr = (r + (lum - r) * TL_GHOST_MIX) * TL_GHOST_DIM;
+        cg = (g + (lum - g) * TL_GHOST_MIX) * TL_GHOST_DIM;
+        cb = (b + (lum - b) * TL_GHOST_MIX) * TL_GHOST_DIM;
+      } else if (showChanges && !hlActive) {
+        if (changedBy(tl!.idx, meta.tagIdx, meta.regionIdx, tl!.cutoff)) {
+          const mr = r + (HL_ACCENT.r - r) * TL_CHANGED_MIX;
+          const mg = g + (HL_ACCENT.g - g) * TL_CHANGED_MIX;
+          const mb = b + (HL_ACCENT.b - b) * TL_CHANGED_MIX;
+          cr = Math.min(1, mr * TL_CHANGED_GLOW + TL_CHANGED_LIFT);
+          cg = Math.min(1, mg * TL_CHANGED_GLOW + TL_CHANGED_LIFT);
+          cb = Math.min(1, mb * TL_CHANGED_GLOW + TL_CHANGED_LIFT);
+        } else {
+          cr = r * TL_UNCHANGED_DIM; cg = g * TL_UNCHANGED_DIM; cb = b * TL_UNCHANGED_DIM;
+        }
+      } else if (hlActive) {
         const litTag = meta.tagId !== null && hlTags!.has(meta.tagId);
         let litRegion = false;
         if (!litTag) {
@@ -192,7 +232,8 @@ export function HexField({ data, theme = 'light' }: { data: RenderData; theme?: 
     // cleanly on the next pointer move.
     prevHoverTopRef.current = null;
     invalidate();
-  }, [decoded, terrain, baseColors, focusRegionIdx, askHighlight, invalidate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [decoded, terrain, baseColors, focusRegionIdx, askHighlight, tlCutoff, timelineIndex, timeline?.showChanges, invalidate]);
 
   // Hover highlight: brighten the whole footprint of the region under the
   // cursor AT THE CURRENT LEVEL — the top-level region at the map root, the
@@ -346,6 +387,7 @@ type InstanceMeta = {
   regionIdx: number;          // leaf region
   topLevelIdx: number;        // walked up to the root node
   tagId: string | null;
+  tagIdx: number;             // -1 for plain region terrain
 };
 
 // Paper / desk anchors for the "dusty" hex tint. Region colours get pulled
@@ -528,6 +570,7 @@ function decodeHexes(data: RenderData, theme: Theme = 'light') {
       regionIdx,
       topLevelIdx: topIdx,
       tagId,
+      tagIdx,
     });
     for (const a of chainOf[regionIdx]) {
       const bucket = instancesByRegion.get(a);

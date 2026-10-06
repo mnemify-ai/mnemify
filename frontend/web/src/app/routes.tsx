@@ -26,7 +26,9 @@ export const router = createBrowserRouter([
         path: "build",
         element: <Outlet />,
         children: [
-          { index: true, element: <Navigate to="/build/harvest" replace /> },
+          // Land on Sources: it is step one, and "where are my sources?" is
+          // the question that brings people to this tab in the first place.
+          { index: true, element: <Navigate to="/build/sources" replace /> },
           { path: "sources", element: <ConnectionsSection /> },
           { path: "harvest", element: <HarvestStatusPage /> },
           { path: "history", element: <HarvestHistoryPage /> },
@@ -54,7 +56,9 @@ export const router = createBrowserRouter([
       {
         path: "harvest",
         children: [
-          { index: true, element: <Navigate to="/build/harvest" replace /> },
+          // Land on Sources: it is step one, and "where are my sources?" is
+          // the question that brings people to this tab in the first place.
+          { index: true, element: <Navigate to="/build/sources" replace /> },
           { path: "connections", element: <Navigate to="/build/sources" replace /> },
           { path: "history", element: <Navigate to="/build/history" replace /> },
           { path: "documents", element: <Navigate to="/documents" replace /> },

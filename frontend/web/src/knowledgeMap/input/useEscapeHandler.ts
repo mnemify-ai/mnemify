@@ -1,5 +1,6 @@
 // Esc key handler — drives the single nav layer:
-//   0. If an Ask answer is lighting the map, clear that highlight first.
+//   0. If an Ask answer is lighting the map, clear that highlight first;
+//      otherwise if the timeline scrubber is open, close it.
 //   1. If there's nav history, step Back one screen (region ← sub ← tag ← doc).
 //   2. Otherwise, if anything is focused/selected, reset to the map root (home) view.
 //
@@ -19,15 +20,18 @@ export function useEscapeHandler() {
   );
   const highlighted = useMapHighlightStore((s) => s.highlight !== null);
   const clearHighlight = useMapHighlightStore((s) => s.clear);
+  const timelineOpen = useKnowledgeMapStore((s) => s.timelineOpen);
+  const closeTimeline = useKnowledgeMapStore((s) => s.closeTimeline);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return;
       if (highlighted) clearHighlight();
+      else if (timelineOpen) closeTimeline();
       else if (hasHistory) back();
       else if (!atRoot) resetNav();
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [highlighted, clearHighlight, hasHistory, atRoot, back, resetNav]);
+  }, [highlighted, clearHighlight, timelineOpen, closeTimeline, hasHistory, atRoot, back, resetNav]);
 }

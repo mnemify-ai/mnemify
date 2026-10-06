@@ -4,6 +4,7 @@
 
 import { createContext, createElement, useContext, useRef, type ReactNode } from 'react';
 import { createStore, useStore } from 'zustand';
+import type { TimelineIndex, TimelineState } from './util/timeline';
 
 /** What HexField resolves about the hovered hex, surfaced for the tooltip
  *  overlay. Decoupled from `hoveredInstanceId` (which is just the raycaster
@@ -70,6 +71,16 @@ export type FocusState = {
   tagSummitPos: Map<string, { x: number; y: number; z: number }>;
   /** Ask-answer highlight, or null when the map shows plain terrain. */
   askHighlight: ResolvedHighlight | null;
+  /** Timeline scrubber is showing (notes load while it is). */
+  timelineOpen: boolean;
+  /** Scrubber position + overlay flags; null until the index is ready or
+   *  when the scrubber is closed, so HexField paints plain terrain. */
+  timeline: TimelineState | null;
+  /** Dates per tag/region for this bake (util/timeline.ts), or null. */
+  timelineIndex: TimelineIndex | null;
+  /** Notes were fetched (or failed) — distinguishes "loading" from "this
+   *  map has no dates" when `timelineIndex` is null. */
+  timelineLoaded: boolean;
 };
 
 export type KnowledgeMapState = FocusState & {
@@ -84,6 +95,13 @@ export type KnowledgeMapState = FocusState & {
   setLegendHover: (idx: number | null) => void;
   setTagSummitPos: (m: Map<string, { x: number; y: number; z: number }>) => void;
   setAskHighlight: (h: ResolvedHighlight | null) => void;
+  openTimeline: () => void;
+  closeTimeline: () => void;
+  setTimelineCutoff: (ms: number) => void;
+  setTimelineShowChanges: (on: boolean) => void;
+  /** From useTimelineSync. A fresh index parks the cutoff at its latest
+   *  date, so opening the scrubber never flattens the map by surprise. */
+  setTimelineIndex: (idx: TimelineIndex | null, loaded: boolean) => void;
   /** The single nav layer. Pushes the current snapshot to history, applies the
    *  patch atomically, and (by default) zooms the map when focus changes. This
    *  is the ONLY thing that should write focus/tag/doc from UI navigation. */
@@ -115,6 +133,10 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
     zoomToRegion: initial?.zoomToRegion ?? null,
     tagSummitPos: initial?.tagSummitPos ?? new Map(),
     askHighlight: initial?.askHighlight ?? null,
+    timelineOpen: initial?.timelineOpen ?? false,
+    timeline: initial?.timeline ?? null,
+    timelineIndex: initial?.timelineIndex ?? null,
+    timelineLoaded: initial?.timelineLoaded ?? false,
     setFocusRegion: (idx) => set({ focusRegionIdx: idx }),
     setSelectedTag: (id) => set({ selectedTagId: id }),
     setHoveredInstance: (id) => set({ hoveredInstanceId: id }),
@@ -124,6 +146,25 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
       set((s) => ({ zoomToRegion: { idx, tick: (s.zoomToRegion?.tick ?? 0) + 1 } })),
     setTagSummitPos: (m) => set({ tagSummitPos: m }),
     setAskHighlight: (h) => set({ askHighlight: h }),
+    openTimeline: () =>
+      set((s) => ({
+        timelineOpen: true,
+        timeline: s.timelineIndex ? { cutoff: s.timelineIndex.maxMs, showChanges: false } : null,
+      })),
+    closeTimeline: () => set({ timelineOpen: false, timeline: null }),
+    setTimelineCutoff: (ms) =>
+      set((s) => (s.timeline ? { timeline: { ...s.timeline, cutoff: ms } } : {})),
+    setTimelineShowChanges: (on) =>
+      set((s) => (s.timeline ? { timeline: { ...s.timeline, showChanges: on } } : {})),
+    setTimelineIndex: (idx, loaded) =>
+      set((s) => ({
+        timelineIndex: idx,
+        timelineLoaded: loaded,
+        timeline:
+          s.timelineOpen && idx
+            ? { cutoff: s.timeline?.cutoff ?? idx.maxMs, showChanges: s.timeline?.showChanges ?? false }
+            : null,
+      })),
     navigate: (next, opts) =>
       set((s) => {
         const cur: NavSnapshot = {

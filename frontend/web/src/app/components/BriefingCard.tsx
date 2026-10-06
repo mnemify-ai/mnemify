@@ -59,11 +59,14 @@ function writeLastSeen(value: string): void {
 }
 
 const NUDGE_SNOOZE_KEY = "mnemify.harvestNudge.snoozedUntil";
+// "Your map is behind" has no compile to acknowledge, so its X snoozes the
+// pending line for a day instead — same shape as the harvest nudge.
+const PENDING_SNOOZE_KEY = "mnemify.pendingChanges.snoozedUntil";
 
-function readNudgeSnooze(): number | null {
+function readSnooze(key: string): number | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(NUDGE_SNOOZE_KEY);
+    const raw = window.localStorage.getItem(key);
     const ts = raw ? Number(raw) : NaN;
     return Number.isFinite(ts) ? ts : null;
   } catch {
@@ -71,10 +74,10 @@ function readNudgeSnooze(): number | null {
   }
 }
 
-function writeNudgeSnooze(value: number): void {
+function writeSnooze(key: string, value: number): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(NUDGE_SNOOZE_KEY, String(value));
+    window.localStorage.setItem(key, String(value));
   } catch {
     /* quota exceeded or storage disabled — silently noop */
   }
@@ -90,14 +93,16 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
   const qc = useQueryClient();
   const [morningEnabled, setMorningEnabled] = useState(false);
   const [ackedAt, setAckedAt] = useState<string | null>(readLastSeen);
-  const [nudgeSnoozedUntil, setNudgeSnoozedUntil] = useState<number | null>(readNudgeSnooze);
+  const [nudgeSnoozedUntil, setNudgeSnoozedUntil] = useState<number | null>(() => readSnooze(NUDGE_SNOOZE_KEY));
+  const [pendingSnoozedUntil, setPendingSnoozedUntil] = useState<number | null>(() => readSnooze(PENDING_SNOOZE_KEY));
   const [changesOpen, setChangesOpen] = useState(false);
 
   const view = computeBriefing({ report, hasClickedTag: hasClickedTag(), ackedAt });
   // Only nag about pending changes once a map exists — before the first
   // compile, MapEmptyState already owns the "compile your map" moment.
   const pendingTotal = changes && report?.exists ? totalChanges(changes.summary) : 0;
-  const pendingLine = changes
+  const pendingSnoozed = pendingSnoozedUntil !== null && pendingSnoozedUntil > Date.now();
+  const pendingLine = changes && !pendingSnoozed
     ? computePendingLine(pendingTotal, changes.changes, {
         summary: changes.summary,
         lastHarvestTime: changes.last_harvest_time,
@@ -126,9 +131,15 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
   };
 
   const dismiss = () => {
-    if (!compiledAt) return;
-    writeLastSeen(compiledAt);
-    setAckedAt(compiledAt);
+    if (compiledAt) {
+      writeLastSeen(compiledAt);
+      setAckedAt(compiledAt);
+    }
+    if (pendingLine) {
+      const until = Date.now() + HARVEST_NUDGE_SNOOZE_MS;
+      writeSnooze(PENDING_SNOOZE_KEY, until);
+      setPendingSnoozedUntil(until);
+    }
   };
 
   // "Enable morning harvest": one daily schedule per connected source. The
@@ -172,11 +183,12 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
                 : "Keep your knowledge fresh"}
           </h2>
         </div>
-        {view && (
+        {(view || pendingLine) && (
           <button
             type="button"
             onClick={dismiss}
-            aria-label="Dismiss briefing"
+            aria-label={view ? "Dismiss briefing" : "Hide for a day"}
+            title={view ? undefined : "Hide for a day"}
             className="text-muted hover:text-ink transition-colors -mr-1 -mt-0.5 shrink-0"
           >
             <X className="h-3.5 w-3.5" aria-hidden />
@@ -231,7 +243,7 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
                 type="button"
                 onClick={() => {
                   const until = Date.now() + HARVEST_NUDGE_SNOOZE_MS;
-                  writeNudgeSnooze(until);
+                  writeSnooze(NUDGE_SNOOZE_KEY, until);
                   setNudgeSnoozedUntil(until);
                 }}
                 aria-label="Dismiss harvest reminder for a day"

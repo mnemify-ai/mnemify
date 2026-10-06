@@ -7,15 +7,19 @@
 import { Home } from 'lucide-react';
 import { useKnowledgeMapStore } from '../store';
 
-export function ResetViewButton() {
+/** `top`: px from the canvas top. Hosts that float a fixed bar over the
+ *  canvas (the dashboard's 64px TopBar) pass a larger inset so the button
+ *  is not hidden underneath it — see KnowledgeMap's CHROME_TOP_* constants. */
+export function ResetViewButton({ top = 28 }: { top?: number }) {
   const home = useKnowledgeMapStore((s) => s.home);
   return (
     <button
       type="button"
+      style={{ top }}
       onClick={home}
       title="Home: show the whole map"
       aria-label="Home: show the whole map"
-      className="glass-panel absolute top-7 right-6 z-[5] grid h-9 w-9 place-items-center rounded-full text-muted shadow-sm transition-colors hover:text-ink hover:bg-bone/70"
+      className="glass-panel absolute right-6 z-[5] grid h-9 w-9 place-items-center rounded-full text-muted shadow-sm transition-colors hover:text-ink hover:bg-bone/70"
     >
       <Home size={16} strokeWidth={1.75} aria-hidden />
     </button>
