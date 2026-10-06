@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { ChevronRight, Eye, EyeOff, KeyRound, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { toastSynapse } from "../../lib/toast";
 import { WizardModal } from "./WizardModal";
@@ -235,21 +235,41 @@ export function NotionWizard({ open, onClose }: NotionWizardProps) {
             onConnect={startOAuth}
             onCancel={() => setOauthFlow(null)}
           />
-          <div className="border-t border-hair pt-4">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-line/[0.12]" />
+            <span className="font-sans text-[11px] uppercase tracking-wide text-muted">or</span>
+            <div className="h-px flex-1 bg-line/[0.12]" />
+          </div>
+          <div
+            className={cn(
+              "rounded-lg border border-hair transition-colors",
+              showTokenForm && "border-hair-strong",
+            )}
+          >
             <button
               type="button"
               onClick={() => setShowTokenForm((v) => !v)}
               aria-expanded={showTokenForm}
-              className="flex items-center gap-1.5 font-sans text-xs text-muted hover:text-ink"
+              className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-ink/[0.04]"
             >
+              <KeyRound size={16} className="shrink-0 text-muted" />
+              <span className="flex-1 font-sans text-sm text-ink">
+                <span className="font-semibold">Advanced:</span> use an internal
+                integration token instead
+                <span className="block text-xs text-muted">
+                  Paste a token from notion.so/my-integrations. No sign-in needed.
+                </span>
+              </span>
               <ChevronRight
-                size={14}
-                className={cn("transition-transform", showTokenForm && "rotate-90")}
+                size={16}
+                className={cn(
+                  "shrink-0 text-muted transition-transform",
+                  showTokenForm && "rotate-90",
+                )}
               />
-              Advanced: use an internal integration token instead
             </button>
             {showTokenForm && (
-              <div className="mt-4">
+              <div className="border-t border-hair px-3 pb-4 pt-4">
                 <Step1Setup
                   token={token}
                   revealToken={revealToken}
