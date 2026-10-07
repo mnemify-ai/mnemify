@@ -54,6 +54,14 @@ _RESOLVED_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: A deadline this far in the past is no longer an urgent commitment — it was
+#: most likely done, dropped, or overtaken without anyone editing the source
+#: line. The item stays *open* (nothing is auto-resolved); it just stops
+#: being treated as hot: no compile-time severity boost here, and the
+#: /api/action-items route files it under ``probably_abandoned`` instead of
+#: ``overdue``. One constant, read by both, so the two surfaces agree.
+STALE_DEADLINE_DAYS = 90
+
 
 def extract_attention_signals(
     item: EnrichedChunk,
@@ -117,7 +125,15 @@ def _signal_from_draft(
     modified: str | None,
     anchor: date | None = None,
 ) -> AttentionSignal:
-    due_date = draft.due_date or resolve_deadline(draft.due_text, anchor)
+    # A date with no deadline phrase behind it is not a deadline: the LLM
+    # has been seen lifting dates out of screenshot filenames and page
+    # headers into ``due_date``. Every real deadline has wording, so require
+    # ``due_text`` before trusting the date.
+    due_date = (
+        (draft.due_date or resolve_deadline(draft.due_text, anchor))
+        if draft.due_text
+        else None
+    )
     severity = draft.severity
     if draft.status != "resolved":
         severity = min(100, severity + _deadline_boost(due_date))
@@ -147,9 +163,12 @@ def _deadline_boost(due_date: str | None, *, today: date | None = None) -> int:
     if due is None:
         return 0
     now = today or datetime.now(timezone.utc).date()
-    if due < now:
+    days = (due - now).days
+    if days < -STALE_DEADLINE_DAYS:
+        return 0  # long past — probably abandoned, not urgent
+    if days < 0:
         return 25
-    if (due - now).days <= 7:
+    if days <= 7:
         return 15
     return 0
 

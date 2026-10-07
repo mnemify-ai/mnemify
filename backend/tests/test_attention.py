@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from src.terrain.utils.attention import (
     _deadline_boost,
@@ -249,23 +249,25 @@ def test_draft_absolute_due_date_passes_through_untouched():
 
 
 def test_overdue_deadline_boosts_severity():
-    # 2026-04-30 is permanently in the past relative to any test run → +25.
+    # Ten days ago: recently overdue (inside the stale window) → +25. A fixed
+    # past date would drift out of the window as the wall clock moves on.
+    anchor = (datetime.now(timezone.utc).date() - timedelta(days=10)).isoformat()
     item = _chunk(
-        "Ship it by end of April.",
+        "Ship it today.",
         signals=[
             ChunkSignalDraft(
                 kind="todo",
                 title="Ship it",
-                summary="Ship it by end of April.",
+                summary="Ship it today.",
                 severity=50,
-                due_text="by end of April",
+                due_text="today",
             )
         ],
     )
 
-    signals = extract_attention_signals(item, note_id="n-d1", anchor_date="2026-04-10")
+    signals = extract_attention_signals(item, note_id="n-d1", anchor_date=anchor)
 
-    assert signals[0].due_date == "2026-04-30"
+    assert signals[0].due_date == anchor
     assert signals[0].severity == 75
 
 
@@ -313,3 +315,38 @@ def test_aggregate_keeps_earliest_due_date():
     assert len(aggregated) == 1
     assert aggregated[0].due_date == "2099-05-01"
     assert aggregated[0].due_text == "by 2099-05-01"
+
+
+def test_draft_due_date_without_due_text_is_dropped():
+    # The LLM has been seen lifting a date out of a screenshot filename into
+    # due_date with no deadline phrase. A date with no wording is not a deadline.
+    item = _chunk(
+        "Bounding box must cover the opening. ![Screenshot 2024-05-23.png]",
+        signals=[
+            ChunkSignalDraft(
+                kind="todo",
+                title="Cover the opening",
+                summary="Bounding box must cover the opening.",
+                severity=50,
+                due_date="2024-05-23",
+            )
+        ],
+    )
+
+    signals = extract_attention_signals(item, note_id="n-d1", anchor_date="2024-05-28")
+
+    assert signals[0].due_date is None
+    assert signals[0].due_text is None
+    assert signals[0].severity == 50  # no stale-overdue boost either
+
+
+def test_deadline_boost_zero_past_stale_window():
+    from src.terrain.utils.attention import STALE_DEADLINE_DAYS
+
+    today = date(2026, 8, 10)
+    # Just inside the window still counts as overdue.
+    assert _deadline_boost("2026-05-15", today=today) == 25
+    # Past the window: probably abandoned, no boost.
+    assert _deadline_boost("2026-05-01", today=today) == 0
+    assert _deadline_boost("2024-05-23", today=today) == 0
+    assert STALE_DEADLINE_DAYS == 90

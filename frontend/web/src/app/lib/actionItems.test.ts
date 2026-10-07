@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActionItem } from "../api/actionItems";
-import { cleanTitle, dueLabel, partitionActionItems, pruneDismissed } from "./actionItems";
+import { cleanTitle, dueLabel, partitionActionItems, pruneDismissed, staleContext } from "./actionItems";
 
 function item(id: string, overrides: Partial<ActionItem> = {}): ActionItem {
   return {
@@ -104,5 +104,40 @@ describe("dueLabel", () => {
       "Due before the offsite",
     );
     expect(dueLabel(item("a"), TODAY)).toBeNull();
+  });
+});
+
+describe("probably abandoned", () => {
+  it("partitions into its own section", () => {
+    const parts = partitionActionItems(
+      [
+        item("a", { bucket: "overdue", due_date: "2026-08-01" }),
+        item("b", { bucket: "probably_abandoned", due_date: "2024-05-31" }),
+      ],
+      new Set(),
+    );
+    expect(parts.overdue.map((i) => i.id)).toEqual(["a"]);
+    expect(parts.probablyAbandoned.map((i) => i.id)).toEqual(["b"]);
+  });
+
+  it("labels with the date instead of a day count", () => {
+    expect(dueLabel(item("a", { bucket: "probably_abandoned", due_date: "2024-05-31" }), TODAY)).toBe(
+      "Was due May 31, 2024",
+    );
+    expect(dueLabel(item("a", { bucket: "probably_abandoned", due_date: "2026-03-08" }), TODAY)).toBe(
+      "Was due Mar 8",
+    );
+  });
+
+  it("describes when the source note was last edited", () => {
+    const stale = (extra: Partial<ActionItem>) =>
+      staleContext(item("a", { bucket: "probably_abandoned", due_date: "2025-09-12", ...extra }), TODAY);
+    expect(stale({ note_updated_at: "2026-02-13T13:54:41Z" })).toBe("note edited Feb 13, 5mo after");
+    expect(stale({ note_updated_at: "2025-09-15T00:00:00Z" })).toBe("note edited Sep 15, 2025, 3d after");
+    expect(stale({ note_updated_at: "2025-06-24T11:01:12Z" })).toBe(
+      "note edited Jun 24, 2025, before the deadline",
+    );
+    expect(stale({ note_updated_at: null })).toBeNull();
+    expect(staleContext(item("a", { bucket: "overdue", due_date: "2026-08-01", note_updated_at: "2026-08-05" }), TODAY)).toBeNull();
   });
 });

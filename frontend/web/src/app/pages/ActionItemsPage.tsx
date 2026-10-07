@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
+  Archive,
   CalendarClock,
   CalendarDays,
   ChevronDown,
@@ -25,11 +26,12 @@ import {
   partitionActionItems,
   pruneDismissed,
   saveDismissed,
+  staleContext,
 } from "../lib/actionItems";
 import { markTodosVisited } from "../lib/onboardingFlags";
 import { cn } from "../lib/cn";
 
-type SectionKey = "overdue" | "dueSoon" | "upcoming" | "noDate";
+type SectionKey = "overdue" | "dueSoon" | "upcoming" | "noDate" | "probablyAbandoned";
 type Tone = "danger" | "warning" | "info" | "neutral";
 
 const SECTIONS: {
@@ -70,6 +72,14 @@ const SECTIONS: {
     icon: CircleDashed,
     collapsed: true,
   },
+  {
+    key: "probablyAbandoned",
+    title: "Probably abandoned",
+    blurb: "Deadline passed over 90 days ago — still open, your call",
+    tone: "neutral",
+    icon: Archive,
+    collapsed: true,
+  },
 ];
 
 export function ActionItemsPage() {
@@ -107,7 +117,11 @@ export function ActionItemsPage() {
     });
 
   const visibleTotal = parts
-    ? parts.overdue.length + parts.dueSoon.length + parts.upcoming.length + parts.noDate.length
+    ? parts.overdue.length +
+      parts.dueSoon.length +
+      parts.upcoming.length +
+      parts.noDate.length +
+      parts.probablyAbandoned.length
     : 0;
   // Every item undated → the map predates the deadline pipeline (or genuinely
   // nothing is dated); nudge a recompile rather than showing a silent wall.
@@ -289,6 +303,7 @@ function ActionItemRow({
 }) {
   const navigate = useNavigate();
   const due = dueLabel(item, today);
+  const stale = staleContext(item, today);
   const title = cleanTitle(item.title);
   const place = item.tag_label ?? item.region_label;
   return (
@@ -308,6 +323,12 @@ function ActionItemRow({
             >
               {due}
             </Pill>
+          )}
+          {stale && <span>{stale}</span>}
+          {stale && item.due_text && (
+            <span className="italic" title="Deadline phrase in the source">
+              “{item.due_text}”
+            </span>
           )}
           {item.owner && <span className="text-ink/80">{item.owner}</span>}
           {place &&

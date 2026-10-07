@@ -93,7 +93,11 @@ class OpenAISignal(BaseModel):
         default=None,
         description=(
             "ISO YYYY-MM-DD, ONLY if an absolute calendar date appears "
-            "literally in the text. NEVER resolve relative phrases like "
+            "literally in the text AND the sentence frames it as a deadline "
+            "(due/by/before/until …) — so due_text must also be set. A date "
+            "that merely appears nearby (a meeting date, a page header, a "
+            "screenshot or file name like 'Screenshot 2024-05-23.png') is "
+            "NOT a deadline: leave null. NEVER resolve relative phrases like "
             "'Friday', 'next week', or 'in 3 days' yourself — leave this null "
             "and let due_text carry them; they are resolved later against the "
             "document's date."
@@ -286,8 +290,9 @@ _SYSTEM_EXTRACT = (
     "Also extract `signals` per the field's own instructions — be conservative "
     "and negation-aware. When a signal states a deadline ('by Friday', 'end of "
     "April', 'in 1 week'), copy the phrase verbatim into `due_text`; set "
-    "`due_date` only for literal absolute dates, never by resolving relative "
-    "phrases."
+    "`due_date` only for literal absolute dates that the text itself frames as "
+    "a deadline (never a date lifted from a file name, screenshot, or page "
+    "header), never by resolving relative phrases."
 )
 
 _BATCH_SUFFIX = (
