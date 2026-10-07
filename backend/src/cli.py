@@ -314,7 +314,7 @@ async def _cmd_terrain(args: argparse.Namespace) -> None:
     compiler = TerrainCompiler(
         data_dir=paths.data_dir(),
         ai_mode=getattr(args, "ai_mode", "openai"),
-        llm_model=getattr(args, "llm_model", "gpt-5.6-luna"),
+        llm_model=getattr(args, "llm_model", "gpt-6-luna"),
         embedding_model=getattr(args, "embedding_model", "text-embedding-3-small"),
     )
     try:
@@ -849,7 +849,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     terrain_build_p.add_argument(
         "--llm-model",
-        default="gpt-5.6-luna",
+        default="gpt-6-luna",
         help="OpenAI model for feature extraction and naming",
     )
     terrain_build_p.add_argument(

@@ -7,6 +7,7 @@
 // Everything here is pure; `useTimelineSync` (below) is the only hook.
 
 import { useEffect, useMemo } from 'react';
+import { useMapTimelineStore } from '../../app/lib/mapTimelineStore';
 import { useNotes } from '../data/useNotes';
 import { useKnowledgeMapStore } from '../store';
 import type { Note, RenderData } from '../types';
@@ -199,4 +200,15 @@ export function useTimelineSync(data: RenderData, notesUrl: string) {
   useEffect(() => {
     setTimelineIndex(index, notes.status === 'ready' || notes.status === 'error');
   }, [index, notes.status, setTimelineIndex]);
+
+  // Publish the cutoff app-wide so the Ask dock can ask "as of" it. Only a
+  // cutoff strictly before the latest note counts: parked at the end, the
+  // map shows the present and a question should be asked normally.
+  const cutoff = useKnowledgeMapStore((s) => s.timeline?.cutoff ?? null);
+  const setAsOf = useMapTimelineStore((s) => s.setAsOf);
+  useEffect(() => {
+    const active = open && index !== null && cutoff !== null && cutoff < index.maxMs;
+    setAsOf(active ? cutoff : null);
+  }, [open, index, cutoff, setAsOf]);
+  useEffect(() => () => setAsOf(null), [setAsOf]);
 }

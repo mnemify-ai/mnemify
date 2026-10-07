@@ -189,6 +189,12 @@ class AgentContext:
     # run_agent_session), emits from that thread hop back via
     # call_soon_threadsafe. None (tests) → direct put.
     server_loop: "asyncio.AbstractEventLoop | None" = None
+    # "Ask as of" (ask_asof.py): note node ids born after the cutoff. The
+    # graph handed in is already restricted; this filters chunk search,
+    # which reads terrain.db directly and would otherwise resurrect them.
+    excluded_note_ids: set[str] = field(default_factory=set)
+    # Appended to the agent system prompt (the as-of time-frame line).
+    system_suffix: str = ""
     _edge_index: dict | None = None
     _step_seq: int = 0
 
@@ -419,6 +425,11 @@ def build_tool_handlers(ctx: AgentContext) -> dict[str, Any]:
             chunk_matches = await asyncio.to_thread(
                 ask_chunks.search, embedding, db_path=ctx.db_path
             )
+            if ctx.excluded_note_ids:
+                chunk_matches = [
+                    h for h in chunk_matches
+                    if h.note_node_id not in ctx.excluded_note_ids
+                ]
             chunk_hits: dict[str, float] = {}
             chunk_ids_by_note: dict[str, list[str]] = {}
             for hit in chunk_matches:
@@ -729,7 +740,7 @@ def _build_options(ctx: AgentContext, provider: str, model: str, key: str | None
         # uses the logged-in Claude Code subscription.
         env["ANTHROPIC_API_KEY"] = key
     return ClaudeAgentOptions(
-        system_prompt=AGENT_SYSTEM_PROMPT,
+        system_prompt=AGENT_SYSTEM_PROMPT + ctx.system_suffix,
         mcp_servers={"terrain": build_mcp_server(ctx)},
         tools=[],  # no built-ins: no Bash/Read/filesystem access
         allowed_tools=[f"mcp__terrain__{n}" for n in TOOL_NAMES],
@@ -818,6 +829,8 @@ async def run_agent_session(
     knowledge_map: KnowledgeMap,
     embedder: EmbeddingClient,
     db_path: Path | None = None,
+    excluded_note_ids: set[str] | None = None,
+    system_suffix: str = "",
 ) -> AsyncIterator[dict]:
     """Yield SSE dicts (``{"event", "data"}``, data pre-serialized) for an
     agentic ask session. Cancelling the generator (client disconnect)
@@ -837,6 +850,8 @@ async def run_agent_session(
         knowledge_map=knowledge_map,
         embedder=embedder,
         db_path=db_path or ask_expansion._terrain_db_path(),
+        excluded_note_ids=excluded_note_ids or set(),
+        system_suffix=system_suffix,
     )
     prompt = _render_prompt(query_text, history)
     options = _build_options(ctx, provider, model, key)

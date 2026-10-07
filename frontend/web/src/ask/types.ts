@@ -67,6 +67,9 @@ export type AskMessage = {
   steps?: AgentStep[];
   pending?: boolean;
   error?: string;
+  /** User turns only: the map's timeline cutoff the question was asked
+   *  "as of" (`YYYY-MM-DD`), when the scrubber was rewound. */
+  asOf?: string;
 };
 
 export type AskSettings = {

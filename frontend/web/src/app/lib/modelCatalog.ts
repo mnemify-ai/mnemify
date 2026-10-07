@@ -49,9 +49,29 @@ export const CLAUDE_MODELS: readonly ModelOption[] = [
  *  quote standard-tier list prices per 1M input/output tokens. */
 export const OPENAI_MODELS: readonly ModelOption[] = [
   {
+    id: "gpt-6.1-sol",
+    label: "GPT-6.1 Sol",
+    hint: "Balanced flagship — latest Sol point release ($2 in / $10 out).",
+  },
+  {
+    id: "gpt-6-sol",
+    label: "GPT-6 Sol",
+    hint: "GPT-6 base Sol — same price as 6.1 Sol ($2 in / $10 out).",
+  },
+  {
+    id: "gpt-6-luna",
+    label: "GPT-6 Luna",
+    hint: "Fast and cheap ($0.10 in / $0.50 out). Good for high-volume work.",
+  },
+  {
+    id: "gpt-6-astra",
+    label: "GPT-6 Astra",
+    hint: "Most capable of the GPT-6 family — premium tier ($10 in / $50 out).",
+  },
+  {
     id: "gpt-5.6-terra",
     label: "GPT-5.6 Terra",
-    hint: "Balanced flagship — strong quality at mid price ($2 in / $12 out).",
+    hint: "Previous-generation flagship — strong quality at mid price ($2 in / $12 out).",
   },
   {
     id: "gpt-5.6-sol",
