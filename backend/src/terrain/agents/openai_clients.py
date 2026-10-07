@@ -311,7 +311,7 @@ class OpenAIFeatureExtractor(OpenAIClientMixin):
     last_skip_reason: str | None = None
 
     def __init__(
-        self, model: str = "gpt-5.6-luna", products=KNOWN_PRODUCTS, *,
+        self, model: str = "gpt-6-luna", products=KNOWN_PRODUCTS, *,
         cache_products=(), effort: str | None = None,
     ):
         self.model = model
@@ -536,7 +536,7 @@ class OpenAIEmbeddingClient(OpenAIClientMixin, EmbeddingClient):
 
 
 class OpenAIClusterNamer(OpenAIClientMixin, ClusterNamer):
-    def __init__(self, store, model: str = "gpt-5.6-luna", *, effort: str | None = None):
+    def __init__(self, store, model: str = "gpt-6-luna", *, effort: str | None = None):
         super().__init__(store)
         self.model = model
         self.effort = effort

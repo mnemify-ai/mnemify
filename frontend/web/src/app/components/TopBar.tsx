@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Moon, Search, Settings, Sun } from "lucide-react";
+import { useConnections } from "../api/connections";
 import { cn } from "../lib/cn";
 import { useTerrainCurrent } from "../api/terrain";
 import { useHarvestCurrent } from "../api/harvest";
@@ -132,6 +133,16 @@ const NAV_ITEMS = [
   { to: "/build", label: "Build" },
 ];
 
+/** "Build · 3 sources" — the tab says what it holds before you click
+ *  it, so nobody goes hunting for sources under Settings. Omitted
+ *  while loading or when nothing is connected (the empty state and
+ *  the wizards already push people to /build/sources then). */
+function useBuildTabSuffix(): string | null {
+  const connections = useConnections();
+  const n = connections.data?.filter((c) => c.status === "connected").length ?? 0;
+  return n > 0 ? `${n} source${n === 1 ? "" : "s"}` : null;
+}
+
 export function TopBar() {
   const { pathname } = useLocation();
   const isHome = pathname === "/";
@@ -139,6 +150,7 @@ export function TopBar() {
   const openPalette = useCommandPalette((s) => s.setOpen);
   useRefreshMapDataOnCompileComplete();
   useRefreshChangesOnHarvestComplete();
+  const buildSuffix = useBuildTabSuffix();
 
   return (
     <header
@@ -166,6 +178,11 @@ export function TopBar() {
                 }
               >
                 {item.label}
+                {item.to === "/build" && buildSuffix && (
+                  <span className="ml-1.5 normal-case tracking-normal text-muted/80">
+                    · {buildSuffix}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>

@@ -39,7 +39,7 @@ from src import paths
 from src.terrain.utils.embedder import EmbeddingClient, LocalHashEmbeddingClient
 from src.terrain.utils.models import KnowledgeMap
 
-from . import ask_chunks, ask_expansion, ask_providers, ask_retrieval, credential_store
+from . import ask_asof, ask_chunks, ask_expansion, ask_providers, ask_retrieval, credential_store
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,10 @@ class AskRequest(BaseModel):
     provider: str = Field(pattern=r"^(anthropic|openai|claude)$")
     model: str = Field(min_length=1, max_length=120)
     history: list[dict] = Field(default_factory=list)
+    # Optional cutoff from the map's timeline scrubber: ``YYYY-MM-DD`` or an
+    # ISO datetime. Documents created after it leave the retrieval graph and
+    # the model is told what day it is reasoning from (ask_asof.py).
+    as_of: str | None = Field(default=None, max_length=40)
 
 
 # Claude Code detection is cheap (PATH lookup + reading two small local
@@ -140,6 +144,20 @@ async def ask(
             "compiles a chatbot-traversable graph).",
         )
 
+    # "Ask as of": drop notes born after the cutoff before anything retrieves.
+    as_of_suffix = ""
+    excluded_notes: set[str] = set()
+    if body.as_of:
+        try:
+            as_of_dt = ask_asof.parse_as_of(body.as_of)
+        except ValueError as e:
+            raise HTTPException(400, f"as_of must be YYYY-MM-DD or ISO datetime: {e}") from e
+        excluded_notes = ask_asof.excluded_note_ids(as_of_dt, ask_asof.note_created_index())
+        knowledge_map = ask_asof.restrict_knowledge_map(knowledge_map, excluded_notes)
+        as_of_suffix = ask_asof.prompt_line(as_of_dt, len(excluded_notes))
+        if knowledge_map.graph is None or not knowledge_map.graph.nodes:
+            raise HTTPException(409, "nothing in the map existed on that date.")
+
     if body.provider in ("anthropic", "claude"):
         # Agentic path: a Claude Agent SDK session explores the terrain via
         # read-only tools (src/api/ask_agent.py) instead of the fixed
@@ -157,6 +175,8 @@ async def ask(
                 key=key,
                 knowledge_map=knowledge_map,
                 embedder=_embedder_for_query(),
+                excluded_note_ids=excluded_notes,
+                system_suffix=as_of_suffix,
             )
         )
 
@@ -196,7 +216,10 @@ async def ask(
     # Chunk-level semantic search — matches raw source text directly, then
     # seeds the parent note nodes. Best-effort: empty on old terrain.db
     # files (no stamped hashes) or dimension mismatch.
-    chunk_matches = ask_chunks.search(query_embedding)
+    chunk_matches = [
+        h for h in ask_chunks.search(query_embedding)
+        if h.note_node_id not in excluded_notes
+    ]
     chunk_hits: dict[str, float] = {}
     chunk_ids_by_note: dict[str, list[str]] = {}
     for hit in chunk_matches:
@@ -236,6 +259,7 @@ async def ask(
     bundle_text = ask_retrieval.render_bundle(retrieval.items)
     system = (
         ask_retrieval.system_prompt()
+        + as_of_suffix
         + "\n\nContext bundle:\n"
         + bundle_text
     )

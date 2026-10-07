@@ -4,6 +4,7 @@ import { newLocalId, useActiveThreadMessages, useAskThreadStore } from "./askThr
 import type { AgentStep, AskMessage, AskSettings, Citation } from "./types";
 import { activeKey, wireProvider } from "./types";
 import { useMapPulseStore } from "../app/lib/mapPulseStore";
+import { asOfWireDate, useMapTimelineStore } from "../app/lib/mapTimelineStore";
 import { useMapHighlightStore } from "../app/lib/mapHighlightStore";
 import { highlightFromCitations, usedCitations } from "./askHighlight";
 
@@ -54,7 +55,11 @@ export function useAskStream(settings: AskSettings) {
       // turns that into the "add your key" message below.
       const key = activeKey(settings);
 
-      const userMsg = mkMessage("user", query.trim());
+      // "Ask as of": when the map's timeline is rewound, the question is
+      // scoped to what existed on that date (backend ask_asof.py).
+      const asOfMs = useMapTimelineStore.getState().asOf;
+      const asOf = asOfMs === null ? undefined : asOfWireDate(asOfMs);
+      const userMsg = mkMessage("user", query.trim(), asOf ? { asOf } : {});
       const assistantId = newLocalId();
       const placeholder: AskMessage = {
         id: assistantId,
@@ -95,6 +100,7 @@ export function useAskStream(settings: AskSettings) {
             provider: wireProvider(settings),
             model: settings.model,
             history,
+            ...(asOf ? { as_of: asOf } : {}),
           }),
           signal: controller.signal,
         });

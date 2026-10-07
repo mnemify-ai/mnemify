@@ -7,10 +7,10 @@ import {
   ShieldCheck,
   TriangleAlert,
   ChevronRight,
-  ChevronDown,
-} from "lucide-react";
+  ChevronDown, Clock } from "lucide-react";
 import { cn } from "../app/lib/cn";
 import { ModelQuickSwitch } from "./ModelQuickSwitch";
+import { useMapTimelineStore } from "../app/lib/mapTimelineStore";
 import { extractCitationIds } from "./useAskStream";
 import type { AskSession } from "./useAskSession";
 import { AssistantMarkdown } from "./AssistantMarkdown";
@@ -64,6 +64,8 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
     if (!stickToBottomRef.current) return;
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages]);
+
+  const asOf = useMapTimelineStore((s) => s.asOf);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,8 +141,14 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
                 : "border-hair bg-cream text-ink",
             )}
           >
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-muted">
+            <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted">
               {m.role === "user" ? "You" : "Mnemify"}
+              {m.asOf ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-magenta/10 px-1.5 py-px normal-case tracking-normal text-magenta">
+                  <Clock size={10} strokeWidth={1.75} aria-hidden />
+                  as of {formatAsOf(m.asOf)}
+                </span>
+              ) : null}
             </div>
             {m.steps && m.steps.length > 0 ? (
               <StepTimeline
@@ -206,9 +214,16 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
         </div>
         <div className="mt-2 flex items-center justify-between">
           <ModelQuickSwitch settings={settings} onChange={setSettings} />
-          <span className="font-sans text-[10px] text-muted" aria-hidden>
-            Enter to send · Shift+Enter for a new line
-          </span>
+          {asOf !== null ? (
+            <span className="inline-flex items-center gap-1 font-sans text-[10px] text-magenta">
+              <Clock size={10} strokeWidth={1.75} aria-hidden />
+              Asking as of {formatAsOf(new Date(asOf).toISOString().slice(0, 10))} — close the timeline to ask about today
+            </span>
+          ) : (
+            <span className="font-sans text-[10px] text-muted" aria-hidden>
+              Enter to send · Shift+Enter for a new line
+            </span>
+          )}
         </div>
       </form>
 
@@ -377,4 +392,13 @@ function GroundedInSources({
       ) : null}
     </div>
   );
+}
+
+/** `YYYY-MM-DD` → "14 Mar 2025", read as a UTC day so it never shifts. */
+function formatAsOf(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+    year: "numeric", month: "short", day: "numeric", timeZone: "UTC",
+  });
 }

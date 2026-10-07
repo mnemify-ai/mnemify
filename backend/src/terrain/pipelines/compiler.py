@@ -470,7 +470,7 @@ class TerrainCompiler:
         embedder: EmbeddingClient | None = None,
         namer: ClusterNamer | None = None,
         ai_mode: str = "openai",
-        # None means "use the mode's default". openai: gpt-5.6-luna. A concrete
+        # None means "use the mode's default". openai: gpt-6-luna. A concrete
         # OpenAI model string overrides it. (Claude per-step models are set via
         # claude_extract_model / claude_name_model below, not llm_model.)
         llm_model: str | None = None,
@@ -524,7 +524,7 @@ class TerrainCompiler:
         # Set True only by the claude branch below (real CLI-backed extractor).
         self._claude_transport_check = False
         if ai_mode == "openai":
-            openai_model = llm_model or "gpt-5.6-luna"
+            openai_model = llm_model or "gpt-6-luna"
             self.extractor = extractor or OpenAIFeatureExtractor(
                 model=openai_model, effort=self.extract_effort
             )

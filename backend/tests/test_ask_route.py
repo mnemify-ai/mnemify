@@ -11,7 +11,7 @@ import pytest
 
 TestClient = pytest.importorskip("fastapi.testclient").TestClient
 
-from src.terrain.utils.models import GraphNode, GraphView  # noqa: E402
+from src.terrain.utils.models import GraphEdge, GraphNode, GraphView  # noqa: E402
 
 
 class _StubEmbedder:
@@ -345,3 +345,84 @@ def test_blank_bearer_header_falls_through_to_the_stored_key(client, monkeypatch
     )
     assert resp.status_code == 200
     assert calls["key"] == "sk-ant-from-settings"
+
+
+# ── "Ask as of" (ask_asof) ─────────────────────────────────────────────
+
+
+def _dated_graph() -> GraphView:
+    return GraphView(
+        nodes=[
+            GraphNode(id="tag.a", type="tag", label="Alpha", layer=2,
+                      embedding=[1.0, 0.0]),
+            GraphNode(id="n-old", type="note", label="Old note", layer=0,
+                      embedding=[1.0, 0.0]),
+            GraphNode(id="n-new", type="note", label="New note", layer=0,
+                      embedding=[1.0, 0.0]),
+        ],
+        # Notes score through their tag neighbour, so without these edges
+        # neither note would ever be selected and the control case is moot.
+        edges=[
+            GraphEdge.model_validate({"from": "tag.a", "to": n, "type": "contains",
+                                      "weight": 1.0, "provenance": "extracted",
+                                      "confidence": 1.0})
+            for n in ("n-old", "n-new")
+        ],
+    )
+
+
+def _write_notes(tmp_path):
+    notes = tmp_path / ".mnemify" / "mocknotes.json"
+    notes.write_text(json.dumps({"notes": [
+        {"id": "n-old", "createdAt": "2024-01-01T00:00:00Z", "updatedAt": "2024-01-01T00:00:00Z"},
+        {"id": "n-new", "createdAt": "2025-06-01T00:00:00Z", "updatedAt": "2025-06-01T00:00:00Z"},
+    ]}), encoding="utf-8")
+
+
+def _ask_as_of(client, as_of):
+    return client.post(
+        "/api/ask",
+        json={"query": "alpha things", "provider": "openai", "model": "m",
+              "history": [], "as_of": as_of},
+        headers={"Authorization": "Bearer test-key"},
+    )
+
+
+def test_as_of_hides_notes_created_after_the_cutoff(client, monkeypatch, tmp_path):
+    tc, routes_ask = client
+    _write_notes(tmp_path)
+    monkeypatch.setattr(
+        routes_ask, "_load_knowledge_map", lambda: SimpleNamespace(graph=_dated_graph())
+    )
+    monkeypatch.setattr(routes_ask, "_embedder_for_query",
+                        lambda: _StubEmbedder([1.0, 0.0]))
+    captured: dict = {}
+
+    async def _stream(provider, model, key, messages, system=None):
+        captured["system"] = system or ""
+        yield "ok [c1]"
+
+    monkeypatch.setattr(routes_ask.ask_providers, "stream_chat", _stream)
+
+    resp = _ask_as_of(tc, "2025-01-15")
+    assert resp.status_code == 200, resp.text
+    events = dict(_sse_events(resp.text))
+    selected = events["retrieval_debug"]["selected_node_ids"]
+    assert "n-new" not in selected
+    assert "AS OF 15 January 2025" in captured["system"]
+    assert "1 later document" in captured["system"]
+
+    # Without a cutoff the late note is back and the prompt has no time frame.
+    resp = _ask(tc)
+    events = dict(_sse_events(resp.text))
+    assert "n-new" in events["retrieval_debug"]["selected_node_ids"]
+    assert "AS OF" not in captured["system"]
+
+
+def test_as_of_rejects_garbage(client, monkeypatch):
+    tc, routes_ask = client
+    monkeypatch.setattr(routes_ask, "_embedder_for_query",
+                        lambda: _StubEmbedder([1.0, 0.0]))
+    resp = _ask_as_of(tc, "last tuesday")
+    assert resp.status_code == 400
+    assert "as_of" in resp.json()["detail"]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLAUDE_MODELS, findModel, modelLabel, normalizeModel } from "./models";
+import { CLAUDE_MODELS, OPENAI_MODELS, findModel, modelLabel, normalizeModel } from "./models";
 
 describe("ask model catalog", () => {
   it("maps legacy aliases saved by the old UI onto full model ids", () => {
@@ -18,6 +18,15 @@ describe("ask model catalog", () => {
   it("matches ids case-insensitively and labels them for the pill", () => {
     expect(modelLabel("claude", "Claude-Opus-5")).toBe("Claude Opus 5");
     expect(modelLabel("openai", "gpt-5.6-terra")).toBe("GPT-5.6 Terra");
+    expect(modelLabel("openai", "gpt-6-astra")).toBe("GPT-6 Astra");
+  });
+
+  it("offers the GPT-6 lineup", () => {
+    const ids = OPENAI_MODELS.map((m) => m.id);
+    expect(ids).toEqual(
+      expect.arrayContaining(["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-6-sol"]),
+    );
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("offers the current Claude lineup including Fable and Opus 5", () => {

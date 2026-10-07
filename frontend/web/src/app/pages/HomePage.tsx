@@ -132,9 +132,11 @@ export function HomePage() {
             dock, is drag-resizable, and collapses to a rail) instead of
             mirroring its constants, which desynced on the first drag. Below
             `md` the sidebar is hidden, so the plain `right-4` applies. Shows
-            only post-first-interaction, so it never co-exists with the hint. */}
+            only post-first-interaction, so it never co-exists with the hint.
+            top-[132px] clears the map's Home / Timeline buttons (84px + 36px
+            + gutter) which share this corner. */}
         <div
-          className="pointer-events-auto absolute top-20 right-4 md:right-[var(--map-panel-inset)] max-w-[calc(100vw-2rem)] transition-[right] duration-base ease-out motion-reduce:transition-none animate-fade-in motion-reduce:animate-none [animation-delay:120ms]"
+          className="pointer-events-auto absolute top-[132px] right-4 md:right-[var(--map-panel-inset)] max-w-[calc(100vw-2rem)] transition-[right] duration-base ease-out motion-reduce:transition-none animate-fade-in motion-reduce:animate-none [animation-delay:120ms]"
           style={
             {
               "--map-panel-inset": `${mapPanelWidth + MAP_PANEL_GUTTER}px`,

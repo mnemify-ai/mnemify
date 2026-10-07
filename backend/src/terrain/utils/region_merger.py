@@ -86,7 +86,7 @@ class RegionMerger:
 
     def __init__(self, llm_client: Any | None = None, *, model: str | None = None):
         self.llm_client = llm_client
-        self.model = model or getattr(llm_client, "model", None) or "gpt-5.6-luna"
+        self.model = model or getattr(llm_client, "model", None) or "gpt-6-luna"
         self._clusterer = TerrainClusterer()
 
     def merge(

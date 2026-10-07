@@ -122,7 +122,7 @@ export function AskSettingsForm() {
           options={MODEL_CATALOG[settings.provider]}
           onChange={(model) => onChange({ ...settings, model })}
           customPlaceholder={
-            settings.provider === "claude" ? "e.g. claude-opus-4-7" : "e.g. gpt-5.6-terra"
+            settings.provider === "claude" ? "e.g. claude-opus-4-7" : "e.g. gpt-6.1-sol"
           }
           customHint={
             settings.provider === "claude"

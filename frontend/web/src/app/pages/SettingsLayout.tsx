@@ -5,12 +5,15 @@ import { cn } from "../lib/cn";
 // Connections live under /build/sources — the connect→harvest flow is one
 // journey now. /settings/connections still redirects for deep links, and
 // /settings/compile redirects into AI & Models (its contents merged there).
+// A "Sources" tab stays here as a signpost: plenty of people think of
+// connected accounts as a setting, so the tab points them across.
 const TABS = [
   { to: "/settings", label: "General", end: true },
   { to: "/settings/ai", label: "AI & Models", end: false },
   { to: "/settings/data", label: "Data", end: false },
   { to: "/settings/schedules", label: "Schedules", end: false },
   { to: "/settings/audit", label: "Audit", end: false },
+  { to: "/build/sources", label: "Sources ↗", end: false },
 ];
 
 export function SettingsLayout() {

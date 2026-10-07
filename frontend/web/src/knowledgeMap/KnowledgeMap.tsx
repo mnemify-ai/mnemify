@@ -43,6 +43,7 @@ import { RightPanel } from './chrome/RightPanel';
 import { BottomBar } from './chrome/BottomBar';
 import { ResetViewButton } from './chrome/ResetViewButton';
 import { AskHighlightPill } from './chrome/AskHighlightPill';
+import { TimelineButton, TimelineScrubber } from './chrome/TimelineScrubber';
 import { useRenderData } from './data/useRenderData';
 import { recolorRegions } from './util/regionColors';
 import { Scene } from './scene/Scene';
@@ -53,6 +54,7 @@ import {
 } from './store';
 import { useEscapeHandler } from './input/useEscapeHandler';
 import { useAskHighlightSync } from './util/askHighlight';
+import { useTimelineSync } from './util/timeline';
 import { useMapFocusStore } from '../app/lib/mapFocusStore';
 import type { RenderData } from './types';
 
@@ -157,6 +159,8 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
   useControlledTagBridge(data, props.selectedTagId, props.onTagSelect);
   // The Ask dock's answer highlight → this bake's spires + one camera framing.
   useAskHighlightSync(data, props.notesUrl ?? DEFAULT_NOTES_URL);
+  // Timeline scrubber: note dates → per-tag/region first-seen for this bake.
+  useTimelineSync(data, props.notesUrl ?? DEFAULT_NOTES_URL);
   // Brand-mark reset: wipe nav state and re-frame. Skips the mount value so
   // landing on Home doesn't fight a deep link's `?tag=` / focus.
   const resetTick = useMapFocusStore((s) => s.resetTick);
@@ -167,6 +171,12 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
     seenResetRef.current = resetTick;
     home();
   }, [resetTick, home]);
+
+  // Top-right chrome offset. `hideHeader` means the host draws its own bar
+  // over the canvas (the dashboard's fixed 64px TopBar), so the buttons drop
+  // below it instead of vanishing underneath — the same clearance the
+  // cartographer title uses (CartographerDecorations: top-[84px]).
+  const chromeTop = props.hideHeader ? CHROME_TOP_UNDER_BAR : CHROME_TOP_DEFAULT;
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const asideRef = useRef<HTMLElement>(null);
@@ -265,8 +275,10 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
           <Scene data={data} />
           <CartographerDecorations />
           {!props.hideHeader && <Header data={data} />}
-          <ResetViewButton />
+          <ResetViewButton top={chromeTop} />
+          <TimelineButton top={chromeTop} />
           <AskHighlightPill />
+          <TimelineScrubber />
           {/* On-map breadcrumb removed — navigation now lives in the right
               panel's nav header (Back + breadcrumb). */}
           <HexTooltip
@@ -503,6 +515,9 @@ const centeredText: React.CSSProperties = {
   justifyContent: 'center',
   fontFamily: 'ui-serif, Georgia, "Times New Roman", serif',
 };
+
+const CHROME_TOP_DEFAULT = 28;
+const CHROME_TOP_UNDER_BAR = 84;
 
 const panelStyle: React.CSSProperties = {
   position: 'relative',

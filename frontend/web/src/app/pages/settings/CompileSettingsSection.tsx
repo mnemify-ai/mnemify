@@ -205,7 +205,7 @@ export function CompileSettingsSection() {
                 options={OPENAI_MODELS}
                 onChange={(v) => save({ ...d, openai_model: v })}
                 commitCustomOnBlur
-                customPlaceholder="e.g. gpt-5.6-terra"
+                customPlaceholder="e.g. gpt-6.1-sol"
                 customHint="Any OpenAI chat model id. Sent as-is."
                 className="w-72"
                 selectClassName={cn(inputCls, "w-full py-0")}
