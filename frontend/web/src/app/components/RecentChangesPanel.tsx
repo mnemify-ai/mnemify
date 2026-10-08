@@ -51,7 +51,7 @@ export function changeAttribution(entry: ChangeEntry): string | null {
   return `edited by ${who}`;
 }
 
-function dayLabel(iso: string | null): string {
+export function dayLabel(iso: string | null): string {
   if (!iso) return "Earlier";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "Earlier";
@@ -63,12 +63,12 @@ function dayLabel(iso: string | null): string {
   return d.toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
-interface DayGroup {
+export interface DayGroup {
   label: string;
   authors: { name: string; entries: ChangeEntry[] }[];
 }
 
-function groupChanges(changes: ChangeEntry[]): DayGroup[] {
+export function groupChanges(changes: ChangeEntry[]): DayGroup[] {
   const days = new Map<string, ChangeEntry[]>();
   for (const c of changes) {
     const label = dayLabel(c.changed_at);
@@ -95,7 +95,7 @@ function groupChanges(changes: ChangeEntry[]): DayGroup[] {
   });
 }
 
-function ChangeRow({ entry }: { entry: ChangeEntry }) {
+export function ChangeRow({ entry }: { entry: ChangeEntry }) {
   const title =
     entry.change === "deleted" ? (
       <span className="line-through text-muted">{entry.title}</span>

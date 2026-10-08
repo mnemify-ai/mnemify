@@ -18,7 +18,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Pill } from "../components/ui/Pill";
 import { Button } from "../components/ui/Button";
 import { Skeleton } from "../components/ui/Skeleton";
-import { useActionItems, type ActionItem } from "../api/actionItems";
+import { useActionItems, useSetActionItemStatus, type ActionItem } from "../api/actionItems";
 import {
   cleanTitle,
   dueLabel,
@@ -88,7 +88,16 @@ export function ActionItemsPage() {
   // Retires the post-compile "Your TODOs" pointer on the compile report — the
   // user has found this page, so it has nothing left to tell them.
   useEffect(() => markTodosVisited(), []);
-  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
+  // Dismissals are stored server-side (by signal id, in workspace.db); the
+  // localStorage set is the pre-import legacy and is unioned in until the
+  // one-time import (ask/threadSync) has moved it across.
+  const [localDismissed, setLocalDismissed] = useState<Set<string>>(() => loadDismissed());
+  const setStatus = useSetActionItemStatus();
+  const dismissed = useMemo(() => {
+    const out = new Set(localDismissed);
+    for (const it of data?.items ?? []) if (it.user_status === "dismissed") out.add(it.id);
+    return out;
+  }, [localDismissed, data]);
   const [collapsed, setCollapsed] = useState<Set<SectionKey>>(
     () => new Set(SECTIONS.filter((s) => s.collapsed).map((s) => s.key)),
   );
@@ -99,7 +108,8 @@ export function ActionItemsPage() {
   );
 
   const dismiss = (id: string) => {
-    setDismissed((prev) => {
+    setStatus.mutate({ id, status: "dismissed" });
+    setLocalDismissed((prev) => {
       const next = new Set(prev);
       next.add(id);
       // Prune against the live list so removed/reworded items don't pile up.
@@ -322,6 +332,11 @@ function ActionItemRow({
               className="px-2 py-0.5 text-[11px]"
             >
               {due}
+            </Pill>
+          )}
+          {item.user_status === "confirmed" && (
+            <Pill tone="success" dot className="px-2 py-0.5 text-[11px]">
+              Confirmed
             </Pill>
           )}
           {stale && <span>{stale}</span>}

@@ -325,6 +325,11 @@ _RESET_FILES = (
     "render-data.json",
     "mocknotes.json",
     "debug_sample.md",
+    # User-authored workspace state (memory, conversations). Only this full
+    # reset removes it — harvest reset / purge leave it alone on purpose.
+    "workspace.db",
+    "workspace.db-shm",
+    "workspace.db-wal",
 )
 _RESET_DIRS = ("raw", "normalized")
 

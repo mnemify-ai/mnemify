@@ -183,3 +183,27 @@ def test_walks_nested_children(tmp_path, monkeypatch):
     assert [item["id"] for item in data["items"]] == ["s-nested"]
     assert data["items"][0]["region_label"] == "Sub"
     assert data["items"][0]["bucket"] == "due_soon"
+
+
+def test_region_filter_and_user_status(tmp_path, monkeypatch):
+    tree = [
+        {"id": "r1", "name": "One", "signals": [_signal("s-one")], "tags": [], "children": [
+            {"id": "r1a", "name": "One A", "signals": [_signal("s-one-a")], "tags": [], "children": []},
+        ]},
+        {"id": "r2", "name": "Two", "signals": [_signal("s-two")], "tags": [], "children": []},
+    ]
+    client = _client(tmp_path, monkeypatch, _terrain(tree))
+    everything = client.get("/api/action-items").json()
+    assert {i["id"] for i in everything["items"]} == {"s-one", "s-one-a", "s-two"}
+    assert all(i["user_status"] == "unverified" for i in everything["items"])
+    assert everything["counts_by_status"] == {"unverified": 3, "confirmed": 0, "dismissed": 0}
+
+    scoped = client.get("/api/action-items?region_id=r1").json()
+    assert {i["id"] for i in scoped["items"]} == {"s-one", "s-one-a"}
+    assert scoped["region_id"] == "r1"
+    assert client.get("/api/action-items?region_id=nope").status_code == 404
+
+    assert client.patch("/api/action-items/s-two/status", json={"status": "dismissed"}).status_code == 200
+    after = client.get("/api/action-items").json()
+    assert next(i for i in after["items"] if i["id"] == "s-two")["user_status"] == "dismissed"
+    assert after["counts_by_status"]["dismissed"] == 1

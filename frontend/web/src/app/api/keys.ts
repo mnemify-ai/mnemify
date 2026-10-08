@@ -23,4 +23,15 @@ export const qk = {
   changes: (since = "last_compile") => ["changes", since] as const,
   // Open todos with deadlines, bucketed by urgency at read time.
   actionItems: () => ["action-items"] as const,
+  // Region workspaces (/api/regions/*). Everything under "regions" is
+  // invalidated together after a compile, since region ids may have moved.
+  regions: () => ["regions"] as const,
+  region: (id: string) => ["regions", "detail", id] as const,
+  regionChanges: (id: string, since: string) => ["regions", "changes", id, since] as const,
+  regionMemory: (id: string) => ["regions", "memory", id] as const,
+  regionThreads: (id: string) => ["regions", "threads", id] as const,
+  unassignedRegion: (key: string) => ["regions", "unassigned", key] as const,
+  // Server-side conversation list (all regions + unscoped).
+  threads: () => ["threads"] as const,
+  thread: (id: string) => ["threads", "detail", id] as const,
 };

@@ -37,6 +37,8 @@ function useRefreshMapDataOnCompileComplete() {
       qc.invalidateQueries({ queryKey: qk.terrainReport() });
       qc.invalidateQueries({ queryKey: qk.terrainRuns() });
       qc.invalidateQueries({ queryKey: qk.actionItems() });
+      // Region ids are content hashes — a compile may have moved them.
+      qc.invalidateQueries({ queryKey: qk.regions() });
       // A compile moves the "since last compile" boundary — pending changes
       // are now part of the map, so the pill/feed must recount (to zero).
       qc.invalidateQueries({ queryKey: ["changes"] });
@@ -128,6 +130,7 @@ function ThemeToggle() {
 // Label matches the page's own heading (ActionItemsPage title="TODOs").
 const NAV_ITEMS = [
   { to: "/", label: "Map", end: true },
+  { to: "/regions", label: "Regions" },
   { to: "/action-items", label: "TODOs" },
   { to: "/documents", label: "Documents" },
   { to: "/build", label: "Build" },

@@ -109,6 +109,11 @@ export type KnowledgeMapProps = {
    *    yet; rendering inline for that one frame would flash the bar in the map
    *    column and resize the r3f canvas twice. */
   bottomBarSlot?: HTMLElement | null;
+
+  /** Preview mode: just the scene, framed on `focusRegionId`, with no chrome
+   *  and none of the app-wide hooks (Esc, Ask highlight, timeline). For the
+   *  region workspace's "Open map" dialog. */
+  preview?: boolean;
 };
 
 const DEFAULT_DATA_URL = '/api/terrain/render-data';
@@ -141,11 +146,26 @@ export function KnowledgeMap(props: KnowledgeMapProps) {
       >
         {dataState.status === 'loading' && <LoadingState />}
         {dataState.status === 'error' && <ErrorState message={dataState.error} />}
-        {dataState.status === 'ready' && (
-          <ReadyChrome data={dataState.data} props={props} />
-        )}
+        {dataState.status === 'ready' &&
+          (props.preview ? (
+            <PreviewChrome data={dataState.data} props={props} />
+          ) : (
+            <ReadyChrome data={dataState.data} props={props} />
+          ))}
       </div>
     </KnowledgeMapStoreProvider>
+  );
+}
+
+/** The scene alone — see `KnowledgeMapProps.preview`. A sibling of
+ *  ReadyChrome rather than a branch inside it so hook order stays fixed. */
+function PreviewChrome({ data: rawData, props }: { data: RenderData; props: KnowledgeMapProps }) {
+  const data = useMemo(() => recolorRegions(rawData), [rawData]);
+  useControlledFocusBridge(data, props.focusRegionId, props.onFocusChange);
+  return (
+    <div style={{ flex: 1, position: 'relative', minWidth: 0, overflow: 'hidden' }}>
+      <Scene data={data} />
+    </div>
   );
 }
 

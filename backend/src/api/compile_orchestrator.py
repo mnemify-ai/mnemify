@@ -391,6 +391,15 @@ async def _run_compile(
             "stats": result.stats.model_dump(),
         }
         compile_bus.publish({"type": "complete", **state.summary, "ts": time.time() * 1000})
+        # Region ids are content hashes; move workspace anchors (memory,
+        # threads) onto the new tree. Best-effort — the lazy path in
+        # region_reconcile is the authority on the next workspace request.
+        try:
+            from . import region_reconcile
+
+            await asyncio.to_thread(region_reconcile.reconcile_now)
+        except Exception:  # noqa: BLE001
+            logger.exception("workspace reconcile after compile failed")
     except _CompileCancelled:
         state.status = "failed"
         state.finished_at = time.time()

@@ -24,6 +24,12 @@ export type AskThread = {
   createdAt: number;
   updatedAt: number;
   messages: AskMessage[];
+  /** Region workspace this conversation belongs to (`/api/ask` scopes
+   *  retrieval to it and files the thread under it). Null = whole map. */
+  regionId: string | null;
+  /** False for a server-side thread whose messages haven't been fetched yet
+   *  (the sync only pulls summaries); `ensureThreadLoaded` fills them in. */
+  messagesLoaded?: boolean;
 };
 
 const MAX_THREADS = 30;
@@ -44,6 +50,15 @@ type AskThreadState = {
   /** Active thread id, creating an empty thread if none exists. */
   ensureActiveThread: () => string;
   newThread: () => void;
+  /** Start (or re-point an empty active thread as) a conversation scoped to
+   *  one region, and make it active. Returns the thread id. */
+  newThreadForRegion: (regionId: string) => string;
+  setThreadRegion: (threadId: string, regionId: string | null) => void;
+  /** Merge a thread from the server: newer `updatedAt` wins, and a summary
+   *  without messages never clobbers messages already held locally. */
+  upsertThread: (thread: AskThread) => void;
+  /** Drop a thread locally without touching the server. */
+  removeThread: (id: string) => void;
   switchThread: (id: string) => void;
   deleteThread: (id: string) => void;
   /** Clear the active thread's messages ("Clear conversation"). */
@@ -148,9 +163,74 @@ export const useAskThreadStore = create<AskThreadState>()(
           createdAt: now,
           updatedAt: now,
           messages: [],
+          regionId: null,
+          messagesLoaded: true,
         };
         set({ threads: capThreads([thread, ...threads]), activeThreadId: id });
         return id;
+      },
+
+      newThreadForRegion: (regionId) => {
+        const { threads, activeThreadId } = get();
+        const active = threads.find((t) => t.id === activeThreadId);
+        if (active && active.messages.length === 0) {
+          set({
+            threads: threads.map((t) => (t.id === active.id ? { ...t, regionId } : t)),
+            draft: "",
+          });
+          return active.id;
+        }
+        const id = newLocalId();
+        const now = Date.now();
+        const thread: AskThread = {
+          id,
+          title: "New thread",
+          createdAt: now,
+          updatedAt: now,
+          messages: [],
+          regionId,
+          messagesLoaded: true,
+        };
+        set({ threads: capThreads([thread, ...threads]), activeThreadId: id, draft: "" });
+        return id;
+      },
+
+      setThreadRegion: (threadId, regionId) => {
+        set({
+          threads: get().threads.map((t) => (t.id === threadId ? { ...t, regionId } : t)),
+        });
+      },
+
+      upsertThread: (incoming) => {
+        const { threads } = get();
+        const existing = threads.find((t) => t.id === incoming.id);
+        if (!existing) {
+          set({ threads: capThreads([incoming, ...threads]) });
+          return;
+        }
+        const keepLocalMessages =
+          incoming.messages.length === 0 && existing.messages.length > 0;
+        const merged: AskThread = {
+          ...existing,
+          ...incoming,
+          messages: keepLocalMessages ? existing.messages : incoming.messages,
+          messagesLoaded: keepLocalMessages
+            ? existing.messagesLoaded ?? true
+            : incoming.messagesLoaded ?? existing.messagesLoaded,
+          updatedAt: Math.max(existing.updatedAt, incoming.updatedAt),
+          title: incoming.updatedAt >= existing.updatedAt ? incoming.title : existing.title,
+        };
+        set({ threads: capThreads(threads.map((t) => (t.id === merged.id ? merged : t))) });
+      },
+
+      removeThread: (id) => {
+        const { threads, activeThreadId } = get();
+        const remaining = threads.filter((t) => t.id !== id);
+        set({
+          threads: remaining,
+          activeThreadId:
+            activeThreadId === id ? (remaining[0]?.id ?? null) : activeThreadId,
+        });
       },
 
       newThread: () => {
@@ -213,6 +293,20 @@ export const useAskThreadStore = create<AskThreadState>()(
     {
       name: "mnemify.ask.threads.v1",
       storage: createJSONStorage(() => quotaAwareStorage),
+      // v2 adds `regionId` (region-scoped conversations). Threads persisted
+      // by v1 are whole-map conversations, so they migrate to `null`.
+      version: 2,
+      migrate: (persisted) => {
+        const state = persisted as { threads?: AskThread[] };
+        return {
+          ...state,
+          threads: (state.threads ?? []).map((t) => ({
+            ...t,
+            regionId: t.regionId ?? null,
+            messagesLoaded: t.messagesLoaded ?? true,
+          })),
+        } as AskThreadState;
+      },
       // A reload kills any in-flight request, so streaming status must never
       // be restored — it would strand the UI in a permanent "Stop" state.
       partialize: (s) => ({

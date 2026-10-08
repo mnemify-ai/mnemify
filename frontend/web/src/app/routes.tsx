@@ -7,6 +7,11 @@ import { ConnectionsSection } from "./pages/harvest/ConnectionsSection";
 import { CompileReportPage } from "./pages/CompileReportPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { ActionItemsPage } from "./pages/ActionItemsPage";
+import { RegionsIndexPage } from "./pages/regions/RegionsIndexPage";
+import { RegionWorkspaceLayout, UnassignedRegionRoute } from "./pages/regions/RegionWorkspaceLayout";
+import { RegionOverviewTab } from "./pages/regions/RegionOverviewTab";
+import { RegionMemoryTab } from "./pages/regions/RegionMemoryTab";
+import { RegionActivityTab } from "./pages/regions/RegionActivityTab";
 import { SettingsLayout } from "./pages/SettingsLayout";
 import { GeneralSection } from "./pages/settings/GeneralSection";
 import { DataSection } from "./pages/settings/DataSection";
@@ -37,6 +42,23 @@ export const router = createBrowserRouter([
       },
       { path: "documents", element: <DocumentsPage /> },
       { path: "action-items", element: <ActionItemsPage /> },
+      {
+        // Region workspaces — one per region at any level of the tree.
+        path: "regions",
+        children: [
+          { index: true, element: <RegionsIndexPage /> },
+          { path: "unassigned/:regionKey", element: <UnassignedRegionRoute /> },
+          {
+            path: ":regionId",
+            element: <RegionWorkspaceLayout />,
+            children: [
+              { index: true, element: <RegionOverviewTab /> },
+              { path: "memory", element: <RegionMemoryTab /> },
+              { path: "activity", element: <RegionActivityTab /> },
+            ],
+          },
+        ],
+      },
       {
         path: "settings",
         element: <SettingsLayout />,

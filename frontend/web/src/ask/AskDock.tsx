@@ -21,6 +21,8 @@ import { AskPanel } from "./AskPanel";
 import { SourceInspector, type SourceInspectorTarget } from "./SourceInspector";
 import { useAskSession } from "./useAskSession";
 import { useAskThreadStore } from "./askThreadStore";
+import { deleteThreadEverywhere, resumeThread } from "./threadSync";
+import { useMapData } from "../app/data/MapDataProvider";
 import {
   DOCK_MIN_WIDTH,
   dockDragMaxWidth,
@@ -262,7 +264,10 @@ function ThreadSwitcher() {
   const [open, setOpen] = useState(false);
   const threads = useAskThreadStore((s) => s.threads);
   const activeThreadId = useAskThreadStore((s) => s.activeThreadId);
-  const { switchThread, deleteThread, newThread } = useAskThreadStore.getState();
+  const { newThread } = useAskThreadStore.getState();
+  const regionsById = useMapData().data?.indexes.regionsById;
+  const regionLabel = (regionId: string | null) =>
+    regionId ? regionsById?.get(regionId)?.name ?? "Unassigned region" : null;
 
   const active = threads.find((t) => t.id === activeThreadId);
 
@@ -320,19 +325,20 @@ function ThreadSwitcher() {
               <button
                 type="button"
                 onClick={() => {
-                  switchThread(t.id);
+                  void resumeThread(t.id);
                   setOpen(false);
                 }}
                 className="min-w-0 flex-1 text-left"
               >
                 <span className="block truncate text-ink">{t.title}</span>
-                <span className="block text-[11px] text-muted">
+                <span className="block truncate text-[11px] text-muted">
                   {relativeTime(new Date(t.updatedAt).toISOString())}
+                  {regionLabel(t.regionId) ? ` · ${regionLabel(t.regionId)}` : ""}
                 </span>
               </button>
               <button
                 type="button"
-                onClick={() => deleteThread(t.id)}
+                onClick={() => void deleteThreadEverywhere(t.id)}
                 aria-label={`Delete thread: ${t.title}`}
                 className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted opacity-0 transition-opacity hover:text-rose group-hover:opacity-100"
               >

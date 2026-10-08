@@ -39,7 +39,17 @@ from src import paths
 from src.terrain.utils.embedder import EmbeddingClient, LocalHashEmbeddingClient
 from src.terrain.utils.models import KnowledgeMap
 
-from . import ask_asof, ask_chunks, ask_expansion, ask_providers, ask_retrieval, credential_store
+from . import (
+    ask_asof,
+    ask_chunks,
+    ask_expansion,
+    ask_providers,
+    ask_retrieval,
+    credential_store,
+    region_reconcile,
+    region_scope,
+)
+from .workspace_store import WorkspaceStore
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +70,13 @@ class AskRequest(BaseModel):
     # ISO datetime. Documents created after it leave the retrieval graph and
     # the model is told what day it is reasoning from (ask_asof.py).
     as_of: str | None = Field(default=None, max_length=40)
+    # Region workspace scope: retrieval is restricted to this region's subtree
+    # and its saved memory joins the system prompt (region_scope.py).
+    region_id: str | None = Field(default=None, max_length=80)
+    # Conversation to persist this exchange under (workspace.db). A
+    # client-supplied id is honoured so the browser's thread and the stored
+    # one agree; the thread is created on first use.
+    thread_id: str | None = Field(default=None, max_length=40, pattern=r"^[A-Za-z0-9_-]{6,40}$")
 
 
 # Claude Code detection is cheap (PATH lookup + reading two small local
@@ -158,6 +175,53 @@ async def ask(
         if knowledge_map.graph is None or not knowledge_map.graph.nodes:
             raise HTTPException(409, "nothing in the map existed on that date.")
 
+    # Region workspace scope: everything outside the subtree leaves the
+    # retrieval graph (composes with as_of on the same excluded set), and the
+    # region's memory items ride along in the system prompt.
+    thread_id: str | None = None
+    if body.region_id or body.thread_id:
+        index = region_scope.region_index()
+        scope = None
+        if body.region_id:
+            if index is None:
+                raise HTTPException(404, "no compiled map yet — run a compile")
+            scope = region_scope.resolve_region(index, body.region_id)
+            if scope is None:
+                raise HTTPException(404, f"unknown region {body.region_id}")
+            outside = set(index.notes) - scope.note_ids_extended
+            excluded_notes = excluded_notes | outside
+            knowledge_map = region_scope.restrict_knowledge_map(knowledge_map, scope)
+            if knowledge_map.graph is None or not knowledge_map.graph.nodes:
+                raise HTTPException(409, "nothing in the map belongs to that region.")
+        store = WorkspaceStore()
+        try:
+            region_reconcile.ensure_reconciled(store, index)
+            region_key: str | None = None
+            if scope is not None:
+                anchor = store.get_or_create_anchor(
+                    scope.region_id, name=scope.name, level=scope.level,
+                    note_ids=scope.note_ids, generated_at=index.generated_at if index else None,
+                )
+                region_key = anchor["key"]
+                keys = [
+                    a["key"] for a in store.anchors_all()
+                    if a.get("region_id") in scope.descendant_ids
+                ]
+                memory = store.list_memory(keys, limit=20)
+                as_of_suffix += region_scope.prompt_line(scope, memory)
+            if body.thread_id:
+                existing = store.get_thread(body.thread_id)
+                if existing and region_key and existing.get("region_key") not in (None, region_key):
+                    raise HTTPException(409, "that conversation belongs to another region.")
+                thread = store.ensure_thread(
+                    body.thread_id, region_key=region_key, title=body.query.strip()[:64]
+                )
+                if region_key and thread.get("region_key") is None:
+                    store.set_thread_region(thread["id"], region_key)
+                thread_id = thread["id"]
+        finally:
+            store.close()
+
     if body.provider in ("anthropic", "claude"):
         # Agentic path: a Claude Agent SDK session explores the terrain via
         # read-only tools (src/api/ask_agent.py) instead of the fixed
@@ -167,16 +231,21 @@ async def ask(
         from . import ask_agent
 
         return EventSourceResponse(
-            ask_agent.run_agent_session(
+            _persist_exchange(
+                ask_agent.run_agent_session(
+                    query_text=body.query,
+                    history=body.history,
+                    provider=body.provider,
+                    model=body.model,
+                    key=key,
+                    knowledge_map=knowledge_map,
+                    embedder=_embedder_for_query(),
+                    excluded_note_ids=excluded_notes,
+                    system_suffix=as_of_suffix,
+                ),
+                thread_id=thread_id,
                 query_text=body.query,
-                history=body.history,
-                provider=body.provider,
-                model=body.model,
-                key=key,
-                knowledge_map=knowledge_map,
-                embedder=_embedder_for_query(),
-                excluded_note_ids=excluded_notes,
-                system_suffix=as_of_suffix,
+                as_of=body.as_of,
             )
         )
 
@@ -354,7 +423,82 @@ async def ask(
         }
         yield {"event": "done", "data": "{}"}
 
-    return EventSourceResponse(event_gen())
+    return EventSourceResponse(
+        _persist_exchange(event_gen(), thread_id=thread_id, query_text=body.query, as_of=body.as_of)
+    )
+
+
+async def _persist_exchange(events, *, thread_id: str | None, query_text: str, as_of: str | None):
+    """Pass every SSE event through and, when a thread is attached, store the
+    user turn and the assembled assistant turn in ``workspace.db`` at the end
+    (also on error or client disconnect, so a half-answer is not lost).
+    Emits a leading ``thread`` event so the client learns the id."""
+    if not thread_id:
+        async for ev in events:
+            yield ev
+        return
+
+    yield {"event": "thread", "data": json.dumps({"thread_id": thread_id})}
+    text_parts: list[str] = []
+    citations: list = []
+    used: list[str] = []
+    fallback = False
+    steps: dict[str, dict] = {}
+    error: str | None = None
+    try:
+        async for ev in events:
+            name = ev.get("event")
+            raw = ev.get("data")
+            payload: dict = {}
+            if isinstance(raw, str) and raw:
+                try:
+                    payload = json.loads(raw)
+                except ValueError:
+                    payload = {}
+            if name == "delta":
+                text_parts.append(str(payload.get("text") or ""))
+            elif name == "citations":
+                citations = list(payload.get("citations") or [])
+            elif name == "citations_used":
+                used = list(payload.get("used") or [])
+                fallback = bool(payload.get("fallback"))
+            elif name == "agent_step":
+                sid = payload.get("id")
+                if sid:
+                    steps[sid] = {**steps.get(sid, {}), **payload}
+            elif name == "error":
+                error = str(payload.get("message") or "error")
+            yield ev
+    except asyncio.CancelledError:
+        error = error or "interrupted"
+        raise
+    finally:
+        assistant_payload: dict = {
+            "citations": citations,
+            "usedCitationIds": used,
+            "citationsFallback": fallback,
+        }
+        if steps:
+            assistant_payload["steps"] = list(steps.values())
+        if error:
+            assistant_payload["error"] = error
+        user_payload: dict = {"asOf": as_of} if as_of else {}
+        messages = [
+            {"role": "user", "text": query_text, "payload": user_payload},
+            {"role": "assistant", "text": "".join(text_parts), "payload": assistant_payload},
+        ]
+
+        def _write() -> None:
+            store = WorkspaceStore()
+            try:
+                store.append_messages(thread_id, messages)
+            finally:
+                store.close()
+
+        try:
+            await asyncio.to_thread(_write)
+        except Exception:  # noqa: BLE001
+            logger.exception("ask: could not persist thread %s", thread_id)
 
 
 # ── helpers ─────────────────────────────────────────────────────────

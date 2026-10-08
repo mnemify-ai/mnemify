@@ -2,6 +2,8 @@
 // for the currently focused region (drill depth).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { LayoutDashboard } from 'lucide-react';
 import { useKnowledgeMapStore } from '../store';
 import type { RenderData } from '../types';
 import { buildTopLevelRegions, resolveTagLabel } from '../util/topLevelRegions';
@@ -29,6 +31,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
   // footprint + on-map label (see util/hoverRegion.ts). Hover never navigates.
   const hover = useHoverRegion(data);
   const region = data.regions[idx];
+  const routerNavigate = useNavigate();
 
   // Drilling into a sub-region swaps this view out, and React fires no
   // mouseleave on unmount — clear so the terrain doesn't stay lit for a row
@@ -125,6 +128,15 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
           <Stat label="Tags" value={region.tagCount} />
           <Stat label="Sub-regions" value={subRegions.length} />
         </div>
+        {/* The region's workspace: brief, decisions, memory, conversations. */}
+        <button
+          type="button"
+          onClick={() => routerNavigate(`/regions/${encodeURIComponent(region.id)}`)}
+          className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-full border border-hair bg-cream/70 px-3 py-1.5 font-sans text-[12px] font-medium text-ink transition-colors hover:border-magenta/40 hover:text-magenta"
+        >
+          <LayoutDashboard size={13} strokeWidth={1.75} aria-hidden />
+          Open workspace
+        </button>
         {attentionItem && attentionItem.attentionScore > 0 && (
           <AttentionGauge score={attentionItem.attentionScore} level={attentionItem.attentionLevel} />
         )}

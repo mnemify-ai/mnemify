@@ -1463,6 +1463,10 @@ def _cmd_reset(args: argparse.Namespace) -> None:
             victims.append((f"harvest data at {dd}/", f"{size / 1_048_576:.1f} MB"))
         except Exception:  # noqa: BLE001
             victims.append((f"harvest data at {dd}/", "size unknown"))
+        if (dd / "workspace.db").exists():
+            victims.append(
+                (f"region workspace memory + conversations at {dd}/workspace.db", "deleted")
+            )
     if yaml_path.exists():
         victims.append((f"every sources.*.enabled flag in {yaml_path}", "flipped to false"))
     if not args.keep_env and env_path.exists():

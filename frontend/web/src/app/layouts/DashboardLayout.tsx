@@ -8,6 +8,7 @@ import { CompileFailedNotice } from "../components/CompileFailedNotice";
 import { AskDock } from "../../ask/AskDock";
 import { AskBubble } from "../../ask/AskBubble";
 import { useAskDockStore } from "../../ask/askDockStore";
+import { useThreadSync } from "../../ask/threadSync";
 import { MAP_PANEL_GUTTER, useMapPanelStore } from "../lib/mapPanelStore";
 import { useHeartbeat } from "../lib/useHeartbeat";
 import { cn } from "../lib/cn";
@@ -92,6 +93,9 @@ export function DashboardLayout() {
   // place the "a human is watching" beat belongs. Above the early returns:
   // the loading and error states are still an open tab.
   useHeartbeat();
+  // Conversations are stored server-side (workspace.db); pull their summaries
+  // into the dock's thread list and import what localStorage held, once.
+  useThreadSync(hasMap);
 
   if (error) {
     return (

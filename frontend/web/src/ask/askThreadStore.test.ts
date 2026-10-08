@@ -116,3 +116,38 @@ describe("askThreadStore", () => {
     expect(state.activeThreadId).toBe(id);
   });
 });
+
+describe("askThreadStore — region scope", () => {
+  it("newThreadForRegion re-points an empty active thread, else creates one", () => {
+    const s = useAskThreadStore.getState();
+    const first = s.ensureActiveThread();
+    expect(useAskThreadStore.getState().newThreadForRegion("node_a")).toBe(first);
+    expect(useAskThreadStore.getState().threads[0].regionId).toBe("node_a");
+    useAskThreadStore.getState().appendMessages(first, [msg({ text: "hello" })]);
+    const second = useAskThreadStore.getState().newThreadForRegion("node_b");
+    expect(second).not.toBe(first);
+    expect(useAskThreadStore.getState().activeThreadId).toBe(second);
+    expect(useAskThreadStore.getState().threads.find((t) => t.id === second)?.regionId).toBe("node_b");
+  });
+
+  it("upsertThread keeps local messages when the incoming summary has none", () => {
+    const s = useAskThreadStore.getState();
+    const id = s.ensureActiveThread();
+    useAskThreadStore.getState().appendMessages(id, [msg({ text: "kept" })]);
+    useAskThreadStore.getState().upsertThread({
+      id, title: "Server title", createdAt: 1, updatedAt: Date.now() + 10_000, messages: [], regionId: "node_a", messagesLoaded: false,
+    });
+    const t = useAskThreadStore.getState().threads.find((x) => x.id === id)!;
+    expect(t.messages.map((m) => m.text)).toEqual(["kept"]);
+    expect(t.regionId).toBe("node_a");
+    expect(t.title).toBe("Server title");
+    expect(t.messagesLoaded).toBe(true);
+  });
+
+  it("upsertThread adds unknown threads and removeThread drops them", () => {
+    useAskThreadStore.getState().upsertThread({ id: "srv1", title: "S", createdAt: 1, updatedAt: 1, messages: [], regionId: null, messagesLoaded: false });
+    expect(useAskThreadStore.getState().threads.some((t) => t.id === "srv1")).toBe(true);
+    useAskThreadStore.getState().removeThread("srv1");
+    expect(useAskThreadStore.getState().threads.some((t) => t.id === "srv1")).toBe(false);
+  });
+});

@@ -7,6 +7,8 @@ import { useMapPulseStore } from "../app/lib/mapPulseStore";
 import { asOfWireDate, useMapTimelineStore } from "../app/lib/mapTimelineStore";
 import { useMapHighlightStore } from "../app/lib/mapHighlightStore";
 import { highlightFromCitations, usedCitations } from "./askHighlight";
+import { queryClient } from "../app/lib/queryClient";
+import { qk } from "../app/api/keys";
 
 /**
  * The in-flight request's abort handle, module-level for the same reason
@@ -44,6 +46,8 @@ export function useAskStream(settings: AskSettings) {
       // rather than relying on the composer being disabled.
       if (store.streamingThreadId !== null) return;
       const threadId = store.ensureActiveThread();
+      const regionId =
+        useAskThreadStore.getState().threads.find((t) => t.id === threadId)?.regionId ?? null;
       const patch = (
         messageId: string,
         fn: (m: AskMessage) => AskMessage,
@@ -101,6 +105,10 @@ export function useAskStream(settings: AskSettings) {
             model: settings.model,
             history,
             ...(asOf ? { as_of: asOf } : {}),
+            // The server files the exchange under this thread (workspace.db);
+            // the browser id is reused so both sides agree on the thread.
+            thread_id: threadId,
+            ...(regionId ? { region_id: regionId } : {}),
           }),
           signal: controller.signal,
         });
@@ -180,6 +188,10 @@ export function useAskStream(settings: AskSettings) {
       } finally {
         useAskThreadStore.getState().setStreamingThread(null);
         activeAbort = null;
+        // The server just stored this exchange — region Activity tabs and the
+        // thread list should pick it up without a reload.
+        void queryClient.invalidateQueries({ queryKey: qk.threads() });
+        if (regionId) void queryClient.invalidateQueries({ queryKey: qk.regions() });
       }
     },
     [settings],

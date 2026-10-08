@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "./client";
 import { qk } from "./keys";
 
@@ -14,6 +14,9 @@ export type ActionItemBucket =
   | "probably_abandoned";
 
 /** One open todo signal flattened out of the compiled knowledge map. */
+/** The user's own review verdict, stored server-side by signal id. */
+export type ActionItemUserStatus = "unverified" | "confirmed" | "dismissed";
+
 export interface ActionItem {
   id: string;
   title: string;
@@ -37,14 +40,42 @@ export interface ActionItem {
   region_label: string | null;
   tag_id: string | null;
   tag_label: string | null;
+  user_status: ActionItemUserStatus;
 }
 
 export interface ActionItemsResponse {
   generated_at: string | null;
   /** The server-side "today" the buckets were computed against (ISO date). */
   today: string;
+  /** Set when the list was narrowed to one region's subtree. */
+  region_id?: string | null;
   counts: Record<ActionItemBucket, number>;
+  counts_by_status: Record<ActionItemUserStatus, number>;
   items: ActionItem[];
+}
+
+export interface ActionItemStatusResponse {
+  signal_id: string;
+  status: ActionItemUserStatus;
+  updated_at: string;
+}
+
+/** `PATCH /api/action-items/{id}/status` — confirm or dismiss one item. The
+ *  id is a content hash, so the verdict survives recompiles. Invalidates the
+ *  global list and every region workspace (each embeds its own items). */
+export function useSetActionItemStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: ActionItemUserStatus }) =>
+      apiFetch<ActionItemStatusResponse>(
+        `/api/action-items/${encodeURIComponent(id)}/status`,
+        { method: "PATCH", body: JSON.stringify({ status }) },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.actionItems() });
+      void qc.invalidateQueries({ queryKey: qk.regions() });
+    },
+  });
 }
 
 // ─── Hooks ─────────────────────────────────────────────────────────────
