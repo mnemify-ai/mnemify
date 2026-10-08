@@ -130,7 +130,7 @@ function ThemeToggle() {
 // Label matches the page's own heading (ActionItemsPage title="TODOs").
 const NAV_ITEMS = [
   { to: "/", label: "Map", end: true },
-  { to: "/regions", label: "Regions" },
+  { to: "/regions", label: "Workspaces" },
   { to: "/action-items", label: "TODOs" },
   { to: "/documents", label: "Documents" },
   { to: "/build", label: "Build" },
