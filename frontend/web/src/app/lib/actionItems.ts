@@ -41,6 +41,8 @@ export interface PartitionedActionItems {
   dueSoon: ActionItem[];
   upcoming: ActionItem[];
   noDate: ActionItem[];
+  /** Open items whose deadline passed long ago — stale, not alarming. */
+  probablyAbandoned: ActionItem[];
   /** How many live items the user has dismissed (for a "N dismissed" note). */
   dismissedCount: number;
 }
@@ -55,6 +57,7 @@ export function partitionActionItems(
     dueSoon: [],
     upcoming: [],
     noDate: [],
+    probablyAbandoned: [],
     dismissedCount: 0,
   };
   const byBucket: Record<ActionItemBucket, ActionItem[]> = {
@@ -62,6 +65,7 @@ export function partitionActionItems(
     due_soon: out.dueSoon,
     upcoming: out.upcoming,
     no_date: out.noDate,
+    probably_abandoned: out.probablyAbandoned,
   };
   for (const item of items) {
     if (dismissed.has(item.id)) {
@@ -99,9 +103,16 @@ function parseIsoDate(iso: string): Date | null {
   return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
 }
 
+function monthDay(d: Date, now: Date): string {
+  const md = `${MONTH[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  return d.getUTCFullYear() === now.getUTCFullYear() ? md : `${md}, ${d.getUTCFullYear()}`;
+}
+
 /**
  * Short human label for an item's deadline: "Overdue 3d" / "Due today" /
  * "Due tomorrow" / "Due Fri" (inside a week) / "Due Apr 30" / "Due Apr 30, 2027".
+ * A probably-abandoned item reads "Was due May 31, 2024" — a day count in the
+ * hundreds is noise, the date itself is the useful fact.
  * Falls back to the verbatim source phrase for items with no resolved date.
  */
 export function dueLabel(item: ActionItem, today: string): string | null {
@@ -109,13 +120,33 @@ export function dueLabel(item: ActionItem, today: string): string | null {
   const due = parseIsoDate(item.due_date);
   const now = parseIsoDate(today);
   if (!due || !now) return `Due ${item.due_date}`;
+  if (item.bucket === "probably_abandoned") return `Was due ${monthDay(due, now)}`;
   const days = Math.round((due.getTime() - now.getTime()) / 86_400_000);
   if (days < 0) return `Overdue ${-days}d`;
   if (days === 0) return "Due today";
   if (days === 1) return "Due tomorrow";
   if (days < 7) return `Due ${WEEKDAY[due.getUTCDay()]}`;
-  const md = `${MONTH[due.getUTCMonth()]} ${due.getUTCDate()}`;
-  return due.getUTCFullYear() === now.getUTCFullYear()
-    ? `Due ${md}`
-    : `Due ${md}, ${due.getUTCFullYear()}`;
+  return `Due ${monthDay(due, now)}`;
+}
+
+/**
+ * Context line for a stale item: when its source note was last edited,
+ * relative to the deadline — "note edited Feb 13, 2026, 5 months after" tells
+ * the user the page kept moving past the deadline (likely done or dropped);
+ * "note edited May 21, 2024, before the deadline" says nobody came back.
+ * Null when the edit date is unknown or the item isn't stale.
+ */
+export function staleContext(item: ActionItem, today: string): string | null {
+  if (item.bucket !== "probably_abandoned" || !item.due_date || !item.note_updated_at) return null;
+  const due = parseIsoDate(item.due_date);
+  const edited = parseIsoDate(item.note_updated_at);
+  const now = parseIsoDate(today);
+  if (!due || !edited || !now) return null;
+  const when = `note edited ${monthDay(edited, now)}`;
+  const days = Math.round((edited.getTime() - due.getTime()) / 86_400_000);
+  if (days <= 0) return `${when}, before the deadline`;
+  const months = Math.round(days / 30);
+  const after =
+    days < 14 ? `${days}d after` : months < 1 ? "weeks after" : `${months}mo after`;
+  return `${when}, ${after}`;
 }

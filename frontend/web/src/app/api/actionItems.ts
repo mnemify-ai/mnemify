@@ -4,7 +4,14 @@ import { qk } from "./keys";
 
 // ─── Types (mirror backend/src/api/routes_action_items.py) ────────────
 
-export type ActionItemBucket = "overdue" | "due_soon" | "upcoming" | "no_date";
+/** `probably_abandoned`: still open, but the deadline passed more than
+ * STALE_DEADLINE_DAYS (90) ago — filed at the bottom, never auto-resolved. */
+export type ActionItemBucket =
+  | "overdue"
+  | "due_soon"
+  | "upcoming"
+  | "no_date"
+  | "probably_abandoned";
 
 /** One open todo signal flattened out of the compiled knowledge map. */
 export interface ActionItem {
@@ -21,6 +28,9 @@ export interface ActionItem {
   /** Days from `today` to the deadline (negative = overdue), null = no date. */
   days_until_due: number | null;
   bucket: ActionItemBucket;
+  /** When the source note was last edited (ISO timestamp), if known. Shown
+   * beside a stale deadline so the user can judge done vs. abandoned. */
+  note_updated_at?: string | null;
   source_note_ids: string[];
   source_chunk_ids: string[];
   region_id: string | null;

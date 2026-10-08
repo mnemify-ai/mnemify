@@ -4,6 +4,11 @@ Reads the compiled ``terrain.json`` (like /terrain/attention) but flattens
 todo-kind signals across all regions/tags and computes deadline buckets
 against *today at request time* — so an item extracted last week becomes
 overdue as wall-clock time passes, with no recompile needed.
+
+Buckets: ``overdue`` / ``due_soon`` / ``upcoming`` / ``no_date`` /
+``probably_abandoned``. The last one holds open items whose deadline passed
+more than ``STALE_DEADLINE_DAYS`` ago — kept open, never auto-resolved, but
+filed at the bottom so a 2024 deadline doesn't read as an alarm in 2026.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from src.terrain.utils.attention import STALE_DEADLINE_DAYS
 from src.terrain.utils.deadlines import parse_anchor
 
 router = APIRouter()
@@ -31,6 +37,10 @@ def _bucket(due: date | None, today: date) -> tuple[str, int | None]:
     if due is None:
         return "no_date", None
     days = (due - today).days
+    if days < -STALE_DEADLINE_DAYS:
+        # Still open — the user decides (dismiss or not) — but a deadline this
+        # old is noise as an "overdue" alarm. See attention.STALE_DEADLINE_DAYS.
+        return "probably_abandoned", days
     if days < 0:
         return "overdue", days
     if days <= _DUE_SOON_DAYS:
@@ -70,6 +80,9 @@ async def action_items():
             "due_text": signal.get("due_text"),
             "days_until_due": days,
             "bucket": bucket,
+            # When the source note was last edited — shown next to a stale
+            # deadline so the user can judge "done" vs "abandoned" themselves.
+            "note_updated_at": signal.get("created_or_updated_at"),
             "source_note_ids": signal.get("source_note_ids") or [],
             "source_chunk_ids": signal.get("source_chunk_ids") or [],
             "region_id": region.get("id"),
@@ -91,7 +104,13 @@ async def action_items():
 
     walk(bm.get("tree", []))
 
-    bucket_rank = {"overdue": 0, "due_soon": 1, "upcoming": 2, "no_date": 3}
+    bucket_rank = {
+        "overdue": 0,
+        "due_soon": 1,
+        "upcoming": 2,
+        "no_date": 3,
+        "probably_abandoned": 4,
+    }
     ordered = sorted(
         items.values(),
         key=lambda it: (

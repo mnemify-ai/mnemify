@@ -68,6 +68,12 @@ def test_buckets_sorting_and_filtering(tmp_path, monkeypatch):
                         _signal("s-overdue", due="2026-08-01", due_text="by August 1"),
                         _signal("s-soon", due="2026-08-14", owner="Sarah"),
                         _signal("s-nodate", severity=80),
+                        _signal(
+                            "s-stale",
+                            due="2024-05-31",
+                            due_text="by the end of May",
+                            created_or_updated_at="2024-05-21T14:03:35+00:00",
+                        ),
                     ],
                 }
             ],
@@ -80,10 +86,17 @@ def test_buckets_sorting_and_filtering(tmp_path, monkeypatch):
     data = resp.json()
 
     assert data["today"] == "2026-08-10"
-    assert data["counts"] == {"overdue": 1, "due_soon": 1, "upcoming": 1, "no_date": 1}
+    assert data["counts"] == {
+        "overdue": 1,
+        "due_soon": 1,
+        "upcoming": 1,
+        "no_date": 1,
+        "probably_abandoned": 1,
+    }
     ids = [item["id"] for item in data["items"]]
-    # resolved todo and non-todo kinds are excluded; buckets order the rest.
-    assert ids == ["s-overdue", "s-soon", "s-upcoming", "s-nodate"]
+    # resolved todo and non-todo kinds are excluded; buckets order the rest,
+    # with long-stale deadlines filed last rather than inflating "overdue".
+    assert ids == ["s-overdue", "s-soon", "s-upcoming", "s-nodate", "s-stale"]
 
     overdue = data["items"][0]
     assert overdue["bucket"] == "overdue"
@@ -101,6 +114,33 @@ def test_buckets_sorting_and_filtering(tmp_path, monkeypatch):
 
     assert data["items"][3]["bucket"] == "no_date"
     assert data["items"][3]["days_until_due"] is None
+
+    stale = data["items"][4]
+    assert stale["bucket"] == "probably_abandoned"
+    assert stale["status"] == "open"  # never auto-resolved
+    assert stale["days_until_due"] == -801
+    assert stale["note_updated_at"] == "2024-05-21T14:03:35+00:00"
+
+
+def test_stale_window_boundary(tmp_path, monkeypatch):
+    # 90 days before TODAY (2026-08-10) is 2026-05-12: still "overdue";
+    # one day earlier tips into "probably_abandoned".
+    tree = [
+        {
+            "id": "region.1",
+            "name": "Ops",
+            "signals": [
+                _signal("s-edge", due="2026-05-12", due_text="by May 12"),
+                _signal("s-past", due="2026-05-11", due_text="by May 11"),
+            ],
+            "tags": [],
+            "children": [],
+        }
+    ]
+    client = _client(tmp_path, monkeypatch, _terrain(tree))
+    items = {it["id"]: it for it in client.get("/api/action-items").json()["items"]}
+    assert items["s-edge"]["bucket"] == "overdue"
+    assert items["s-past"]["bucket"] == "probably_abandoned"
 
 
 def test_tag_attribution_wins_over_region_duplicate(tmp_path, monkeypatch):
