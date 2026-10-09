@@ -30,6 +30,7 @@ import {
 } from "./askDockStore";
 import type { TerrainFocusTarget } from "./citationDisplay";
 import { useMapFocusStore } from "../app/lib/mapFocusStore";
+import { useMapHighlightStore } from "../app/lib/mapHighlightStore";
 import { useTagParam } from "../app/lib/useTagParam";
 import { relativeTime } from "../app/lib/relativeTime";
 import { toastInfo } from "../app/lib/toast";
@@ -45,7 +46,7 @@ export function AskDock() {
   const location = useLocation();
   const onHome = location.pathname === "/";
   const [, setTagParam] = useTagParam();
-  const setFocusRegion = useMapFocusStore((s) => s.setFocusRegion);
+  const requestFocus = useMapFocusStore((s) => s.requestFocus);
   const [inspector, setInspector] = useState<SourceInspectorTarget | null>(null);
   const asideRef = useRef<HTMLElement>(null);
 
@@ -71,8 +72,11 @@ export function AskDock() {
 
   // Per-route citation actions:
   // "Show on terrain" — live on the map; navigate there from anywhere else.
+  // Either way the request outranks the answer's own highlight framing, which
+  // otherwise re-runs when the map mounts after the navigation below.
   const focusTerrain = (target: TerrainFocusTarget) => {
     if (target.kind === "tag") {
+      useMapHighlightStore.getState().claimCamera();
       if (onHome) {
         setTagParam(target.id);
       } else {
@@ -80,7 +84,7 @@ export function AskDock() {
         toastInfo("Showing on the map.");
       }
     } else {
-      setFocusRegion(target.id);
+      requestFocus(target.id);
       if (!onHome) {
         navigate("/");
         toastInfo("Showing on the map.");

@@ -5,6 +5,7 @@ import { TopBar } from "../components/TopBar";
 import { CommandPalette } from "../components/CommandPalette";
 import { LocalEmbeddingsDialog } from "../components/LocalEmbeddingsDialog";
 import { CompileFailedNotice } from "../components/CompileFailedNotice";
+import { CompileAfterHarvest } from "../components/CompileAfterHarvest";
 import { AskDock } from "../../ask/AskDock";
 import { AskBubble } from "../../ask/AskBubble";
 import { useAskDockStore } from "../../ask/askDockStore";
@@ -151,6 +152,8 @@ export function DashboardLayout() {
       <CommandPalette />
       {/* Consent step for compiles without an OpenAI key (see useStartCompile). */}
       <LocalEmbeddingsDialog />
+      {/* Second half of "Harvest, then compile" (StaleHarvestNotice). */}
+      <CompileAfterHarvest />
     </div>
   );
 }

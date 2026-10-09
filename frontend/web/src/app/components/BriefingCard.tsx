@@ -215,7 +215,11 @@ export function BriefingCard({ onTagSelect }: { onTagSelect?: (tagId: string) =>
                 className="inline-flex items-center gap-1 font-sans text-xs text-magenta hover:underline disabled:opacity-50 disabled:no-underline"
               >
                 <Sparkles size={12} strokeWidth={1.75} aria-hidden />
-                {changes?.compile_running ? "Compiling…" : "Compile now"}
+                {changes?.compile_running
+                  ? "Compiling…"
+                  : startCompile.isPending
+                    ? "Starting…"
+                    : "Compile now"}
               </button>
               <span className="text-hair">·</span>
               <button

@@ -1,7 +1,7 @@
 // Region detail view: nav header + overview + Topics / Highlights / Docs tabs
 // for the currently focused region (drill depth).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LayoutDashboard } from 'lucide-react';
 import { useKnowledgeMapStore } from '../store';
@@ -14,7 +14,7 @@ import { useHoverRegion } from '../util/hoverRegion';
 import { NoteCard } from './NoteCard';
 import { SignalGroups } from './SignalGroups';
 import {
-  AttentionGauge, BackBar, Stat, TabBar, levelColor,
+  AttentionGauge, BackBar, Stat, TabBar, levelColor, usePanelView,
   MAX_NOTES, MAX_TAGS,
   bodyCls, chipCls, chipBaseCls, chipWrapCls, emptyCls, headerCls, kickerCls,
   notesWrapCls, rulerCls, subKickerCls, summaryCls, titleCls,
@@ -93,7 +93,8 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
   // unless there are none, in which case Topics may still hold tags.
   const defaultTab: DetailTab =
     subRegions.length === 0 && notesInside.length > 0 ? 'docs' : 'topics';
-  const [tab, setTab] = useState<DetailTab>(defaultTab);
+  // Back from a doc restores the tab + scroll the user left (usePanelView).
+  const { tab, setTab, bodyProps } = usePanelView<DetailTab>(defaultTab);
   // This component stays mounted across drill navigation, so the tab has to be
   // re-defaulted per region. Keyed on the region id rather than run on every
   // render: a tab the user picked by hand sticks while they stay put.
@@ -102,7 +103,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
     if (tabRegionRef.current === region?.id) return;
     tabRegionRef.current = region?.id;
     setTab(defaultTab);
-  }, [region?.id, defaultTab]);
+  }, [region?.id, defaultTab, setTab]);
 
   if (!region) return null;
 
@@ -153,7 +154,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
         ]}
       />
 
-      <div className={bodyCls}>
+      <div className={bodyCls} {...bodyProps}>
         {tab === 'topics' && (
           <>
             {subRegions.length > 0 && (

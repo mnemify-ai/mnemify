@@ -1,9 +1,7 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { Inbox, Sparkles } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useChanges } from "../../api/changes";
 import { useRegionChanges } from "../../api/regions";
-import { qk } from "../../api/keys";
 import { useStartCompile } from "../../api/terrain";
 import { toastError } from "../../lib/toast";
 
@@ -18,7 +16,6 @@ export function PendingDocumentsBanner({ regionId }: { regionId: string }) {
   const region = useRegionChanges(regionId, "last_compile");
   const global = useChanges("last_compile");
   const startCompile = useStartCompile();
-  const qc = useQueryClient();
 
   const changedHere = region.data?.changes.length ?? 0;
   const unmapped = region.data?.unmapped_count ?? 0;
@@ -54,8 +51,6 @@ export function PendingDocumentsBanner({ regionId }: { regionId: string }) {
           startCompile.mutate({}, {
             onSuccess: (r) => {
               if (!r.ok && !r.dismissed) toastError(r.reason ?? "Could not start processing.");
-              // Pick up compile_running now rather than on the next poll.
-              void qc.invalidateQueries({ queryKey: qk.changes("last_compile") });
             },
             onError: (e) => toastError(e instanceof Error ? e.message : "Could not start processing."),
           })

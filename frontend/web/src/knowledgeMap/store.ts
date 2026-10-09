@@ -23,7 +23,13 @@ export type NavSnapshot = {
   focusRegionIdx: number | null;
   selectedTagId: string | null;
   docNoteId: string | null;
+  /** How the panel looked when the user left this screen, so Back lands on
+   *  the same tab at the same scroll offset instead of the view's default. */
+  view?: PanelView;
 };
+
+/** A detail view's own UI state: the active tab and the body scroll offset. */
+export type PanelView = { tab: string; scrollTop: number };
 
 /** The last Ask answer's sources, resolved against THIS bake (see
  *  util/askHighlight.ts). Tag ids light their spires; region indices (any
@@ -46,6 +52,11 @@ export type FocusState = {
   docNoteId: string | null;
   /** Back-stack of prior nav snapshots. Only `navigate`/`back` write it. */
   navHistory: NavSnapshot[];
+  /** Tab + scroll of the screen currently shown, written by the detail view
+   *  (chrome/panelShared.ts `usePanelView`). `navigate` stamps it onto the
+   *  pushed snapshot; `back` puts the popped snapshot's view here so the
+   *  remounting view starts from it. Not reactive state for rendering. */
+  panelView: PanelView | null;
   /** Hex hovered by the cursor, as InstancedMesh instance id. Null = none. */
   hoveredInstanceId: number | null;
   /** Resolved meta (tag + region) for the hovered hex. Null when no hover. */
@@ -93,6 +104,7 @@ export type KnowledgeMapState = FocusState & {
   requestZoomToRegion: (idx: number | null) => void;
   /** Set/clear the sidebar/label-hovered region (any level). */
   setLegendHover: (idx: number | null) => void;
+  setPanelView: (v: PanelView) => void;
   setTagSummitPos: (m: Map<string, { x: number; y: number; z: number }>) => void;
   setAskHighlight: (h: ResolvedHighlight | null) => void;
   openTimeline: () => void;
@@ -127,6 +139,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
     selectedTagId: initial?.selectedTagId ?? null,
     docNoteId: initial?.docNoteId ?? null,
     navHistory: initial?.navHistory ?? [],
+    panelView: initial?.panelView ?? null,
     hoveredInstanceId: initial?.hoveredInstanceId ?? null,
     hoveredHexMeta: initial?.hoveredHexMeta ?? null,
     legendHoverIdx: initial?.legendHoverIdx ?? null,
@@ -142,6 +155,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
     setHoveredInstance: (id) => set({ hoveredInstanceId: id }),
     setHoveredHexMeta: (meta) => set({ hoveredHexMeta: meta }),
     setLegendHover: (idx) => set({ legendHoverIdx: idx }),
+    setPanelView: (v) => set({ panelView: v }),
     requestZoomToRegion: (idx) =>
       set((s) => ({ zoomToRegion: { idx, tick: (s.zoomToRegion?.tick ?? 0) + 1 } })),
     setTagSummitPos: (m) => set({ tagSummitPos: m }),
@@ -183,7 +197,8 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
           focusRegionIdx: merged.focusRegionIdx,
           selectedTagId: merged.selectedTagId,
           docNoteId: merged.docNoteId,
-          navHistory: [...s.navHistory, cur],
+          navHistory: [...s.navHistory, s.panelView ? { ...cur, view: s.panelView } : cur],
+          panelView: null,
         };
         if (focusChanged && (opts?.zoom ?? true)) {
           patch.zoomToRegion = { idx: merged.focusRegionIdx, tick: (s.zoomToRegion?.tick ?? 0) + 1 };
@@ -199,6 +214,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
           selectedTagId: prev.selectedTagId,
           docNoteId: prev.docNoteId,
           navHistory: s.navHistory.slice(0, -1),
+          panelView: prev.view ?? null,
         };
         // Only re-frame when Back actually moves the scope: a tag selected at
         // root pushes a null→null focus snapshot, and re-framing home for that
@@ -214,6 +230,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
         selectedTagId: null,
         docNoteId: null,
         navHistory: [],
+        panelView: null,
         // Escape that only clears a tag must not move the camera; Escape that
         // drills out of a region frames the map back home.
         ...(s.focusRegionIdx !== null
@@ -226,6 +243,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
         selectedTagId: null,
         docNoteId: null,
         navHistory: [],
+        panelView: null,
         zoomToRegion: { idx: null, tick: (s.zoomToRegion?.tick ?? 0) + 1 },
       })),
   }));
@@ -250,6 +268,16 @@ export function useKnowledgeMapStore<T>(selector: (s: KnowledgeMapState) => T): 
     throw new Error('useKnowledgeMapStore must be used inside <KnowledgeMap />');
   }
   return useStore(store, selector);
+}
+
+/** The nearest <KnowledgeMap />'s store itself, for reads that must not
+ *  subscribe (e.g. a one-off `getState()` on mount). */
+export function useKnowledgeMapStoreApi(): KnowledgeMapStore {
+  const store = useContext(KnowledgeMapStoreContext);
+  if (!store) {
+    throw new Error('useKnowledgeMapStoreApi must be used inside <KnowledgeMap />');
+  }
+  return store;
 }
 
 /** Convenience hook that creates the store on first render and reuses it. */

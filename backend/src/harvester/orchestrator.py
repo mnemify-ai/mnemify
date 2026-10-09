@@ -100,8 +100,14 @@ def _doc_already_harvested(doc_ref: DocRef, existing: dict) -> bool:
     Also requires the manifest to actually carry the harvested artifact
     (``raw_path`` non-null) — if a previous run upserted the row but the
     raw write failed, we re-fetch.
+
+    A row that isn't ``active`` (out_of_scope / deleted_at_source) is never
+    "already harvested": it must reach ``upsert_document``, which flips it
+    back to active now that the listing returned it again.
     """
     if not existing.get("raw_path"):
+        return False
+    if existing.get("harvest_status", "active") != "active":
         return False
     stored_iso = existing.get("source_modified")
     if not stored_iso or doc_ref.modified_at is None:

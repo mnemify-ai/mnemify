@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import { qk } from "./keys";
+import type { ChangesResponse } from "./changes";
 import type { ClaudeModel, EmbeddingModel } from "./compileSettings";
 import {
   LOCAL_EMBEDDING_MODEL,
@@ -199,16 +200,37 @@ export async function startCompileWithConsent(payload: CompileStartPayload): Pro
 
 // ─── Hooks ──────────────────────────────────────────────────────────────
 
-export function useTerrainCurrent(opts: { poll?: boolean } = {}) {
+export function useTerrainCurrent(opts: { poll?: boolean; idlePollMs?: number } = {}) {
   return useQuery({
     queryKey: qk.terrainCurrent(),
     queryFn: () => apiFetch<CompileCurrent>("/api/terrain/current"),
     refetchInterval: (q) => {
       if (!opts.poll) return false;
-      return q.state.data?.status === "running" ? 4_000 : false;
+      // idlePollMs keeps a slow heartbeat while no run is active, so compiles
+      // the server starts on its own (auto-compile after harvest, schedules)
+      // are noticed without any navigation.
+      return q.state.data?.status === "running" ? 4_000 : (opts.idlePollMs ?? false);
     },
     staleTime: 2_000,
   });
+}
+
+/** Whether `cur` reports a compile that completed after the snapshot whose
+ *  `finished_at` was `before`. Keyed on `finished_at`, not on a running →
+ *  complete transition: a compile the server started (auto-compile, a
+ *  schedule) or one that ran while the tab was hidden is never seen running.
+ *  `before === undefined` is "no snapshot yet" — the first one never counts,
+ *  since whatever loads alongside it is already current. */
+export function compileFinishedSince(
+  before: number | null | undefined,
+  cur: CompileCurrent,
+): boolean {
+  return (
+    before !== undefined &&
+    cur.status === "complete" &&
+    cur.finished_at !== null &&
+    cur.finished_at !== before
+  );
 }
 
 export function useTerrainReport() {
@@ -227,12 +249,36 @@ export function useTerrainRuns() {
   });
 }
 
+/** The server flips to "running" before it answers a successful start, so
+ *  mirror that into the cache right away: compile buttons read
+ *  `compile_running` from the terrain status *and* the changes payload, and
+ *  the latter otherwise waits for its 60 s heartbeat. */
+export function markCompileStarted(qc: QueryClient, res: CompileStartResult): void {
+  if (!res.ok) return;
+  qc.setQueryData<CompileCurrent>(qk.terrainCurrent(), (prev) => ({
+    status: "running",
+    started_at: Date.now() / 1000,
+    finished_at: null,
+    stage: "load",
+    counts: {},
+    summary: null,
+    error: null,
+    ai_mode: res.ai_mode ?? prev?.ai_mode ?? null,
+    run_id: null,
+  }));
+  qc.setQueriesData<ChangesResponse>({ queryKey: ["changes"] }, (prev) =>
+    prev ? { ...prev, compile_running: true } : prev,
+  );
+}
+
 export function useStartCompile() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: CompileStartPayload = {}) => startCompileWithConsent(payload),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      markCompileStarted(qc, res);
       qc.invalidateQueries({ queryKey: qk.terrainCurrent() });
+      qc.invalidateQueries({ queryKey: ["changes"] });
       // The consent path may have saved a new embedding default.
       qc.invalidateQueries({ queryKey: ["compileSettings"] });
     },

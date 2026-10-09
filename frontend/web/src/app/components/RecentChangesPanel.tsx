@@ -216,7 +216,9 @@ export function RecentChangesPanel({
               <Sparkles size={14} strokeWidth={1.5} />
               {data.compile_running
                 ? "Compiling…"
-                : data.harvest_running
+                : startCompile.isPending
+                  ? "Starting…"
+                  : data.harvest_running
                   ? "Waiting for harvest…"
                   : "Compile these into your map"}
             </Button>

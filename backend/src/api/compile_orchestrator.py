@@ -133,6 +133,9 @@ async def start_compile(
         }
     if not (paths.data_dir() / "harvest-manifest.db").exists():
         return {"ok": False, "reason": "no harvest manifest — run a harvest first"}
+    # Self-heal docs left active by a source disconnected before the
+    # disconnect routes retired them (or by a hand-edited mnemify.yaml).
+    harvest_orch.retire_disconnected_sources()
     # Saved defaults back every knob the caller didn't override.
     from src.api.routes_settings import _compile_settings_block
     defaults = _compile_settings_block()

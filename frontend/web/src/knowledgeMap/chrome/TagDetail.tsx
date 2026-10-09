@@ -1,7 +1,7 @@
 // Tag detail view: pinned overview + Related / Highlights / Docs tabs for the
 // currently selected tag.
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useKnowledgeMapStore } from '../store';
 import type { RenderData } from '../types';
 import { resolveTagLabel } from '../util/topLevelRegions';
@@ -11,7 +11,7 @@ import { useTagInfo, useNotesForTag, tagIdToLabel } from '../../app/data/selecto
 import { NoteCard } from './NoteCard';
 import { SignalGroups } from './SignalGroups';
 import {
-  AttentionGauge, BackBar, TabBar, MAX_NOTES,
+  AttentionGauge, BackBar, TabBar, MAX_NOTES, usePanelView,
   bodyCls, chipCls, chipWrapCls, emptyCls, headerCls, kickerCls,
   nameEllipsisCls, notesWrapCls, pathCls, rulerCls, subKickerCls, summaryCls, titleCls,
 } from './panelShared';
@@ -42,7 +42,7 @@ export function TagDetail({ data, tagId }: { data: RenderData; tagId: string }) 
   const label = info?.label ?? attentionItem?.label ?? tagIdToLabel(tagId);
   const relatedTagIds = info?.relatedTagIds ?? [];
   const signals = attentionItem?.signals ?? [];
-  const [tab, setTab] = useState<'related' | 'signals' | 'docs'>('related');
+  const { tab, setTab, bodyProps } = usePanelView<'related' | 'signals' | 'docs'>('related');
 
   return (
     <>
@@ -70,7 +70,7 @@ export function TagDetail({ data, tagId }: { data: RenderData; tagId: string }) 
         ]}
       />
 
-      <div className={bodyCls}>
+      <div className={bodyCls} {...bodyProps}>
         {tab === 'related' && (
           <>
             {alsoResembles.length > 0 && (

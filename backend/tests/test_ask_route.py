@@ -498,7 +498,7 @@ def test_region_scope_restricts_graph_and_persists_thread(client, monkeypatch, t
     )
     assert resp.status_code == 200
     events = _sse_events(resp.text)
-    assert events[0] == ("thread", {"thread_id": "thread0001"})
+    assert events[0] == ("thread", {"thread_id": "thread0001", "region_id": "node_a"})
     assert [n for n, _ in events][-1] == "done"
     assert seen["node_ids"] == {"node_a", "tag.a", "n-a"}
     assert 'region "Alpha land"' in seen["system"] and "Alpha fact: Alpha is first" in seen["system"]
@@ -524,6 +524,51 @@ def test_region_scope_restricts_graph_and_persists_thread(client, monkeypatch, t
     )
     assert other.status_code == 409
     assert tc.get("/api/regions/node_a/threads").json()["threads"][0]["id"] == "thread0001"
+
+
+def test_region_id_from_before_a_recompile_follows_the_anchor(client, monkeypatch, tmp_path):
+    """A thread saved before a recompile still sends the old content-hash id;
+    the ask follows the anchor history and tells the client the new id."""
+    tc, routes_ask = client
+    graph = _region_fixture(tmp_path)
+    monkeypatch.setattr(routes_ask, "_load_knowledge_map", lambda: SimpleNamespace(graph=graph))
+    monkeypatch.setattr(routes_ask, "_embedder_for_query", lambda: _StubEmbedder([1.0, 0.0]))
+    calls = _patch_agent_session(monkeypatch, _AGENT_EVENTS)
+
+    def ask(region_id):
+        return tc.post("/api/ask", json={"query": "x", "provider": "claude", "model": "s",
+                                         "history": [], "region_id": region_id,
+                                         "thread_id": "thread0002"})
+
+    assert ask("node_a").status_code == 200
+
+    # Recompile: same notes, new region id.
+    terrain_path = tmp_path / ".mnemify" / "terrain.json"
+    terrain = json.loads(terrain_path.read_text(encoding="utf-8"))
+    terrain["generatedAt"] = "2026-08-09T10:00:00+00:00"
+    terrain["tree"][0]["id"] = "node_a2"
+    terrain_path.write_text(json.dumps(terrain), encoding="utf-8")
+    notes_path = tmp_path / ".mnemify" / "mocknotes.json"
+    notes = json.loads(notes_path.read_text(encoding="utf-8"))
+    notes["notes"][0]["regionId"] = "node_a2"
+    notes_path.write_text(json.dumps(notes), encoding="utf-8")
+    routes_ask.region_scope._INDEX_CACHE.clear()
+
+    resp = ask("node_a")
+    assert resp.status_code == 200
+    assert _sse_events(resp.text)[0] == ("thread", {"thread_id": "thread0002", "region_id": "node_a2"})
+    assert "n-b" in calls["excluded_note_ids"] and "n-a" not in calls["excluded_note_ids"]
+
+    # A region that vanished entirely is a 410, not an unscoped answer.
+    terrain["tree"] = terrain["tree"][1:]
+    notes["notes"] = notes["notes"][1:]
+    terrain["generatedAt"] = "2026-08-10T10:00:00+00:00"
+    terrain_path.write_text(json.dumps(terrain), encoding="utf-8")
+    notes_path.write_text(json.dumps(notes), encoding="utf-8")
+    routes_ask.region_scope._INDEX_CACHE.clear()
+    gone = ask("node_a")
+    assert gone.status_code == 410
+    assert "Alpha land" in gone.json()["detail"]
 
 
 def test_unknown_region_404_and_agentic_scope(client, monkeypatch, tmp_path):

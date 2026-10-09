@@ -4,11 +4,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Moon, Search, Settings, Sun } from "lucide-react";
 import { useConnections } from "../api/connections";
 import { cn } from "../lib/cn";
-import { useTerrainCurrent } from "../api/terrain";
+import { compileFinishedSince, useStartCompile, useTerrainCurrent } from "../api/terrain";
 import { useHarvestCurrent } from "../api/harvest";
 import { totalChanges, type ChangesResponse } from "../api/changes";
 import { apiFetch } from "../api/client";
-import { toastInfo, toastSuccess } from "../lib/toast";
+import { toastError, toastInfo, toastSuccess } from "../lib/toast";
 import { qk } from "../api/keys";
 import { useCommandPalette } from "../lib/commandPalette";
 import { useThemeMode } from "../lib/useThemeMode";
@@ -22,17 +22,19 @@ import { OpsPill } from "./OpsPill";
  * reload the freshly written render-data.json. MapDataProvider caches with
  * staleTime: Infinity, so without this the 3D map shows the previous compile's
  * tags/names until a full reload. Lives in the always-mounted TopBar so it
- * fires regardless of the current route. Reuses the poll MinimizedCompilePill
- * already runs — no extra request.
+ * fires regardless of the current route. Compiles the server starts itself
+ * (auto-compile after harvest, schedules) are never seen running from here,
+ * so this tracks finished_at and keeps a slow idle heartbeat.
  */
 function useRefreshMapDataOnCompileComplete() {
   const qc = useQueryClient();
-  const { data } = useTerrainCurrent({ poll: true });
-  const prev = useRef<string | undefined>(data?.status);
+  const { data } = useTerrainCurrent({ poll: true, idlePollMs: 60_000 });
+  const prevFinished = useRef<number | null | undefined>(undefined);
   useEffect(() => {
-    const before = prev.current;
-    prev.current = data?.status;
-    if (before === "running" && data?.status === "complete") {
+    if (!data) return; // query still loading — don't consume the first-snapshot guard
+    const before = prevFinished.current;
+    prevFinished.current = data.finished_at;
+    if (compileFinishedSince(before, data)) {
       qc.invalidateQueries({ queryKey: qk.mapData() });
       qc.invalidateQueries({ queryKey: qk.terrainReport() });
       qc.invalidateQueries({ queryKey: qk.terrainRuns() });
@@ -43,7 +45,7 @@ function useRefreshMapDataOnCompileComplete() {
       // are now part of the map, so the pill/feed must recount (to zero).
       qc.invalidateQueries({ queryKey: ["changes"] });
     }
-  }, [data?.status, qc]);
+  }, [data, qc]);
 }
 
 /**
@@ -55,6 +57,10 @@ function useRefreshMapDataOnCompileComplete() {
  */
 function useRefreshChangesOnHarvestComplete() {
   const qc = useQueryClient();
+  // Through the shared hook, not a bare POST: that one flips every
+  // "Compiling…" label at once (terrain status *and* the changes payload)
+  // and runs the consent / refusal handling.
+  const startCompile = useStartCompile();
   // Slow idle heartbeat: a scheduled harvest can start AND finish between
   // visits, so we can't rely on ever observing status === "running".
   const { data } = useHarvestCurrent({ poll: true, idlePollMs: 60_000 });
@@ -72,6 +78,9 @@ function useRefreshChangesOnHarvestComplete() {
     if (data.finished_at === before) return;
     qc.invalidateQueries({ queryKey: ["changes"] });
     if (data.status !== "complete") return;
+    // "Compile automatically after harvest" starts the compile server-side;
+    // refetch now so the compile watcher sees it running and polls at full rate.
+    qc.invalidateQueries({ queryKey: qk.terrainCurrent() });
     void qc
       .fetchQuery({
         queryKey: qk.changes(),
@@ -89,10 +98,17 @@ function useRefreshChangesOnHarvestComplete() {
               action: {
                 label: "Compile",
                 onClick: () =>
-                  void apiFetch("/api/terrain/build", {
-                    method: "POST",
-                    body: JSON.stringify({}),
-                  }).then(() => qc.invalidateQueries({ queryKey: qk.terrainCurrent() })),
+                  startCompile.mutate(
+                    {},
+                    {
+                      onSuccess: (res) => {
+                        if (!res.ok && !res.dismissed) {
+                          toastError("Couldn't start compile", { description: res.reason });
+                        }
+                      },
+                      onError: (err) => toastError("Couldn't start compile", { description: String(err) }),
+                    },
+                  ),
               },
             },
           );

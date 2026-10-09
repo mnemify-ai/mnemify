@@ -24,7 +24,7 @@ export type EvidenceTarget = {
  */
 export function EvidenceDrawer({ target, onClose }: { target: EvidenceTarget | null; onClose: () => void }) {
   const navigate = useNavigate();
-  const setFocusRegion = useMapFocusStore((s) => s.setFocusRegion);
+  const requestFocus = useMapFocusStore((s) => s.requestFocus);
   const { notes } = useMapDataReady();
   const note = useMemo(
     () => (target?.noteId ? notes.notes.find((n) => n.id === target.noteId) ?? null : null),
@@ -57,7 +57,7 @@ export function EvidenceDrawer({ target, onClose }: { target: EvidenceTarget | n
       target={inspectorTarget}
       onClose={onClose}
       onShowOnTerrain={(focus) => {
-        if (focus.kind === "region") setFocusRegion(focus.id);
+        if (focus.kind === "region") requestFocus(focus.id);
         navigate(focus.kind === "tag" ? `/?tag=${encodeURIComponent(focus.id)}` : "/");
       }}
     />

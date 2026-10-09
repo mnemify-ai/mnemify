@@ -44,6 +44,7 @@ import { useMapFocusStore } from "../lib/mapFocusStore";
 // "critical" here is the same red as a "critical" there.
 import { levelColor } from "../../knowledgeMap/chrome/panelShared";
 import { BuildSectionTabs } from "../components/BuildSectionTabs";
+import { StaleHarvestNotice } from "../components/StaleHarvestNotice";
 import { resumeTargetFromRuns } from "../lib/compileResume";
 import { cn } from "../lib/cn";
 
@@ -234,6 +235,7 @@ export function CompileReportPage() {
                   Pick how to compile, then go.
                 </p>
                 <AiModePicker overrides={overrides} />
+                <StaleHarvestNotice payload={overrides.payload} className="mt-5" />
                 <div className="mt-5 flex items-center gap-3">
                   {resumeTarget && (
                     <Button
@@ -250,8 +252,9 @@ export function CompileReportPage() {
                     variant={resumeTarget ? "secondary" : "primary"}
                     onClick={() => handleCompile()}
                     disabled={startCompile.isPending}
+                    loading={startCompile.isPending}
                   >
-                    <Sparkles size={14} strokeWidth={1.5} />
+                    {!startCompile.isPending && <Sparkles size={14} strokeWidth={1.5} />}
                     Compile now
                   </Button>
                 </div>
@@ -309,14 +312,20 @@ export function CompileReportPage() {
               Resume compile
             </Button>
           )}
-          <Button variant="secondary" onClick={() => handleCompile(true)} disabled={startCompile.isPending}>
-            <RefreshCw size={14} strokeWidth={1.5} />
+          <Button
+            variant="secondary"
+            onClick={() => handleCompile(true)}
+            disabled={startCompile.isPending}
+            loading={startCompile.isPending}
+          >
+            {!startCompile.isPending && <RefreshCw size={14} strokeWidth={1.5} />}
             Recompile
           </Button>
         </div>
       }
     >
       <div className="space-y-10">
+        <StaleHarvestNotice payload={{}} />
         <PostCompileNext />
         <LastRunNotice
           run={runs.data?.runs?.[0]}
@@ -380,7 +389,7 @@ export function CompileReportPage() {
                     } else {
                       // Regions aren't URL-addressable — hand the id to the map
                       // focus store, which outlives the navigation to "/".
-                      useMapFocusStore.getState().setFocusRegion(item.id);
+                      useMapFocusStore.getState().requestFocus(item.id);
                       navigate("/");
                     }
                   }}

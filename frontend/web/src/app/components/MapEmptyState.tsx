@@ -8,6 +8,7 @@ import { Button } from "./ui/Button";
 import { Dialog } from "./ui/Dialog";
 import { SourceBadge } from "./SourceBadge";
 import { AiModePicker, useCompileOverrides } from "./AiModePicker";
+import { StaleHarvestNotice } from "./StaleHarvestNotice";
 import { NotionWizard } from "./wizards/NotionWizard";
 import { ConfluenceWizard } from "./wizards/ConfluenceWizard";
 import { ObsidianWizard } from "./wizards/ObsidianWizard";
@@ -160,7 +161,7 @@ export function MapEmptyState({
       done: compiled,
       title: "Compile the map",
       body: "Cluster, name, and lay out your documents into a 3D map you can explore.",
-      cta: compileRunning ? "Compiling…" : compiled ? "Recompile" : "Compile",
+      cta: compileRunning ? "Compiling…" : startCompile.isPending ? "Starting…" : compiled ? "Recompile" : "Compile",
       action: () => setCompileOpen(true),
       disabled: !harvested || compileRunning || startCompile.isPending,
     },
@@ -363,6 +364,11 @@ export function MapEmptyState({
             clustering run:
           </p>
           <AiModePicker overrides={overrides} />
+          <StaleHarvestNotice
+            payload={overrides.payload}
+            onQueued={() => setCompileOpen(false)}
+            className="mt-5"
+          />
           <div className="mt-6 flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => setCompileOpen(false)}>
               Cancel

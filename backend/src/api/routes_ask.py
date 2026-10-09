@@ -179,23 +179,23 @@ async def ask(
     # retrieval graph (composes with as_of on the same excluded set), and the
     # region's memory items ride along in the system prompt.
     thread_id: str | None = None
+    scope: region_scope.RegionScope | None = None
     if body.region_id or body.thread_id:
         index = region_scope.region_index()
-        scope = None
-        if body.region_id:
-            if index is None:
-                raise HTTPException(404, "no compiled map yet — run a compile")
-            scope = region_scope.resolve_region(index, body.region_id)
-            if scope is None:
-                raise HTTPException(404, f"unknown region {body.region_id}")
-            outside = set(index.notes) - scope.note_ids_extended
-            excluded_notes = excluded_notes | outside
-            knowledge_map = region_scope.restrict_knowledge_map(knowledge_map, scope)
-            if knowledge_map.graph is None or not knowledge_map.graph.nodes:
-                raise HTTPException(409, "nothing in the map belongs to that region.")
+        if body.region_id and index is None:
+            raise HTTPException(404, "no compiled map yet — run a compile")
         store = WorkspaceStore()
         try:
+            # Reconcile first: a thread saved before a recompile still carries
+            # the old region id, which only the refreshed anchor history maps.
             region_reconcile.ensure_reconciled(store, index)
+            if body.region_id:
+                scope = _resolve_ask_region(store, index, body.region_id)
+                outside = set(index.notes) - scope.note_ids_extended
+                excluded_notes = excluded_notes | outside
+                knowledge_map = region_scope.restrict_knowledge_map(knowledge_map, scope)
+                if knowledge_map.graph is None or not knowledge_map.graph.nodes:
+                    raise HTTPException(409, "nothing in the map belongs to that region.")
             region_key: str | None = None
             if scope is not None:
                 anchor = store.get_or_create_anchor(
@@ -244,6 +244,7 @@ async def ask(
                     system_suffix=as_of_suffix,
                 ),
                 thread_id=thread_id,
+                region_id=scope.region_id if scope is not None else None,
                 query_text=body.query,
                 as_of=body.as_of,
             )
@@ -424,21 +425,35 @@ async def ask(
         yield {"event": "done", "data": "{}"}
 
     return EventSourceResponse(
-        _persist_exchange(event_gen(), thread_id=thread_id, query_text=body.query, as_of=body.as_of)
+        _persist_exchange(
+            event_gen(),
+            thread_id=thread_id,
+            region_id=scope.region_id if scope is not None else None,
+            query_text=body.query,
+            as_of=body.as_of,
+        )
     )
 
 
-async def _persist_exchange(events, *, thread_id: str | None, query_text: str, as_of: str | None):
+async def _persist_exchange(
+    events,
+    *,
+    thread_id: str | None,
+    region_id: str | None = None,
+    query_text: str,
+    as_of: str | None,
+):
     """Pass every SSE event through and, when a thread is attached, store the
     user turn and the assembled assistant turn in ``workspace.db`` at the end
     (also on error or client disconnect, so a half-answer is not lost).
-    Emits a leading ``thread`` event so the client learns the id."""
+    Emits a leading ``thread`` event so the client learns the id — and the
+    current region id, which differs from the one it sent after a recompile."""
     if not thread_id:
         async for ev in events:
             yield ev
         return
 
-    yield {"event": "thread", "data": json.dumps({"thread_id": thread_id})}
+    yield {"event": "thread", "data": json.dumps({"thread_id": thread_id, "region_id": region_id})}
     text_parts: list[str] = []
     citations: list = []
     used: list[str] = []
@@ -511,6 +526,29 @@ _PROVIDER_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
 }
+
+
+def _resolve_ask_region(
+    store: WorkspaceStore, index: region_scope.RegionIndex, region_id: str
+) -> region_scope.RegionScope:
+    """Resolve the thread's region, following the anchor history when the id
+    predates a recompile (region ids are content hashes). A region that no
+    longer exists is a 410 rather than a silently widened, unscoped answer."""
+    scope = region_scope.resolve_region(index, region_id)
+    if scope is not None:
+        return scope
+    anchor = store.anchor_for_history_id(region_id)
+    if anchor is not None:
+        if anchor.get("region_id"):
+            scope = region_scope.resolve_region(index, anchor["region_id"])
+            if scope is not None:
+                return scope
+        name = anchor.get("region_name") or "this region"
+        raise HTTPException(
+            410,
+            f"“{name}” no longer exists in the current map — start a new conversation.",
+        )
+    raise HTTPException(404, f"unknown region {region_id}")
 
 
 def _resolve_key(provider: str, header: str | None) -> str | None:

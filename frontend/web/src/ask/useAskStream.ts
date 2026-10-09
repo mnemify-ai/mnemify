@@ -119,6 +119,13 @@ export function useAskStream(settings: AskSettings) {
           );
         }
         await consumeSseStream(response.body, {
+          onThread: (current) => {
+            // Region ids are content hashes that change on recompile; the
+            // server followed the anchor history, so adopt its current id.
+            if (regionId && current && current !== regionId) {
+              useAskThreadStore.getState().setThreadRegion(threadId, current);
+            }
+          },
           onCitations: (citations) => {
             lastCitations = citations;
             patch(assistantId, (m) => ({ ...m, citations }));
@@ -212,6 +219,7 @@ export function useAskStream(settings: AskSettings) {
 // ── SSE parser ───────────────────────────────────────────────────────
 
 type Handlers = {
+  onThread: (regionId: string | null) => void;
   onCitations: (citations: Citation[]) => void;
   onDelta: (text: string) => void;
   onAgentStep: (step: AgentStep) => void;
@@ -250,7 +258,9 @@ async function consumeSseStream(
     if (!currentData) return;
     try {
       const payload = JSON.parse(currentData);
-      if (currentEvent === "citations") {
+      if (currentEvent === "thread") {
+        handlers.onThread(typeof payload?.region_id === "string" ? payload.region_id : null);
+      } else if (currentEvent === "citations") {
         handlers.onCitations((payload?.citations as Citation[]) || []);
       } else if (currentEvent === "delta") {
         handlers.onDelta(payload?.text || "");

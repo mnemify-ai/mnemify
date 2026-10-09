@@ -123,6 +123,10 @@ export function useAskHighlightSync(data: RenderData, notesUrl: string) {
       return;
     }
     if (framedTokenRef.current === resolved.token) return;
+    if (useMapHighlightStore.getState().cameraClaimedToken === resolved.token) {
+      framedTokenRef.current = resolved.token;
+      return;
+    }
     if (needNotes && notesById === null && resolved.tagIds.size === 0 && resolved.regionIdxs.size === 0) {
       return; // notes still loading — nothing to frame yet
     }

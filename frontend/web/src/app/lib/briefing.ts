@@ -9,6 +9,22 @@ import { relativeTime } from "./relativeTime";
 
 /** How old the last harvest may get before we nudge "check your sources". */
 export const STALE_HARVEST_MS = 24 * 60 * 60 * 1000;
+/** How old the last harvest may get before a compile warns that it would
+ *  build the map from stale data (StaleHarvestNotice). Looser than
+ *  STALE_HARVEST_MS: this one interrupts an action, so it waits a week. */
+export const STALE_FOR_COMPILE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** True when a compile now would miss a week or more of source changes.
+ *  Unknown / unparseable harvest times never warn. */
+export function isStaleForCompile(
+  lastHarvestTime: string | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!lastHarvestTime) return false;
+  const harvestedAt = Date.parse(lastHarvestTime);
+  if (Number.isNaN(harvestedAt)) return false;
+  return now - harvestedAt >= STALE_FOR_COMPILE_MS;
+}
 /** Window in which the pending line uses "Harvested Nh ago" framing. */
 export const RECENT_HARVEST_MS = 12 * 60 * 60 * 1000;
 /** How long a dismissed harvest nudge stays hidden. */
