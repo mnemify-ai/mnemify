@@ -68,10 +68,11 @@ describe("applyCompileEvent reducer", () => {
       s = applyCompileEvent(s, { type: "log", level: "info", stage: "enrich", msg: `m${i}`, ts: i }, nextKey);
     }
     expect(s.logs.length).toBe(200);
-    expect(s.logs[0].msg).toBe("m249"); // newest first
+    expect(s.logs[0].msg).toBe("m50"); // oldest kept first
+    expect(s.logs[s.logs.length - 1].msg).toBe("m249"); // newest last
     expect(new Set(s.logs.map((l) => l.key)).size).toBe(s.logs.length);
     s = applyCompileEvent(s, { type: "error", level: "error", stage: "render", msg: "boom", ts: 9999 }, nextKey);
-    expect(s.logs[0]).toMatchObject({ level: "error", stage: "render", msg: "boom" });
+    expect(s.logs[s.logs.length - 1]).toMatchObject({ level: "error", stage: "render", msg: "boom" });
   });
 
   it("settles on complete and on failed", () => {

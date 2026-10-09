@@ -73,6 +73,9 @@ export type KnowledgeMapProps = {
    *  in response to `onFocusChange`. */
   focusRegionId?: string | null;
   onFocusChange?: (regionId: string | null) => void;
+  /** Nonce for an explicit focus request: a change re-flies the camera to
+   *  `focusRegionId` even when the id itself didn't change. */
+  focusRequestTick?: number;
 
   /** Controlled tag selection. Same controlled/uncontrolled rules as focus. */
   selectedTagId?: string | null;
@@ -109,6 +112,11 @@ export type KnowledgeMapProps = {
    *    yet; rendering inline for that one frame would flash the bar in the map
    *    column and resize the r3f canvas twice. */
   bottomBarSlot?: HTMLElement | null;
+
+  /** Preview mode: just the scene, framed on `focusRegionId`, with no chrome
+   *  and none of the app-wide hooks (Esc, Ask highlight, timeline). For the
+   *  region workspace's "Open map" dialog. */
+  preview?: boolean;
 };
 
 const DEFAULT_DATA_URL = '/api/terrain/render-data';
@@ -141,11 +149,26 @@ export function KnowledgeMap(props: KnowledgeMapProps) {
       >
         {dataState.status === 'loading' && <LoadingState />}
         {dataState.status === 'error' && <ErrorState message={dataState.error} />}
-        {dataState.status === 'ready' && (
-          <ReadyChrome data={dataState.data} props={props} />
-        )}
+        {dataState.status === 'ready' &&
+          (props.preview ? (
+            <PreviewChrome data={dataState.data} props={props} />
+          ) : (
+            <ReadyChrome data={dataState.data} props={props} />
+          ))}
       </div>
     </KnowledgeMapStoreProvider>
+  );
+}
+
+/** The scene alone — see `KnowledgeMapProps.preview`. A sibling of
+ *  ReadyChrome rather than a branch inside it so hook order stays fixed. */
+function PreviewChrome({ data: rawData, props }: { data: RenderData; props: KnowledgeMapProps }) {
+  const data = useMemo(() => recolorRegions(rawData), [rawData]);
+  useControlledFocusBridge(data, props.focusRegionId, props.onFocusChange, props.focusRequestTick);
+  return (
+    <div style={{ flex: 1, position: 'relative', minWidth: 0, overflow: 'hidden' }}>
+      <Scene data={data} />
+    </div>
   );
 }
 
@@ -155,7 +178,7 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
   // reads from this recoloured copy, so map + medallions + panel stay in sync.
   const data = useMemo(() => recolorRegions(rawData), [rawData]);
   useEscapeHandler();
-  useControlledFocusBridge(data, props.focusRegionId, props.onFocusChange);
+  useControlledFocusBridge(data, props.focusRegionId, props.onFocusChange, props.focusRequestTick);
   useControlledTagBridge(data, props.selectedTagId, props.onTagSelect);
   // The Ask dock's answer highlight → this bake's spires + one camera framing.
   useAskHighlightSync(data, props.notesUrl ?? DEFAULT_NOTES_URL);
@@ -375,6 +398,7 @@ function useControlledFocusBridge(
   data: RenderData,
   focusRegionId: string | null | undefined,
   onFocusChange: ((id: string | null) => void) | undefined,
+  focusRequestTick: number | undefined,
 ) {
   const focusRegionIdx = useKnowledgeMapStore((s) => s.focusRegionIdx);
   const setFocusRegion = useKnowledgeMapStore((s) => s.setFocusRegion);
@@ -383,6 +407,7 @@ function useControlledFocusBridge(
   // the map can mount with a selection already in the URL (command-palette
   // navigation, deep link, reload).
   const lastSyncedPropRef = useRef<string | null | undefined>(undefined);
+  const lastRequestTickRef = useRef(focusRequestTick);
   // Set while a prop → store push is in flight. The store hook value lags the
   // write by one render; without this the store → prop effect would echo the
   // stale value back and wipe the URL param.
@@ -392,7 +417,11 @@ function useControlledFocusBridge(
   // prop → store
   useEffect(() => {
     if (focusRegionId === undefined) return;
-    if (focusRegionId === lastSyncedPropRef.current) return;
+    // A new request tick re-flies even to the region already in the prop:
+    // the camera may have wandered off it (a pan, an answer's framing).
+    const reRequested = focusRequestTick !== lastRequestTickRef.current;
+    lastRequestTickRef.current = focusRequestTick;
+    if (focusRegionId === lastSyncedPropRef.current && !reRequested) return;
     const prevSyncedProp = lastSyncedPropRef.current;
     lastSyncedPropRef.current = focusRegionId;
     const idx = focusRegionId === null
@@ -408,7 +437,7 @@ function useControlledFocusBridge(
     // the mount sync, where there's nothing to fly back from.
     if (resolvedIdx !== null) requestZoomToRegion(resolvedIdx);
     else if (prevSyncedProp !== undefined) requestZoomToRegion(null);
-  }, [focusRegionId, data.regions, setFocusRegion, requestZoomToRegion]);
+  }, [focusRegionId, focusRequestTick, data.regions, setFocusRegion, requestZoomToRegion]);
 
   // store → prop
   useEffect(() => {

@@ -101,6 +101,13 @@ export function buildIndexes(renderData: RenderData, notesFile: NotesFile): MapI
     return combined;
   }
   regionsByIdx.forEach((_, idx) => subtreeFor(idx));
+  const childrenByRegionId = new Map<string, RegionEntry[]>();
+  regionsByIdx.forEach((r, idx) => {
+    childrenByRegionId.set(
+      r.id,
+      (childrenByParentIdx.get(idx) ?? []).map((cIdx) => regionsByIdx[cIdx]),
+    );
+  });
 
   // 7. Isolated tags — referenced by no arc
   const referenced = new Set<string>();
@@ -114,6 +121,7 @@ export function buildIndexes(renderData: RenderData, notesFile: NotesFile): MapI
     regionsByIdx,
     regionsById,
     regionPathById,
+    childrenByRegionId,
     topLevelRegionByTagId,
     topLevelRegionByRegionId,
     tagIdToIdx,

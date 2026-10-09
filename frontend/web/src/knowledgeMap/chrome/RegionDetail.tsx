@@ -1,7 +1,9 @@
 // Region detail view: nav header + overview + Topics / Highlights / Docs tabs
 // for the currently focused region (drill depth).
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { LayoutDashboard } from 'lucide-react';
 import { useKnowledgeMapStore } from '../store';
 import type { RenderData } from '../types';
 import { buildTopLevelRegions, resolveTagLabel } from '../util/topLevelRegions';
@@ -12,7 +14,7 @@ import { useHoverRegion } from '../util/hoverRegion';
 import { NoteCard } from './NoteCard';
 import { SignalGroups } from './SignalGroups';
 import {
-  AttentionGauge, BackBar, Stat, TabBar, levelColor,
+  AttentionGauge, BackBar, Stat, TabBar, levelColor, usePanelView,
   MAX_NOTES, MAX_TAGS,
   bodyCls, chipCls, chipBaseCls, chipWrapCls, emptyCls, headerCls, kickerCls,
   notesWrapCls, rulerCls, subKickerCls, summaryCls, titleCls,
@@ -29,6 +31,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
   // footprint + on-map label (see util/hoverRegion.ts). Hover never navigates.
   const hover = useHoverRegion(data);
   const region = data.regions[idx];
+  const routerNavigate = useNavigate();
 
   // Drilling into a sub-region swaps this view out, and React fires no
   // mouseleave on unmount — clear so the terrain doesn't stay lit for a row
@@ -90,7 +93,8 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
   // unless there are none, in which case Topics may still hold tags.
   const defaultTab: DetailTab =
     subRegions.length === 0 && notesInside.length > 0 ? 'docs' : 'topics';
-  const [tab, setTab] = useState<DetailTab>(defaultTab);
+  // Back from a doc restores the tab + scroll the user left (usePanelView).
+  const { tab, setTab, bodyProps } = usePanelView<DetailTab>(defaultTab);
   // This component stays mounted across drill navigation, so the tab has to be
   // re-defaulted per region. Keyed on the region id rather than run on every
   // render: a tab the user picked by hand sticks while they stay put.
@@ -99,7 +103,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
     if (tabRegionRef.current === region?.id) return;
     tabRegionRef.current = region?.id;
     setTab(defaultTab);
-  }, [region?.id, defaultTab]);
+  }, [region?.id, defaultTab, setTab]);
 
   if (!region) return null;
 
@@ -125,6 +129,15 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
           <Stat label="Tags" value={region.tagCount} />
           <Stat label="Sub-regions" value={subRegions.length} />
         </div>
+        {/* The region's workspace: brief, decisions, memory, conversations. */}
+        <button
+          type="button"
+          onClick={() => routerNavigate(`/regions/${encodeURIComponent(region.id)}`)}
+          className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-full border border-hair bg-cream/70 px-3 py-1.5 font-sans text-[12px] font-medium text-ink transition-colors hover:border-magenta/40 hover:text-magenta"
+        >
+          <LayoutDashboard size={13} strokeWidth={1.75} aria-hidden />
+          Open workspace
+        </button>
         {attentionItem && attentionItem.attentionScore > 0 && (
           <AttentionGauge score={attentionItem.attentionScore} level={attentionItem.attentionLevel} />
         )}
@@ -141,7 +154,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
         ]}
       />
 
-      <div className={bodyCls}>
+      <div className={bodyCls} {...bodyProps}>
         {tab === 'topics' && (
           <>
             {subRegions.length > 0 && (

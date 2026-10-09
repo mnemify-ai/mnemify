@@ -11,12 +11,14 @@ import sqlite3
 
 import pytest
 
+from src.api.workspace_store import WorkspaceStore
 from src.harvester.manifest import HarvestManifest
 from src.terrain.utils.store import TerrainStore
 
 STORES = [
     pytest.param(HarvestManifest, "harvest-manifest.db", id="manifest"),
     pytest.param(TerrainStore, "terrain.db", id="terrain"),
+    pytest.param(WorkspaceStore, "workspace.db", id="workspace"),
 ]
 
 

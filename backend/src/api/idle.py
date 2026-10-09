@@ -90,7 +90,10 @@ def counts_as_activity(path: str) -> bool:
 
 
 def _is_ask(path: str) -> bool:
-    return path == ASK_PREFIX or path.startswith(ASK_PREFIX + "/")
+    if path == ASK_PREFIX or path.startswith(ASK_PREFIX + "/"):
+        return True
+    # A region "Refresh overview" is a BYOK chat stream too.
+    return path.startswith("/api/regions/") and path.endswith("/overview/refresh")
 
 
 class IdleMiddleware:

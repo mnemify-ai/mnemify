@@ -5,6 +5,8 @@ import {
   STALE_HARVEST_MS,
   computeBriefing,
   computeHarvestNudge,
+  isStaleForCompile,
+  STALE_FOR_COMPILE_MS,
   computePendingLine,
 } from "./briefing";
 import type { BurningItem, TerrainReport } from "../api/terrain";
@@ -254,5 +256,24 @@ describe("computeHarvestNudge", () => {
       computeHarvestNudge({ ...base, snoozedUntil: NOW + HARVEST_NUDGE_SNOOZE_MS }),
     ).toBeNull();
     expect(computeHarvestNudge({ ...base, snoozedUntil: NOW - 1 })).not.toBeNull();
+  });
+});
+
+describe("isStaleForCompile", () => {
+  const now = Date.parse("2026-10-09T12:00:00Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+
+  it("warns once the last harvest is a week old", () => {
+    expect(isStaleForCompile(ago(STALE_FOR_COMPILE_MS), now)).toBe(true);
+    expect(isStaleForCompile(ago(30 * 24 * 3600_000), now)).toBe(true);
+  });
+
+  it("stays quiet for a recent harvest", () => {
+    expect(isStaleForCompile(ago(STALE_FOR_COMPILE_MS - 60_000), now)).toBe(false);
+  });
+
+  it("never warns without a usable harvest time", () => {
+    expect(isStaleForCompile(null, now)).toBe(false);
+    expect(isStaleForCompile("not a date", now)).toBe(false);
   });
 });

@@ -31,6 +31,7 @@ export function HomePage() {
   // from other routes that land here after a navigate("/").
   const focusRegionId = useMapFocusStore((s) => s.focusRegionId);
   const setFocusRegionId = useMapFocusStore((s) => s.setFocusRegion);
+  const focusTick = useMapFocusStore((s) => s.focusTick);
   // Two right-hand columns compete for the viewport when chat is open, so the
   // map's detail panel takes its compact width while the dock is showing.
   const askDockOpen = useAskDockStore((s) => s.open);
@@ -102,6 +103,7 @@ export function HomePage() {
           selectedTagId={selectedTagId}
           onTagSelect={setSelectedTagId}
           focusRegionId={focusRegionId}
+          focusRequestTick={focusTick}
           onFocusChange={setFocusRegionId}
           compactRightPanel={askDockOpen}
           onPanelWidthChange={setMapPanelWidth}

@@ -20,6 +20,7 @@ function item(id: string, overrides: Partial<ActionItem> = {}): ActionItem {
     region_label: null,
     tag_id: null,
     tag_label: null,
+    user_status: "unverified",
     ...overrides,
   };
 }

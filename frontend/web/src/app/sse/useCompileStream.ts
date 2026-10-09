@@ -53,6 +53,7 @@ export interface CompileStreamState {
   rate: number | null;
   summary: CompileSummary | null;
   error: string | null;
+  /** Oldest-first (newest at the end), capped at LOG_TAIL_BUFFER_LIMIT. */
   logs: CompileLogEntry[];
   connected: boolean;
 }
@@ -153,6 +154,13 @@ export function useCompileStream(enabled: boolean): CompileStreamState {
       setState((s) => ({ ...s, connected: false }));
       return;
     }
+
+    // A new run: drop the previous run's terminal status/counts/logs. Left in
+    // place, `onopen` would report `connected` with the old "complete" status
+    // until the snapshot arrives, and the page would flash back to the report.
+    // Enabled means the poll already saw "running", so start from that.
+    setState({ ...initialState, status: "running" });
+    logKeyCounterRef.current = 0;
 
     let cancelled = false;
     function connect() {
@@ -314,7 +322,7 @@ export function applyCompileEvent(
         msg: event.msg,
         ts: event.ts,
       };
-      return { ...prev, logs: [entry, ...prev.logs].slice(0, LOG_TAIL_BUFFER_LIMIT) };
+      return { ...prev, logs: [...prev.logs, entry].slice(-LOG_TAIL_BUFFER_LIMIT) };
     }
 
     case "complete":

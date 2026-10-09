@@ -2,9 +2,9 @@
 // strings, the Back + breadcrumb nav header, the tab bar, the attention gauge,
 // and small helpers. Split out of the old monolithic RightPanel.tsx.
 
-import { useMemo } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react';
 import { ChevronLeft, Home } from 'lucide-react';
-import { useKnowledgeMapStore } from '../store';
+import { useKnowledgeMapStore, useKnowledgeMapStoreApi } from '../store';
 import type { RenderData } from '../types';
 
 export const MAX_NOTES = 30;
@@ -47,6 +47,40 @@ export function levelColor(level?: string): string {
       : level === 'medium' ? '#F59E0B'
         : level === 'low' ? '#14B8A6'
           : '#9AA0A6';
+}
+
+// ── Tab + scroll that survive a round trip. Opening a doc unmounts the detail
+// view; on Back it remounts, and without this would land on its default tab
+// at the top. The view reports its state into the store as it changes,
+// `navigate` stamps that onto the history entry, and `back` hands it back
+// here as the starting point. Spread `bodyProps` onto the scrolling body.
+export function usePanelView<T extends string>(defaultTab: T) {
+  const api = useKnowledgeMapStoreApi();
+  // Read once: the restored view only seeds the first render.
+  const [restored] = useState(() => api.getState().panelView);
+  const [tab, setTabState] = useState<T>(() => (restored?.tab as T | undefined) ?? defaultTab);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef(restored?.scrollTop ?? 0);
+
+  useLayoutEffect(() => {
+    if (bodyRef.current && restored) bodyRef.current.scrollTop = restored.scrollTop;
+    // Seed the store so leaving without touching anything still records the tab.
+    api.getState().setPanelView({ tab: tabRef.current, scrollTop: scrollRef.current });
+  }, [api, restored]);
+
+  const setTab = useCallback((t: T) => {
+    setTabState(t);
+    api.getState().setPanelView({ tab: t, scrollTop: bodyRef.current?.scrollTop ?? 0 });
+  }, [api]);
+
+  const onScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
+    scrollRef.current = e.currentTarget.scrollTop;
+    api.getState().setPanelView({ tab: tabRef.current, scrollTop: scrollRef.current });
+  }, [api]);
+
+  return { tab, setTab, bodyProps: { ref: bodyRef, onScroll }, restored: restored !== null };
 }
 
 // ── Nav header: Back + clickable breadcrumb path. Shared by every detail view.

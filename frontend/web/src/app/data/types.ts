@@ -19,6 +19,7 @@ export interface MapIndexes {
   regionsByIdx: RegionEntry[];                   // identity — the renderData.regions array
   regionsById: Map<string, RegionEntry>;
   regionPathById: Map<string, RegionEntry[]>;    // top-level → … → self
+  childrenByRegionId: Map<string, RegionEntry[]>; // direct children, bake order
   topLevelRegionByTagId: Map<string, RegionEntry>;
   topLevelRegionByRegionId: Map<string, RegionEntry>;
 

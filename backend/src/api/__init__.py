@@ -31,6 +31,7 @@ from src.terrain.agents.claude_cli import find_claude_binary
 from . import (
     idle,
     routes_action_items,
+    routes_regions,
     routes_ask,
     routes_audit,
     routes_changes,
@@ -279,6 +280,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_schedules.router, prefix="/api")
     app.include_router(routes_ask.router, prefix="/api")
     app.include_router(routes_action_items.router, prefix="/api")
+    app.include_router(routes_regions.router, prefix="/api")
     app.include_router(routes_secrets.router, prefix="/api")
     app.include_router(routes_system.router, prefix="/api")
     app.include_router(routes_embeddings.router, prefix="/api")

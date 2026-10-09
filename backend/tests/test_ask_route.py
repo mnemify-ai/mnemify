@@ -426,3 +426,169 @@ def test_as_of_rejects_garbage(client, monkeypatch):
     resp = _ask_as_of(tc, "last tuesday")
     assert resp.status_code == 400
     assert "as_of" in resp.json()["detail"]
+
+
+# ── region scope + thread persistence ───────────────────────────────
+
+
+def _region_fixture(tmp_path):
+    """A two-region terrain + notes file the region index can read, and a
+    graph whose note nodes match it."""
+    terrain = {
+        "generatedAt": "2026-08-08T10:00:00+00:00",
+        "tree": [
+            {"id": "node_a", "name": "Alpha land", "level": 0, "parentId": None, "signals": [],
+             "children": [], "tags": [{"id": "tag.a", "label": "Alpha", "signals": []}]},
+            {"id": "node_b", "name": "Beta land", "level": 0, "parentId": None, "signals": [],
+             "children": [], "tags": [{"id": "tag.b", "label": "Beta", "signals": []}]},
+        ],
+    }
+    notes = {"notes": [
+        {"id": "n-a", "title": "A note", "source": "notion", "regionId": "node_a", "tagIds": ["tag.a"]},
+        {"id": "n-b", "title": "B note", "source": "notion", "regionId": "node_b", "tagIds": ["tag.b"]},
+    ]}
+    data_dir = tmp_path / ".mnemify"
+    (data_dir / "terrain.json").write_text(json.dumps(terrain), encoding="utf-8")
+    (data_dir / "mocknotes.json").write_text(json.dumps(notes), encoding="utf-8")
+    graph = GraphView(
+        nodes=[
+            GraphNode(id="node_a", type="region", label="Alpha land", layer=3),
+            GraphNode(id="node_b", type="region", label="Beta land", layer=3),
+            GraphNode(id="tag.a", type="tag", label="Alpha", layer=2, embedding=[1.0, 0.0]),
+            GraphNode(id="tag.b", type="tag", label="Beta", layer=2, embedding=[0.9, 0.1]),
+            GraphNode(id="n-a", type="note", label="A note", layer=0, embedding=[1.0, 0.0]),
+            GraphNode(id="n-b", type="note", label="B note", layer=0, embedding=[0.9, 0.1]),
+        ],
+        edges=[],
+    )
+    return graph
+
+
+def test_region_scope_restricts_graph_and_persists_thread(client, monkeypatch, tmp_path):
+    from src.api.workspace_store import WorkspaceStore
+
+    tc, routes_ask = client
+    graph = _region_fixture(tmp_path)
+    monkeypatch.setattr(routes_ask, "_load_knowledge_map", lambda: SimpleNamespace(graph=graph))
+    monkeypatch.setattr(routes_ask, "_embedder_for_query", lambda: _StubEmbedder([1.0, 0.0]))
+
+    seen = {}
+    real_retrieve = routes_ask.ask_retrieval.retrieve
+
+    def _spy(query, emb, g, **kw):
+        seen["node_ids"] = {n.id for n in g.nodes}
+        return real_retrieve(query, emb, g, **kw)
+
+    monkeypatch.setattr(routes_ask.ask_retrieval, "retrieve", _spy)
+
+    async def _stream(provider, model, key, messages, system=None, **kw):
+        seen["system"] = system
+        yield "Scoped answer [c1]"
+
+    monkeypatch.setattr(routes_ask.ask_providers, "stream_chat", _stream)
+
+    # Memory saved on the region shows up in the prompt.
+    tc.post("/api/regions/node_a/memory", json={"title": "Alpha fact", "body": "Alpha is first"})
+
+    resp = tc.post(
+        "/api/ask",
+        json={"query": "alpha?", "provider": "openai", "model": "m", "history": [],
+              "region_id": "node_a", "thread_id": "thread0001"},
+        headers={"Authorization": "Bearer test-key"},
+    )
+    assert resp.status_code == 200
+    events = _sse_events(resp.text)
+    assert events[0] == ("thread", {"thread_id": "thread0001", "region_id": "node_a"})
+    assert [n for n, _ in events][-1] == "done"
+    assert seen["node_ids"] == {"node_a", "tag.a", "n-a"}
+    assert 'region "Alpha land"' in seen["system"] and "Alpha fact: Alpha is first" in seen["system"]
+
+    store = WorkspaceStore(tmp_path / ".mnemify" / "workspace.db")
+    try:
+        msgs = store.thread_messages("thread0001")
+        assert [m["role"] for m in msgs] == ["user", "assistant"]
+        assert msgs[1]["text"] == "Scoped answer [c1]"
+        assert msgs[1]["payload"]["usedCitationIds"] == ["c1"]
+        thread = store.get_thread("thread0001")
+        assert thread["title"] == "alpha?"
+        assert store.anchor_by_key(thread["region_key"])["region_id"] == "node_a"
+    finally:
+        store.close()
+
+    # The same thread cannot be reused under another region.
+    other = tc.post(
+        "/api/ask",
+        json={"query": "beta?", "provider": "openai", "model": "m", "history": [],
+              "region_id": "node_b", "thread_id": "thread0001"},
+        headers={"Authorization": "Bearer test-key"},
+    )
+    assert other.status_code == 409
+    assert tc.get("/api/regions/node_a/threads").json()["threads"][0]["id"] == "thread0001"
+
+
+def test_region_id_from_before_a_recompile_follows_the_anchor(client, monkeypatch, tmp_path):
+    """A thread saved before a recompile still sends the old content-hash id;
+    the ask follows the anchor history and tells the client the new id."""
+    tc, routes_ask = client
+    graph = _region_fixture(tmp_path)
+    monkeypatch.setattr(routes_ask, "_load_knowledge_map", lambda: SimpleNamespace(graph=graph))
+    monkeypatch.setattr(routes_ask, "_embedder_for_query", lambda: _StubEmbedder([1.0, 0.0]))
+    calls = _patch_agent_session(monkeypatch, _AGENT_EVENTS)
+
+    def ask(region_id):
+        return tc.post("/api/ask", json={"query": "x", "provider": "claude", "model": "s",
+                                         "history": [], "region_id": region_id,
+                                         "thread_id": "thread0002"})
+
+    assert ask("node_a").status_code == 200
+
+    # Recompile: same notes, new region id.
+    terrain_path = tmp_path / ".mnemify" / "terrain.json"
+    terrain = json.loads(terrain_path.read_text(encoding="utf-8"))
+    terrain["generatedAt"] = "2026-08-09T10:00:00+00:00"
+    terrain["tree"][0]["id"] = "node_a2"
+    terrain_path.write_text(json.dumps(terrain), encoding="utf-8")
+    notes_path = tmp_path / ".mnemify" / "mocknotes.json"
+    notes = json.loads(notes_path.read_text(encoding="utf-8"))
+    notes["notes"][0]["regionId"] = "node_a2"
+    notes_path.write_text(json.dumps(notes), encoding="utf-8")
+    routes_ask.region_scope._INDEX_CACHE.clear()
+
+    resp = ask("node_a")
+    assert resp.status_code == 200
+    assert _sse_events(resp.text)[0] == ("thread", {"thread_id": "thread0002", "region_id": "node_a2"})
+    assert "n-b" in calls["excluded_note_ids"] and "n-a" not in calls["excluded_note_ids"]
+
+    # A region that vanished entirely is a 410, not an unscoped answer.
+    terrain["tree"] = terrain["tree"][1:]
+    notes["notes"] = notes["notes"][1:]
+    terrain["generatedAt"] = "2026-08-10T10:00:00+00:00"
+    terrain_path.write_text(json.dumps(terrain), encoding="utf-8")
+    notes_path.write_text(json.dumps(notes), encoding="utf-8")
+    routes_ask.region_scope._INDEX_CACHE.clear()
+    gone = ask("node_a")
+    assert gone.status_code == 410
+    assert "Alpha land" in gone.json()["detail"]
+
+
+def test_unknown_region_404_and_agentic_scope(client, monkeypatch, tmp_path):
+    tc, routes_ask = client
+    graph = _region_fixture(tmp_path)
+    monkeypatch.setattr(routes_ask, "_load_knowledge_map", lambda: SimpleNamespace(graph=graph))
+    monkeypatch.setattr(routes_ask, "_embedder_for_query", lambda: _StubEmbedder([1.0, 0.0]))
+    calls = _patch_agent_session(monkeypatch, _AGENT_EVENTS)
+
+    bad = tc.post("/api/ask", json={"query": "x", "provider": "claude", "model": "s",
+                                    "history": [], "region_id": "node_zzz"})
+    assert bad.status_code == 404
+
+    resp = tc.post("/api/ask", json={"query": "x", "provider": "claude", "model": "s",
+                                     "history": [], "region_id": "node_b"})
+    assert resp.status_code == 200
+    assert "n-a" in calls["excluded_note_ids"] and "n-b" not in calls["excluded_note_ids"]
+    assert "Beta land" in calls["system_suffix"]
+    assert {n.id for n in calls["knowledge_map"].graph.nodes} == {"node_b", "tag.b", "n-b"}
+    # No thread_id → no thread event, nothing persisted.
+    assert [n for n, _ in _sse_events(resp.text)][0] == "agent_step"
+    assert not (tmp_path / ".mnemify" / "workspace.db").exists() or \
+        tc.get("/api/regions/threads").json()["threads"] == []

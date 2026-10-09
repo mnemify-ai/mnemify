@@ -326,12 +326,21 @@ class HarvestManifest:
         prev_modified = existing["source_modified"]
         prev_hash = existing["content_hash"]
 
-        # Primary gate: source timestamp
-        if source_modified and prev_modified and source_modified <= prev_modified:
-            return doc_id, "unchanged"
-
-        # Secondary gate: content hash (catches timestamp-only noise)
-        if content_hash and prev_hash and content_hash == prev_hash:
+        # Primary gate: source timestamp; secondary: content hash (catches
+        # timestamp-only noise).
+        if (source_modified and prev_modified and source_modified <= prev_modified) or (
+            content_hash and prev_hash and content_hash == prev_hash
+        ):
+            # Seen again, so it's back in scope: a doc parked as
+            # out_of_scope / deleted_at_source (folder unlinked, source
+            # disconnected) must not stay hidden just because it didn't change.
+            if existing["harvest_status"] != "active":
+                with self._transaction():
+                    self._conn.execute(
+                        "UPDATE documents SET harvest_status = 'active', status_changed_at = ?, "
+                        "origin_scope_id = COALESCE(?, origin_scope_id) WHERE id = ?",
+                        (now, origin_scope_id, doc_id),
+                    )
             return doc_id, "unchanged"
 
         # Genuine update
@@ -581,6 +590,31 @@ class HarvestManifest:
             "out_of_scope": out_of_scope_ids,
             "preserved": preserved_ids,
         }
+
+    def active_source_types(self) -> set[str]:
+        """Source types that still have at least one active doc."""
+        rows = self._conn.execute(
+            "SELECT DISTINCT source_type FROM documents WHERE harvest_status = 'active'"
+        ).fetchall()
+        return {r["source_type"] for r in rows}
+
+    def retire_source(self, source_type: str) -> int:
+        """Mark every active doc of ``source_type`` ``out_of_scope``.
+
+        For a source that was disconnected (or lost its last folder): the
+        harvester never runs it again, so :py:meth:`reconcile_against_listing`
+        would never get the chance to. Files stay on disk, and a later harvest
+        that sees a doc again flips it back to ``active``.
+
+        Returns the number of rows retired.
+        """
+        with self._transaction():
+            cur = self._conn.execute(
+                "UPDATE documents SET harvest_status = 'out_of_scope', status_changed_at = ? "
+                "WHERE source_type = ? AND harvest_status = 'active'",
+                (_now_iso(), source_type),
+            )
+            return cur.rowcount
 
     def recover_deleted(self, source_type: str | None = None) -> int:
         """Reactivate documents previously marked ``deleted_at_source``.

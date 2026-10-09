@@ -7,6 +7,8 @@ import { useMapPulseStore } from "../app/lib/mapPulseStore";
 import { asOfWireDate, useMapTimelineStore } from "../app/lib/mapTimelineStore";
 import { useMapHighlightStore } from "../app/lib/mapHighlightStore";
 import { highlightFromCitations, usedCitations } from "./askHighlight";
+import { queryClient } from "../app/lib/queryClient";
+import { qk } from "../app/api/keys";
 
 /**
  * The in-flight request's abort handle, module-level for the same reason
@@ -44,6 +46,8 @@ export function useAskStream(settings: AskSettings) {
       // rather than relying on the composer being disabled.
       if (store.streamingThreadId !== null) return;
       const threadId = store.ensureActiveThread();
+      const regionId =
+        useAskThreadStore.getState().threads.find((t) => t.id === threadId)?.regionId ?? null;
       const patch = (
         messageId: string,
         fn: (m: AskMessage) => AskMessage,
@@ -101,6 +105,10 @@ export function useAskStream(settings: AskSettings) {
             model: settings.model,
             history,
             ...(asOf ? { as_of: asOf } : {}),
+            // The server files the exchange under this thread (workspace.db);
+            // the browser id is reused so both sides agree on the thread.
+            thread_id: threadId,
+            ...(regionId ? { region_id: regionId } : {}),
           }),
           signal: controller.signal,
         });
@@ -111,6 +119,13 @@ export function useAskStream(settings: AskSettings) {
           );
         }
         await consumeSseStream(response.body, {
+          onThread: (current) => {
+            // Region ids are content hashes that change on recompile; the
+            // server followed the anchor history, so adopt its current id.
+            if (regionId && current && current !== regionId) {
+              useAskThreadStore.getState().setThreadRegion(threadId, current);
+            }
+          },
           onCitations: (citations) => {
             lastCitations = citations;
             patch(assistantId, (m) => ({ ...m, citations }));
@@ -180,6 +195,10 @@ export function useAskStream(settings: AskSettings) {
       } finally {
         useAskThreadStore.getState().setStreamingThread(null);
         activeAbort = null;
+        // The server just stored this exchange — region Activity tabs and the
+        // thread list should pick it up without a reload.
+        void queryClient.invalidateQueries({ queryKey: qk.threads() });
+        if (regionId) void queryClient.invalidateQueries({ queryKey: qk.regions() });
       }
     },
     [settings],
@@ -200,6 +219,7 @@ export function useAskStream(settings: AskSettings) {
 // ── SSE parser ───────────────────────────────────────────────────────
 
 type Handlers = {
+  onThread: (regionId: string | null) => void;
   onCitations: (citations: Citation[]) => void;
   onDelta: (text: string) => void;
   onAgentStep: (step: AgentStep) => void;
@@ -238,7 +258,9 @@ async function consumeSseStream(
     if (!currentData) return;
     try {
       const payload = JSON.parse(currentData);
-      if (currentEvent === "citations") {
+      if (currentEvent === "thread") {
+        handlers.onThread(typeof payload?.region_id === "string" ? payload.region_id : null);
+      } else if (currentEvent === "citations") {
         handlers.onCitations((payload?.citations as Citation[]) || []);
       } else if (currentEvent === "delta") {
         handlers.onDelta(payload?.text || "");

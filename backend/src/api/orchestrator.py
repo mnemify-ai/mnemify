@@ -864,3 +864,34 @@ async def _run_one(
             await plugin.aclose()
         except Exception:  # noqa: BLE001
             pass
+
+
+def retire_disconnected_sources() -> dict[str, int]:
+    """Mark the docs of every disconnected source ``out_of_scope``.
+
+    A source is disconnected when its ``mnemify.yaml`` block is gone or
+    ``enabled: false`` (Remove on the card, or the last local folder
+    unlinked). Harvests skip such sources, so the scope-aware reconcile never
+    reaches their docs, and the compiler would keep reading them as active.
+    Sources hidden only by ``MNEMIFY_SOURCES`` are left alone — that's a
+    per-process filter, not a disconnect.
+
+    Returns ``{source: rows_retired}`` for the sources that changed.
+    """
+    db = paths.data_dir() / "harvest-manifest.db"
+    if not db.exists():
+        return {}
+    sources_cfg = load_config_file().get("sources") or {}
+    manifest = HarvestManifest(db)
+    try:
+        retired: dict[str, int] = {}
+        for source in manifest.active_source_types():
+            if (sources_cfg.get(source) or {}).get("enabled"):
+                continue
+            n = manifest.retire_source(source)
+            if n:
+                retired[source] = n
+                logger.info("retired %d doc(s) of disconnected source %s", n, source)
+        return retired
+    finally:
+        manifest.close()

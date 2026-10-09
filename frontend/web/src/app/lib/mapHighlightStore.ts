@@ -36,6 +36,14 @@ type MapHighlightState = {
    *  nothing is highlighted. */
   narrow: (h: Pick<MapHighlight, "tagIds" | "regionIds" | "noteIds">) => void;
   clear: () => void;
+  /** Token whose one-time framing an explicit "Show on map" has overridden.
+   *  Module-level (not the map's per-mount ref) because that request usually
+   *  navigates to Home, and the freshly mounted map would otherwise frame the
+   *  whole answer right after flying to the asked-for region. */
+  cameraClaimedToken: number | null;
+  /** The camera now belongs to an explicit focus request: skip framing the
+   *  current highlight. */
+  claimCamera: () => void;
 };
 
 let nextToken = 1;
@@ -51,4 +59,6 @@ export const useMapHighlightStore = create<MapHighlightState>((set, get) => ({
   clear: () => {
     if (get().highlight !== null) set({ highlight: null });
   },
+  cameraClaimedToken: null,
+  claimCamera: () => set({ cameraClaimedToken: get().highlight?.token ?? null }),
 }));

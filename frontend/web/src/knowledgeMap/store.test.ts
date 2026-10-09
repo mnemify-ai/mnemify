@@ -148,3 +148,33 @@ describe("legendHoverIdx", () => {
     expect(s.getState().zoomToRegion).toBeNull();
   });
 });
+
+describe("panelView", () => {
+  it("is stamped onto history and handed back by back()", () => {
+    const s = store();
+    s.getState().navigate({ focusRegionIdx: 2 });
+    s.getState().setPanelView({ tab: "docs", scrollTop: 480 });
+    s.getState().navigate({ docNoteId: "note.a" });
+    // The doc screen starts fresh.
+    expect(s.getState().panelView).toBeNull();
+    s.getState().back();
+    expect(s.getState().focusRegionIdx).toBe(2);
+    expect(s.getState().docNoteId).toBeNull();
+    expect(s.getState().panelView).toEqual({ tab: "docs", scrollTop: 480 });
+  });
+
+  it("restores nothing for a screen that never reported a view", () => {
+    const s = store();
+    s.getState().navigate({ focusRegionIdx: 2 });
+    s.getState().navigate({ docNoteId: "note.a" });
+    s.getState().back();
+    expect(s.getState().panelView).toBeNull();
+  });
+
+  it("is cleared by home", () => {
+    const s = store();
+    s.getState().setPanelView({ tab: "docs", scrollTop: 10 });
+    s.getState().home();
+    expect(s.getState().panelView).toBeNull();
+  });
+});

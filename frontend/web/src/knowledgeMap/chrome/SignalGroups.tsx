@@ -14,8 +14,8 @@ import { emptyBaseCls } from './panelShared';
 // highlight reads at a glance instead of looking like every other row. Ordered
 // by what a product owner triages first. Raw hexes are intentional — these are
 // severity accents shared with the map overlay, not theme surfaces.
-type KindMeta = { label: string; color: string; Icon: LucideIcon };
-const KIND_META: Record<AttentionSignal['kind'], KindMeta> = {
+export type KindMeta = { label: string; color: string; Icon: LucideIcon };
+export const KIND_META: Record<AttentionSignal['kind'], KindMeta> = {
   risk: { label: 'Risks', color: '#E11D48', Icon: AlertTriangle },
   decision: { label: 'Decisions', color: '#16A34A', Icon: CircleCheckBig },
   open_question: { label: 'Open questions', color: '#F59E0B', Icon: HelpCircle },

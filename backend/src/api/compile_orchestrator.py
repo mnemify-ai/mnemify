@@ -133,6 +133,9 @@ async def start_compile(
         }
     if not (paths.data_dir() / "harvest-manifest.db").exists():
         return {"ok": False, "reason": "no harvest manifest — run a harvest first"}
+    # Self-heal docs left active by a source disconnected before the
+    # disconnect routes retired them (or by a hand-edited mnemify.yaml).
+    harvest_orch.retire_disconnected_sources()
     # Saved defaults back every knob the caller didn't override.
     from src.api.routes_settings import _compile_settings_block
     defaults = _compile_settings_block()
@@ -391,6 +394,15 @@ async def _run_compile(
             "stats": result.stats.model_dump(),
         }
         compile_bus.publish({"type": "complete", **state.summary, "ts": time.time() * 1000})
+        # Region ids are content hashes; move workspace anchors (memory,
+        # threads) onto the new tree. Best-effort — the lazy path in
+        # region_reconcile is the authority on the next workspace request.
+        try:
+            from . import region_reconcile
+
+            await asyncio.to_thread(region_reconcile.reconcile_now)
+        except Exception:  # noqa: BLE001
+            logger.exception("workspace reconcile after compile failed")
     except _CompileCancelled:
         state.status = "failed"
         state.finished_at = time.time()

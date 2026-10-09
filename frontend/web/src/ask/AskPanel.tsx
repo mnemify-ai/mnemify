@@ -7,8 +7,14 @@ import {
   ShieldCheck,
   TriangleAlert,
   ChevronRight,
-  ChevronDown, Clock } from "lucide-react";
+  ChevronDown, Clock, Bookmark, X } from "lucide-react";
 import { cn } from "../app/lib/cn";
+import { useMapData } from "../app/data/MapDataProvider";
+import { memoryTitleFromQuestion, stripCitationMarkers } from "../app/lib/regions";
+import { toastInfo } from "../app/lib/toast";
+import { useAskThreadStore } from "./askThreadStore";
+import { SaveMemoryDialog, type SaveMemoryDraft } from "./SaveMemoryDialog";
+import { useSelectionInside } from "./useSelectionInside";
 import { ModelQuickSwitch } from "./ModelQuickSwitch";
 import { useMapTimelineStore } from "../app/lib/mapTimelineStore";
 import { extractCitationIds } from "./useAskStream";
@@ -67,6 +73,54 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
 
   const asOf = useMapTimelineStore((s) => s.asOf);
 
+  // Region scope: the active thread may belong to one region workspace.
+  const activeThread = useAskThreadStore((s) =>
+    s.threads.find((t) => t.id === s.activeThreadId) ?? null,
+  );
+  const regionId = activeThread?.regionId ?? null;
+  const mapData = useMapData().data;
+  const scopedRegion = regionId ? mapData?.indexes.regionsById.get(regionId) ?? null : null;
+  const scopeName = scopedRegion?.name ?? (regionId ? "Unassigned region" : null);
+  const clearScope = () => {
+    if (!activeThread) return;
+    const store = useAskThreadStore.getState();
+    if (activeThread.messages.length === 0) {
+      store.setThreadRegion(activeThread.id, null);
+    } else {
+      // A scoped conversation stays scoped; asking the whole map is a new thread.
+      store.newThread();
+      toastInfo("Started a new conversation across the whole map.");
+    }
+  };
+
+  // Save to memory — whole answer, or a highlighted span of one.
+  const [memoryDraft, setMemoryDraft] = useState<SaveMemoryDraft | null>(null);
+  const selection = useSelectionInside(listRef);
+  const draftFor = (m: AskMessage, text: string, kind: SaveMemoryDraft["kind"]): SaveMemoryDraft | null => {
+    if (!regionId) return null;
+    const idx = messages.findIndex((x) => x.id === m.id);
+    const question = [...messages.slice(0, Math.max(0, idx))].reverse().find((x) => x.role === "user");
+    const used = new Set(m.usedCitationIds || []);
+    const citations = (m.citations || []).filter((c) => used.size === 0 || used.has(c.citation_id));
+    return {
+      regionId,
+      regionName: scopeName ?? "this region",
+      title: memoryTitleFromQuestion(question?.text),
+      body: kind === "selection" ? text : stripCitationMarkers(text),
+      kind,
+      citations,
+      sourceNoteIds: [...new Set(citations.flatMap((c) => c.source_note_ids || []))],
+      origin: { thread_id: activeThread?.id, message_id: m.id, label: activeThread?.title },
+    };
+  };
+  const saveSelection = () => {
+    if (!selection) return;
+    const m = messages.find((x) => x.id === selection.messageId && x.role === "assistant");
+    if (!m) return;
+    const d = draftFor(m, selection.text, "selection");
+    if (d) setMemoryDraft(d);
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isStreaming) return;
@@ -99,8 +153,9 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
   };
 
   const placeholder = useMemo(() => {
+    if (scopeName) return `Ask about ${scopeName}…`;
     return "Ask anything about your compiled map — e.g. how does Project Phoenix relate to OCR accuracy?";
-  }, []);
+  }, [scopeName]);
 
   return (
     // Transparent so the dock's cartographer backdrop shows through; the
@@ -116,15 +171,52 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
             ? "Grounded in your compiled knowledge graph. Explores it with Claude — via your local Claude Code login or your API key."
             : "Grounded in your compiled knowledge graph. Bring your own OpenAI key."}
         </p>
+        {scopeName ? (
+          <div
+            className={cn(
+              "mt-2 inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1 font-sans text-xs",
+              scopedRegion ? "border-magenta/30 bg-magenta/10 text-ink" : "border-hair bg-bone/60 text-muted",
+            )}
+            data-testid="ask-scope-chip"
+          >
+            {scopedRegion ? (
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: scopedRegion.color }} aria-hidden />
+            ) : null}
+            <span className="truncate">
+              <span className="text-muted">Region:</span> {scopeName}
+            </span>
+            <button
+              type="button"
+              onClick={clearScope}
+              aria-label="Ask the whole map instead"
+              title="Ask the whole map instead"
+              className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-muted hover:bg-ink/10 hover:text-ink"
+            >
+              <X size={11} strokeWidth={2} />
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <div
         ref={listRef}
         onScroll={onScroll}
-        className="min-h-[80px] flex-1 space-y-4 overflow-y-auto px-4 pb-4"
+        className="relative min-h-[80px] flex-1 space-y-4 overflow-y-auto px-4 pb-4"
         aria-live="polite"
         aria-busy={isStreaming}
       >
+        {selection && regionId ? (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={saveSelection}
+            className="glass-panel absolute z-10 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-sans text-[11px] text-ink shadow-md hover:text-magenta"
+            style={{ top: selection.top, left: selection.left }}
+          >
+            <Bookmark size={11} strokeWidth={1.75} aria-hidden />
+            Save selection to memory
+          </button>
+        ) : null}
         {messages.length === 0 ? (
           <p className="font-sans text-sm text-muted leading-relaxed">
             No messages yet. Try a question about a tag, person, or theme that
@@ -134,6 +226,7 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
         {messages.map((m) => (
           <article
             key={m.id}
+            data-message-id={m.id}
             className={cn(
               "rounded-lg border px-3 py-2 font-sans text-sm leading-relaxed",
               m.role === "user"
@@ -168,6 +261,19 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
               <div className="whitespace-pre-wrap">{m.text}</div>
             )}
             {m.role === "assistant" ? <VerifiedLine message={m} /> : null}
+            {m.role === "assistant" && regionId && !m.pending && !m.error && m.text.trim() ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const d = draftFor(m, m.text, "answer");
+                  if (d) setMemoryDraft(d);
+                }}
+                className="mt-2 inline-flex items-center gap-1 rounded-full border border-hair px-2 py-0.5 font-sans text-[11px] text-muted transition-colors hover:border-magenta/40 hover:text-magenta"
+              >
+                <Bookmark size={11} strokeWidth={1.75} aria-hidden />
+                Save to memory
+              </button>
+            ) : null}
             <GroundedInSources
               message={m}
               onFocusTerrain={onFocusTerrain}
@@ -236,6 +342,7 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
           Clear conversation
         </button>
       ) : null}
+      <SaveMemoryDialog draft={memoryDraft} onClose={() => setMemoryDraft(null)} />
     </div>
   );
 }

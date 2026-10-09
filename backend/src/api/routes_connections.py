@@ -23,6 +23,7 @@ from .credential_store import (
     save_secret,
     write_secrets,
 )
+from . import orchestrator as harvest_orch
 from .yaml_writer import disable_source, read_config, upsert_source
 
 router = APIRouter()
@@ -307,6 +308,7 @@ async def update_scope(source: str, body: ScopeUpdate):
         existing = LocalFilesConfig.from_yaml(block).roots
         new_block = _localfiles_block(block, roots_from_scope_ids(kept, existing))
         upsert_source("localfiles", new_block)
+        harvest_orch.retire_disconnected_sources()  # no roots left → disabled
         return {"ok": True, "scope": kept, "rejected": rejected}
     if source == "confluence":
         # Mixed scope: space keys harvest whole spaces, numeric page ids
@@ -1163,6 +1165,7 @@ async def remove_localfiles_root(body: LocalFilesRemoveRoot):
     if len(remaining) == len(roots):
         raise HTTPException(404, "that folder is not linked")
     upsert_source("localfiles", _localfiles_block(block, remaining))
+    harvest_orch.retire_disconnected_sources()  # last root gone → disabled
     return {"ok": True, "root_count": len(remaining)}
 
 
@@ -1292,4 +1295,7 @@ async def disconnect(source: str):
         delete_secrets(["CONFLUENCE_EMAIL", "CONFLUENCE_API_TOKEN"])
     elif source == "jira":
         delete_secrets(["JIRA_EMAIL", "JIRA_API_TOKEN"])
+    # Take its documents off the next compile now; nothing will ever harvest
+    # this source again to reconcile them.
+    harvest_orch.retire_disconnected_sources()
     return {"ok": True}
