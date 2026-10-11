@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useAppNavigate } from "../../lib/useAppNavigate";
 import { SourceInspector } from "../../../ask/SourceInspector";
 import type { TerrainFocusTarget } from "../../../ask/citationDisplay";
 import { useDocIdForNote } from "../../../knowledgeMap/util/useDocResolver";
@@ -23,7 +23,7 @@ export type EvidenceTarget = {
  * join on the map note, then the note's external URL as a last resort.
  */
 export function EvidenceDrawer({ target, onClose }: { target: EvidenceTarget | null; onClose: () => void }) {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const requestFocus = useMapFocusStore((s) => s.requestFocus);
   const { notes } = useMapDataReady();
   const note = useMemo(

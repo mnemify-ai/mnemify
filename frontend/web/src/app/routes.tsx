@@ -19,6 +19,8 @@ import { AiModelsSection } from "./pages/settings/AiModelsSection";
 import { AuditSection } from "./pages/settings/AuditSection";
 import { SchedulesSection } from "./pages/settings/SchedulesSection";
 import { ConnectionsRedirect } from "./components/ConnectionsRedirect";
+import { SampleLayout } from "./demo/SampleLayout";
+import { SampleMapPage } from "./demo/SampleMapPage";
 
 export const router = createBrowserRouter([
   {
@@ -38,6 +40,33 @@ export const router = createBrowserRouter([
           { path: "harvest", element: <HarvestStatusPage /> },
           { path: "history", element: <HarvestHistoryPage /> },
           { path: "compile", element: <CompileReportPage /> },
+        ],
+      },
+      {
+        // The sample workspace: the real Map, Workspaces, TODOs and
+        // Documents pages over a fictional company's compiled knowledge
+        // (public/demo). Reachable from the empty state; reads no backend.
+        path: "sample",
+        element: <SampleLayout />,
+        children: [
+          { index: true, element: <SampleMapPage /> },
+          { path: "documents", element: <DocumentsPage /> },
+          { path: "action-items", element: <ActionItemsPage /> },
+          {
+            path: "regions",
+            children: [
+              { index: true, element: <RegionsIndexPage /> },
+              {
+                path: ":regionId",
+                element: <RegionWorkspaceLayout />,
+                children: [
+                  { index: true, element: <RegionOverviewTab /> },
+                  { path: "memory", element: <RegionMemoryTab /> },
+                  { path: "activity", element: <RegionActivityTab /> },
+                ],
+              },
+            ],
+          },
         ],
       },
       { path: "documents", element: <DocumentsPage /> },

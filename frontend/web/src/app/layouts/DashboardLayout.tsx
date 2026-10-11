@@ -13,6 +13,7 @@ import { useThreadSync } from "../../ask/threadSync";
 import { MAP_PANEL_GUTTER, useMapPanelStore } from "../lib/mapPanelStore";
 import { useHeartbeat } from "../lib/useHeartbeat";
 import { cn } from "../lib/cn";
+import { isSampleHome, isSamplePath } from "../demo/samplePaths";
 
 /** What the shell hands its routes through `<Outlet context>`. */
 export type ShellOutletContext = {
@@ -62,7 +63,10 @@ function ShellAskBubble({ isHome }: { isHome: boolean }) {
 export function DashboardLayout() {
   const { data, isLoading, error } = useMapData();
   const location = useLocation();
-  const isHome = location.pathname === "/";
+  // The sample workspace's map lays out like Home; its pages have their own
+  // chat, so the real Ask dock (which reads the user's map) stays out.
+  const inSample = isSamplePath(location.pathname);
+  const isHome = location.pathname === "/" || isSampleHome(location.pathname);
   // No compiled map ⇒ nothing to ask about. Chat (launcher + dock) stays out
   // of the way until there is a map to show, so the empty state has one job.
   const hasMap = data !== null;
@@ -88,7 +92,8 @@ export function DashboardLayout() {
   // `position: fixed` descendant with it, so a route that anchors to the
   // viewport (DocumentsPage's two-pane layout) disappears with the column
   // instead of stranding itself under the dock.
-  const dockMaximized = useAskDockStore((s) => s.open && s.wide) && hasMap;
+  const showAsk = hasMap && !inSample;
+  const dockMaximized = useAskDockStore((s) => s.open && s.wide) && showAsk;
 
   // The shell is the one component mounted on every route, so this is the one
   // place the "a human is watching" beat belongs. Above the early returns:
@@ -144,11 +149,11 @@ export function DashboardLayout() {
         <div className={cn("min-w-0 flex-1", dockMaximized && "md:hidden")}>
           <Outlet context={outletCtx} />
         </div>
-        {hasMap && <AskDock />}
+        {showAsk && <AskDock />}
       </div>
       {/* Full-width bottom-bar row — filled by the map via a portal. */}
       {isHome && <div ref={setBarSlot} className="shrink-0" />}
-      {hasMap && <ShellAskBubble isHome={isHome} />}
+      {showAsk && <ShellAskBubble isHome={isHome} />}
       <CommandPalette />
       {/* Consent step for compiles without an OpenAI key (see useStartCompile). */}
       <LocalEmbeddingsDialog />

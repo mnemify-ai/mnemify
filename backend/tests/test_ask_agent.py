@@ -316,6 +316,58 @@ async def test_runner_falls_back_to_message_level_text(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_runner_drops_narration_before_tool_calls(monkeypatch):
+    """Text a turn streams before calling a tool is the agent narrating;
+    only the final turn's text is the answer."""
+    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
+
+    narration = "I'll start by orienting myself in the knowledge map."
+    msgs = [
+        _stream_event(narration),
+        _mk(AssistantMessage, content=[
+            TextBlock(text=narration),
+            ToolUseBlock(id="t1", name="mcp__terrain__terrain_overview", input={}),
+        ], model="m"),
+        _stream_event("## Status\n\n"),
+        _stream_event("The cut-over is done [c1]."),
+        _mk(AssistantMessage, content=[TextBlock(text="## Status\n\nThe cut-over is done [c1].")], model="m"),
+        _mk(ResultMessage, subtype="success", is_error=False),
+    ]
+    events = await _run_session(monkeypatch, msgs)()
+    text = "".join(d["text"] for n, d in events if n == "delta")
+    assert text == "## Status\n\nThe cut-over is done [c1]."
+    assert [n for n, _ in events][-2:] == ["citations_used", "done"]
+
+
+@pytest.mark.asyncio
+async def test_runner_streams_long_answers_live(monkeypatch):
+    """Past the narration limit the text is the answer: it is released in
+    the chunks it arrived in, not held for the whole turn."""
+    from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
+    long_part = "x" * (ask_agent.NARRATION_MAX_CHARS + 1)
+
+    async def _fake_query(*, prompt, options):
+        yield _stream_event(long_part)
+        yield _stream_event(" more")
+        yield _mk(AssistantMessage, content=[TextBlock(text=long_part + " more")], model="m")
+        yield _mk(ResultMessage, subtype="success", is_error=False)
+
+    emitted: list[dict] = []
+    monkeypatch.setattr(ask_agent, "_sdk_query", _fake_query)
+    gen = ask_agent.run_agent_session(
+        query_text="q", history=[], provider="claude", model="sonnet", key=None,
+        knowledge_map=SimpleNamespace(workspace="w", graph=_graph()),
+        embedder=_StubEmbedder([1.0, 0.0]),
+    )
+    async for ev in gen:
+        emitted.append(ev)
+    deltas = [json.loads(e["data"])["text"] for e in emitted if e["event"] == "delta"]
+    assert "".join(deltas) == long_part + " more"
+    assert len(deltas) == 2  # streamed in its chunks, not re-sent whole
+
+
+@pytest.mark.asyncio
 async def test_runner_thread_mode_bridges_events(monkeypatch):
     """When the host loop can't spawn subprocesses (Windows selector loop,
     e.g. uvicorn --reload), the session runs on a dedicated loop in a

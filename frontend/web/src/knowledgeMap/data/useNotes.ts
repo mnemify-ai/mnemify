@@ -10,16 +10,21 @@ export type NotesState =
   | { status: 'error'; error: string }
   | { status: 'ready'; notes: Note[]; byTagId: Map<string, Note[]> };
 
-let cachedPromise: Promise<NotesFile> | null = null;
+// Keyed by URL: the sample map and the real map serve different notes files,
+// and whichever loaded first must not answer for the other.
+const cachedPromises = new Map<string, Promise<NotesFile>>();
 
 function fetchNotes(url: string): Promise<NotesFile> {
-  if (cachedPromise) return cachedPromise;
-  cachedPromise = fetch(url)
-    .then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${url}`);
-      return r.json();
-    });
-  return cachedPromise;
+  const cached = cachedPromises.get(url);
+  if (cached) return cached;
+  const promise = fetch(url).then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${url}`);
+    return r.json() as Promise<NotesFile>;
+  });
+  // Don't pin a failure — let the next caller retry.
+  promise.catch(() => cachedPromises.delete(url));
+  cachedPromises.set(url, promise);
+  return promise;
 }
 
 /** Fetches mocknotes.json on demand and indexes notes by tag id. */

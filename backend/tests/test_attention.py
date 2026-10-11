@@ -350,3 +350,40 @@ def test_deadline_boost_zero_past_stale_window():
     assert _deadline_boost("2026-05-01", today=today) == 0
     assert _deadline_boost("2024-05-23", today=today) == 0
     assert STALE_DEADLINE_DAYS == 90
+
+
+def _todo(title: str, **kw) -> ChunkSignalDraft:
+    return ChunkSignalDraft(kind="todo", title=title, summary=kw.pop("summary", title), **kw)
+
+
+def test_checked_task_list_items_are_resolved_not_overdue():
+    """The LLM keeps "- [x] ..." task-list lines as open todos; the checkbox
+    is the source of truth."""
+    text = (
+        "## Commitments\n"
+        "- [x] Devon: Sidekiq ACH decommission plan by 2026-09-18\n"
+        "- [ ] Devon: delete Sidekiq ACH code by 2026-10-16"
+    )
+    drafts = [
+        _todo("Write Sidekiq ACH decommission plan", owner="Devon", due_text="by 2026-09-18"),
+        _todo("Delete Sidekiq ACH code", owner="Devon", due_text="by 2026-10-16"),
+        _todo("Prepare board pre-read"),  # no matching task-list line
+    ]
+    signals = extract_attention_signals(_chunk(text, signals=drafts), note_id="n-1")
+    by_title = {s.title: s.status for s in signals if s.kind == "todo"}
+    assert by_title == {
+        "Todo: Write Sidekiq ACH decommission plan": "resolved",
+        "Todo: Delete Sidekiq ACH code": "open",
+        "Todo: Prepare board pre-read": "open",
+    }
+
+
+def test_regex_fallback_reads_checkboxes():
+    text = (
+        "- [x] Marcus: prepare the cut-over runbook by Friday\n"
+        "- [ ] Sam: prepare the access review export by Friday"
+    )
+    signals = extract_attention_signals(_chunk(text), note_id="n-1")
+    todos = {s.title: s.status for s in signals if s.kind == "todo"}
+    assert any("runbook" in t and st == "resolved" for t, st in todos.items())
+    assert any("access review" in t and st == "open" for t, st in todos.items())

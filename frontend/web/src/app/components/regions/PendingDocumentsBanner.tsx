@@ -3,6 +3,7 @@ import { Button } from "../ui/Button";
 import { useChanges } from "../../api/changes";
 import { useRegionChanges } from "../../api/regions";
 import { useStartCompile } from "../../api/terrain";
+import { useDemo } from "../../demo/DemoContext";
 import { toastError } from "../../lib/toast";
 
 /**
@@ -16,6 +17,8 @@ export function PendingDocumentsBanner({ regionId }: { regionId: string }) {
   const region = useRegionChanges(regionId, "last_compile");
   const global = useChanges("last_compile");
   const startCompile = useStartCompile();
+  // The sample can't recompile; it shows the nudge, not the action.
+  const demo = useDemo();
 
   const changedHere = region.data?.changes.length ?? 0;
   const unmapped = region.data?.unmapped_count ?? 0;
@@ -46,6 +49,7 @@ export function PendingDocumentsBanner({ regionId }: { regionId: string }) {
           {parts.join(" · ")}. Decisions, questions and action items below don't include them until the map is recompiled.
         </p>
       </div>
+      {!demo && (
       <Button
         onClick={() =>
           startCompile.mutate({}, {
@@ -62,6 +66,7 @@ export function PendingDocumentsBanner({ regionId }: { regionId: string }) {
         <Sparkles size={14} strokeWidth={1.75} aria-hidden />
         {compiling ? "Processing…" : harvesting ? "Waiting for harvest…" : "Process now"}
       </Button>
+      )}
     </section>
   );
 }

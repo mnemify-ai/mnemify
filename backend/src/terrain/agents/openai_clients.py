@@ -76,7 +76,11 @@ class OpenAISignal(BaseModel):
         )
     )
     status: Literal["open", "resolved"] = Field(
-        description="'resolved' only if the text explicitly says it's done/fixed/shipped/approved; otherwise 'open'."
+        description=(
+            "'resolved' only if the text explicitly says it's done/fixed/shipped/approved, "
+            "or the item is a checked checkbox ('- [x] ...'); otherwise 'open'. An "
+            "unchecked box ('- [ ] ...') is open."
+        )
     )
     owner: str | None = Field(
         default=None, description="Person's name if explicitly assigned, else null."

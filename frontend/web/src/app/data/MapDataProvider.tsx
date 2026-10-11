@@ -12,7 +12,7 @@ const NOTES_URL = "/api/terrain/notes";
 const ATTENTION_URL = "/api/terrain/attention";
 const SUPPORTED_RENDER_VERSION = 3;
 
-interface MapData {
+export interface MapData {
   renderData: RenderData;
   notes: NotesFile;
   attention: AttentionFile | null;
@@ -82,6 +82,24 @@ export function MapDataProvider({ children }: { children: ReactNode }) {
   );
 
   return <MapDataContext.Provider value={value}>{children}</MapDataContext.Provider>;
+}
+
+/**
+ * Serves a fixed, already-loaded map to everything below it — the sample
+ * workspace uses this to give <KnowledgeMap>'s panels fixture data without
+ * touching the app-level query (which would flip the shell to "has map").
+ */
+export function StaticMapDataProvider({ data, children }: { data: MapData; children: ReactNode }) {
+  const value = useMemo<MapDataState>(
+    () => ({ data, empty: false, isLoading: false, error: null, refetch: () => {} }),
+    [data],
+  );
+  return <MapDataContext.Provider value={value}>{children}</MapDataContext.Provider>;
+}
+
+/** Build a MapData from already-fetched files (see StaticMapDataProvider). */
+export function toMapData(renderData: RenderData, notes: NotesFile, attention: AttentionFile | null): MapData {
+  return { renderData, notes, attention, indexes: buildIndexes(renderData, notes) };
 }
 
 export function useMapData(): MapDataState {

@@ -1,10 +1,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { Layers } from "lucide-react";
 import { KnowledgeMap } from "../../knowledgeMap";
 import { FloatingSourcesPanel } from "../components/FloatingSourcesPanel";
 import { MapEmptyState } from "../components/MapEmptyState";
-import { DemoTerrain } from "../components/DemoTerrain";
 import { MapInteractionHint } from "../components/MapInteractionHint";
 import { BriefingCard } from "../components/BriefingCard";
 import { SideDrawer } from "../components/ui/SideDrawer";
@@ -59,10 +58,10 @@ export function HomePage() {
   // pill-button that opens this drawer (the KnowledgeMap fills the screen on
   // mobile — there's no room for two fixed corner panels).
   const [sourcesDrawerOpen, setSourcesDrawerOpen] = useState(false);
-  // Empty-state "feel the payoff first" preview (bundled sample terrain).
-  const [demoMode, setDemoMode] = useState(false);
+  // Empty-state "feel the payoff first": the sample workspace (/sample).
+  const navigate = useNavigate();
 
-  // No compiled map yet → onboarding screen (or the sample-map preview).
+  // No compiled map yet → onboarding screen (it links to the sample).
   if (mapData.data === null) {
     if (mapData.isLoading) {
       return (
@@ -70,9 +69,6 @@ export function HomePage() {
           <span className="font-serif text-muted animate-pulse motion-reduce:animate-none">Loading…</span>
         </div>
       );
-    }
-    if (demoMode) {
-      return <DemoTerrain onExit={() => setDemoMode(false)} />;
     }
     const connected = (connections.data ?? []).some((c) => c.status === "connected");
     const harvested = (docStats.data?.total_documents ?? 0) > 0;
@@ -84,7 +80,7 @@ export function HomePage() {
           harvested={harvested}
           compiled={compiled}
           renderFailed={compiled && mapData.empty}
-          onTryDemo={() => setDemoMode(true)}
+          onTryDemo={() => navigate("/sample")}
         />
       </div>
     );

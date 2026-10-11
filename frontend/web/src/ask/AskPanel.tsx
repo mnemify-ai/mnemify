@@ -357,7 +357,7 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
  * seconds so a slow answer visibly isn't stuck. Only the stage is announced
  * to screen readers; the ticking seconds are hidden from them.
  */
-function PendingStatus({ label }: { label: string }) {
+export function PendingStatus({ label }: { label: string }) {
   const [seconds, setSeconds] = useState(0);
   useEffect(() => {
     const started = Date.now();
@@ -379,7 +379,7 @@ function PendingStatus({ label }: { label: string }) {
  * the user sees the terrain being walked; collapses to a one-line summary
  * (still expandable) once the answer lands.
  */
-function StepTimeline({
+export function StepTimeline({
   steps,
   pending,
   usedCitationCount,
@@ -453,7 +453,7 @@ function StepTimeline({
  * real claim, not decoration. Dropped count = markers still present in the
  * final text that the server refused to endorse.
  */
-function VerifiedLine({ message }: { message: AskMessage }) {
+export function VerifiedLine({ message }: { message: AskMessage }) {
   if (message.pending || message.error) return null;
   const used = message.usedCitationIds || [];
   if (used.length === 0 || message.citationsFallback) return null;
@@ -478,7 +478,7 @@ function VerifiedLine({ message }: { message: AskMessage }) {
  * always-visible. Only the citations the answer actually used are listed
  * (in citation order); nothing renders before the first `[cN]` marker lands.
  */
-function GroundedInSources({
+export function GroundedInSources({
   message,
   onFocusTerrain,
   onViewSource,

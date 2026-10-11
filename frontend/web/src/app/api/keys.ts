@@ -10,7 +10,7 @@ export const qk = {
     ["connections", "localfiles", "discover", rootPath] as const,
   harvestCurrent: () => ["harvest", "current"] as const,
   harvestHistory: () => ["harvest", "history"] as const,
-  documents: (params?: { source?: string | null; search?: string | null; page?: number }) =>
+  documents: (params?: { source?: string | null; search?: string | null; page?: number; limit?: number }) =>
     params ? (["documents", "list", params] as const) : (["documents"] as const),
   documentStats: () => ["documents", "stats"] as const,
   documentContent: (id: string) => ["documents", "content", id] as const,

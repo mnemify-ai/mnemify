@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useAppNavigate } from "../lib/useAppNavigate";
+import { useDemo } from "../demo/DemoContext";
 import {
   AlertTriangle,
   Archive,
@@ -83,15 +84,20 @@ const SECTIONS: {
 ];
 
 export function ActionItemsPage() {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
+  // The sample workspace keeps verdicts in memory (its own API layer) and
+  // leaves the user's onboarding flags and localStorage alone.
+  const demo = useDemo();
   const { data, isLoading } = useActionItems();
   // Retires the post-compile "Your TODOs" pointer on the compile report — the
   // user has found this page, so it has nothing left to tell them.
-  useEffect(() => markTodosVisited(), []);
+  useEffect(() => {
+    if (!demo) markTodosVisited();
+  }, [demo]);
   // Dismissals are stored server-side (by signal id, in workspace.db); the
   // localStorage set is the pre-import legacy and is unioned in until the
   // one-time import (ask/threadSync) has moved it across.
-  const [localDismissed, setLocalDismissed] = useState<Set<string>>(() => loadDismissed());
+  const [localDismissed, setLocalDismissed] = useState<Set<string>>(() => (demo ? new Set() : loadDismissed()));
   const setStatus = useSetActionItemStatus();
   const dismissed = useMemo(() => {
     const out = new Set(localDismissed);
@@ -113,7 +119,7 @@ export function ActionItemsPage() {
       const next = new Set(prev);
       next.add(id);
       // Prune against the live list so removed/reworded items don't pile up.
-      saveDismissed(data ? pruneDismissed(next, data.items) : next);
+      if (!demo) saveDismissed(data ? pruneDismissed(next, data.items) : next);
       return next;
     });
   };
@@ -311,7 +317,7 @@ function ActionItemRow({
   today: string;
   onDismiss: (id: string) => void;
 }) {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const due = dueLabel(item, today);
   const stale = staleContext(item, today);
   const title = cleanTitle(item.title);

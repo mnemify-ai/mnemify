@@ -17,6 +17,7 @@ import {
   dockOverlayInset,
   useAskDockStore,
 } from "../../ask/askDockStore";
+import { useDemo } from "../demo/DemoContext";
 
 const PAGE_LIMIT = 10000;
 
@@ -90,8 +91,11 @@ export function DocumentsPage() {
   // beside it instead of over it. This container is viewport-anchored, so
   // without the inset the dock painted across its right portion — the doc
   // sitting *behind* the chat with a useless sliver showing.
-  const dockInset = useAskDockStore((s) => dockOverlayInset(s));
-  const dockOpen = useAskDockStore((s) => s.open);
+  // The sample workspace doesn't mount the Ask dock, so lay out as if it's
+  // closed, and leave its persisted state (and the filters rail) alone.
+  const demo = useDemo();
+  const dockInset = useAskDockStore((s) => (demo ? 0 : dockOverlayInset(s)));
+  const dockOpen = useAskDockStore((s) => !demo && s.open);
 
   // Space is genuinely tight once the dock and a document share the row, so
   // fold the filters rail down to its 44px stub the first time both are on
@@ -116,11 +120,11 @@ export function DocumentsPage() {
   // pasted `?id=` URL). The cleanup releases the slot on close, on navigation
   // away and on unmount — balanced, so a StrictMode double-invoke nets zero.
   useEffect(() => {
-    if (!viewerOpen) return;
+    if (!viewerOpen || demo) return;
     const { openOverlay, closeOverlay } = useAskDockStore.getState();
     openOverlay();
     return closeOverlay;
-  }, [viewerOpen]);
+  }, [viewerOpen, demo]);
 
   if (viewerOpen) {
     // Full-height two-pane layout: bypass PageShell so the viewer can extend

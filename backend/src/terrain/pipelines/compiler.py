@@ -29,6 +29,7 @@ from src.terrain.agents.anthropic_clients import (
 )
 from src.terrain.agents.claude_cli import DEFAULT_CLAUDE_MODEL, DEFAULT_CLAUDE_NAMER_MODEL
 from src.terrain.agents.claude_clients import ClaudeClusterNamer, ClaudeFeatureExtractor
+from src.harvester.doc_path import compute_doc_path
 from src.terrain.preprocessing.chunker import ChunkerRegistry
 from src.terrain.preprocessing.extractor import FeatureExtractor
 from src.terrain.preprocessing.reader import TerrainReader
@@ -3357,6 +3358,11 @@ class TerrainCompiler:
         chunks_by_doc: dict[str, list[EnrichedChunk]] = defaultdict(list)
         for ec in enriched:
             chunks_by_doc[ec.chunk.doc_id].append(ec)
+        # Manifest-shaped rows so the doc-path walker resolves Notion parents
+        # against the docs in this build (same answer as /api/documents).
+        rows_by_source_id = {
+            d.source_id: self._doc_path_row(d) for d in documents if d.source_id
+        }
 
         notes: list[Note] = []
         for did in sorted(doc_to_tags.keys()):
@@ -3405,9 +3411,12 @@ class TerrainCompiler:
                 or doc.metadata.get("project_key")
                 or ""
             )
+            # Obsidian/local frontmatter says "created"; the Notion and
+            # Confluence harvesters store "created_at".
             created = (
                 doc.metadata.get("created")
                 or doc.metadata.get("createdAt")
+                or doc.metadata.get("created_at")
                 or doc.source_modified
                 or ""
             )
@@ -3426,6 +3435,7 @@ class TerrainCompiler:
                         else None
                     ),
                     sourceDetail=str(source_detail),
+                    docPath=self._doc_path(doc, rows_by_source_id),
                     createdAt=str(created),
                     updatedAt=str(updated),
                     regionId=primary_leaf,
@@ -3436,6 +3446,29 @@ class TerrainCompiler:
                 )
             )
         return notes
+
+    @staticmethod
+    def _doc_path_row(doc: SourceDocument) -> dict:
+        return {
+            "id": doc.id,
+            "source_type": doc.source_type,
+            "source_id": doc.source_id,
+            "title": doc.title,
+            "metadata": doc.metadata,
+        }
+
+    def _doc_path(self, doc: SourceDocument, rows_by_source_id: dict[str, dict]) -> list[str]:
+        """Container path inside the source (Notion parent pages, Confluence
+        space + ancestors, vault/local folders), root first, excluding the doc."""
+        try:
+            titles, _ = compute_doc_path(self._doc_path_row(doc), by_source_id=rows_by_source_id)
+        except Exception:  # noqa: BLE001 — a path is a nicety, never fail the build
+            return []
+        # The walker seeds a generic "Workspace" for top-level Notion pages;
+        # as a tree path that would split a parent page from its own children.
+        if titles == ["Workspace"]:
+            return []
+        return [str(t) for t in titles if t]
 
     def _truncate(self, text: str, max_chars: int) -> str:
         text = (text or "").strip()

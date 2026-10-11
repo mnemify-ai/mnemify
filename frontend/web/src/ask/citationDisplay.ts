@@ -1,7 +1,8 @@
 // Pure display helpers shared by CitationChip, the inline citation groups in
 // AssistantMarkdown, and StepTimeline's collapsed summary. No JSX here.
 
-import { format, formatDistanceToNowStrict } from "date-fns";
+import { format, formatDistanceStrict } from "date-fns";
+import { nowMs } from "../app/lib/clock";
 import type { AgentStep, Citation } from "./types";
 
 export function provenanceClass(p: Citation["edge_provenance"]): string {
@@ -71,7 +72,7 @@ export function formatRelativeDate(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return formatDistanceToNowStrict(d, { addSuffix: true });
+  return formatDistanceStrict(d, nowMs(), { addSuffix: true });
 }
 
 /** Most recent `source_refs[].updated_at` across a set of citations, if any. */
