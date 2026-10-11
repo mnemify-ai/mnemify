@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Installs uv if missing, checks for Node.js 18+, installs the backend,
-    builds the web app, creates Desktop and Start Menu shortcuts, and starts
+    builds the web app, creates Start Menu (and optionally Desktop) shortcuts, and starts
     Mnemify.
 
     Re-running this script is also how you update: get the new code
@@ -238,6 +238,24 @@ if ($prebuilt) {
 
 # --------------------------------------------------------------- 6. launcher
 Write-Step 'creating the shortcuts'
+# Ask whether to also put a shortcut on the Desktop. An existing one is
+# refreshed without asking, so re-running setup to update stays prompt-free.
+# MNEMIFY_DESKTOP_SHORTCUT=1/0 answers in advance.
+if (-not $env:MNEMIFY_DESKTOP_SHORTCUT) {
+    $desktopLnk = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Mnemify.lnk'
+    if (Test-Path $desktopLnk) {
+        $env:MNEMIFY_DESKTOP_SHORTCUT = '1'
+    } elseif ($NonInteractive) {
+        $env:MNEMIFY_DESKTOP_SHORTCUT = '0'
+    } else {
+        $answer = Read-Host 'Add a Mnemify shortcut to your Desktop? [Y/n]'
+        if ($answer -match '^[Nn]') {
+            $env:MNEMIFY_DESKTOP_SHORTCUT = '0'
+        } else {
+            $env:MNEMIFY_DESKTOP_SHORTCUT = '1'
+        }
+    }
+}
 try {
     & (Join-Path $PSScriptRoot 'make-launcher.ps1') -RepoRoot $Repo
 } catch {
