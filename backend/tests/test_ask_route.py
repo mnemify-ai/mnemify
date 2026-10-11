@@ -102,7 +102,14 @@ def test_citations_used_reflects_answer_markers(client, monkeypatch):
     assert resp.status_code == 200
     events = _sse_events(resp.text)
     names = [name for name, _ in events]
-    assert names[:2] == ["retrieval_debug", "citations"]
+    # Progress stages stream ahead of the citations, then the answer (#26).
+    assert names[:6] == [
+        "status", "status", "status", "retrieval_debug", "citations", "status",
+    ]
+    stages = [payload["stage"] for name, payload in events if name == "status"]
+    assert stages == ["understanding", "searching", "reading", "writing"]
+    reading = next(p for n, p in events if n == "status" and p["stage"] == "reading")
+    assert reading["count"] == len(dict(events)["retrieval_debug"]["source_note_ids"])
     assert names[-2:] == ["citations_used", "done"]
 
     used_payload = dict(events)["citations_used"]
@@ -125,24 +132,32 @@ def test_citations_used_falls_back_when_model_cites_nothing(client, monkeypatch)
     assert 0 < len(events["citations_used"]["used"]) <= 5
 
 
-def test_dim_mismatch_returns_503_before_sse(client, monkeypatch):
+def _stream_error(resp) -> str:
+    """Retrieval failures arrive inside the stream (retrieval runs behind the
+    progress events), as an `error` that replaces citations and the answer."""
+    assert resp.status_code == 200
+    events = _sse_events(resp.text)
+    names = [name for name, _ in events]
+    assert names[-1] == "error"
+    assert "citations" not in names and "delta" not in names
+    return events[-1][1]["message"]
+
+
+def test_dim_mismatch_streams_an_error(client, monkeypatch):
     tc, routes_ask = client
     monkeypatch.setattr(routes_ask, "_embedder_for_query",
                         lambda: _StubEmbedder([1.0, 0.0, 0.0]))  # 3-dim vs 2-dim graph
 
-    resp = _ask(tc)
-    assert resp.status_code == 503
-    assert "dimension" in resp.json()["detail"]
+    assert "dimension" in _stream_error(_ask(tc))
 
 
-def test_embed_failure_with_no_seeds_returns_503(client, monkeypatch):
+def test_embed_failure_with_no_seeds_streams_an_error(client, monkeypatch):
     tc, routes_ask = client
     monkeypatch.setattr(routes_ask, "_embedder_for_query",
                         lambda: _StubEmbedder(RuntimeError("boom")))
 
     resp = _ask(tc, query="hello there")  # no capitalized mentions → no seeds
-    assert resp.status_code == 503
-    assert "embedding failed" in resp.json()["detail"]
+    assert "embedding failed" in _stream_error(resp)
 
 
 # ── agentic dispatch (providers "anthropic" / "claude") ──────────────
@@ -191,7 +206,7 @@ def test_claude_provider_needs_no_key_and_streams_agentic_events(
     assert resp.status_code == 200
     names = [name for name, _ in _sse_events(resp.text)]
     assert names == [
-        "agent_step", "citations", "delta", "citations_used", "done",
+        "status", "agent_step", "citations", "delta", "citations_used", "done",
     ]
     assert calls["provider"] == "claude"
     assert calls["key"] is None
@@ -589,6 +604,6 @@ def test_unknown_region_404_and_agentic_scope(client, monkeypatch, tmp_path):
     assert "Beta land" in calls["system_suffix"]
     assert {n.id for n in calls["knowledge_map"].graph.nodes} == {"node_b", "tag.b", "n-b"}
     # No thread_id → no thread event, nothing persisted.
-    assert [n for n, _ in _sse_events(resp.text)][0] == "agent_step"
+    assert "thread" not in [n for n, _ in _sse_events(resp.text)]
     assert not (tmp_path / ".mnemify" / "workspace.db").exists() or \
         tc.get("/api/regions/threads").json()["threads"] == []

@@ -51,6 +51,10 @@ export type Citation = {
   home_region_id?: string | null;
 };
 
+/** Server progress event while an answer is pending (`status` SSE): the
+ *  stage retrieval/answering is in, plus a count where one applies. */
+export type AskStatus = { stage: string; count?: number };
+
 export type AskMessage = {
   id: string;
   role: "user" | "assistant";
@@ -65,6 +69,8 @@ export type AskMessage = {
   citationsFallback?: boolean;
   /** Agent exploration timeline (agentic providers only). */
   steps?: AgentStep[];
+  /** Latest progress stage, shown until the first token or agent step. */
+  status?: AskStatus;
   pending?: boolean;
   error?: string;
   /** User turns only: the map's timeline cutoff the question was asked

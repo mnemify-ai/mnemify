@@ -224,7 +224,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
 
         {tab === 'signals' && (
           signals.length > 0
-            ? <SignalGroups signals={signals} notesById={notesById} />
+            ? <SignalGroups signals={signals} notesById={notesById} onOpenNote={(id) => navigate({ docNoteId: id })} />
             : <div className={emptyCls}>No open risks, decisions, or questions.</div>
         )}
 
