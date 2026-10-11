@@ -121,7 +121,10 @@ export function MapEmptyState({
               : res.ai_mode === "claude"
                 ? "Claude (subscription)"
                 : "OpenAI";
-          toast.success(`Compiling with ${engine}…`, { description: "Your map appears here when it's done." });
+          toast.success(`Compiling with ${engine}…`, {
+            description: "Your map appears here when it's done.",
+            action: { label: "View progress", onClick: () => navigate("/build/compile") },
+          });
         },
         onError: (e) => toast.error("Couldn't start compile", { description: String(e) }),
       },
@@ -152,18 +155,20 @@ export function MapEmptyState({
       done: harvested,
       title: "Harvest documents",
       body: "Pull your notes and pages onto disk. Mnemify deduplicates by content hash and only fetches what changed.",
-      cta: harvestRunning ? "Harvesting…" : harvested ? "Re-harvest" : "Run a harvest",
-      action: runHarvest,
-      disabled: !connected || harvestRunning || startHarvest.isPending,
+      // While a run is in flight the button becomes the way to watch it,
+      // rather than a dead "…ing" label (#12).
+      cta: harvestRunning ? "View progress" : harvested ? "Re-harvest" : "Run a harvest",
+      action: harvestRunning ? () => navigate("/build/harvest") : runHarvest,
+      disabled: !connected || startHarvest.isPending,
     },
     {
       n: 3,
       done: compiled,
       title: "Compile the map",
       body: "Cluster, name, and lay out your documents into a 3D map you can explore.",
-      cta: compileRunning ? "Compiling…" : startCompile.isPending ? "Starting…" : compiled ? "Recompile" : "Compile",
-      action: () => setCompileOpen(true),
-      disabled: !harvested || compileRunning || startCompile.isPending,
+      cta: compileRunning ? "View progress" : startCompile.isPending ? "Starting…" : compiled ? "Recompile" : "Compile",
+      action: compileRunning ? () => navigate("/build/compile") : () => setCompileOpen(true),
+      disabled: !harvested || startCompile.isPending,
     },
   ];
   // Primary-action heuristic: the first incomplete step is the user's current

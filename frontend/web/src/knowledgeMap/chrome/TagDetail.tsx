@@ -6,6 +6,7 @@ import { useKnowledgeMapStore } from '../store';
 import type { RenderData } from '../types';
 import { resolveTagLabel } from '../util/topLevelRegions';
 import { useTagRegionHighlight } from '../util/useTagRegionHighlight';
+import { formatSimilarity, similarityPercent } from '../util/similarity';
 import { useMapDataReady } from '../../app/data/MapDataProvider';
 import { useTagInfo, useNotesForTag, tagIdToLabel } from '../../app/data/selectors';
 import { NoteCard } from './NoteCard';
@@ -91,11 +92,11 @@ export function TagDetail({ data, tagId }: { data: RenderData; tagId: string }) 
                         {/* Width + colour are data-driven — stays inline. */}
                         <span
                           className="block h-full rounded-sm"
-                          style={{ width: `${Math.round(Math.min(1, Math.max(0, weight)) * 100)}%`, background: region.color }}
+                          style={{ width: `${similarityPercent(weight)}%`, background: region.color }}
                         />
                       </span>
-                      <span className="w-[26px] text-right text-[10px] tabular-nums text-muted shrink-0">
-                        {weight.toFixed(2)}
+                      <span className="w-[32px] text-right text-[10px] tabular-nums text-muted shrink-0" title="Similarity to this region">
+                        {formatSimilarity(weight)}
                       </span>
                     </button>
                   ))}
@@ -122,7 +123,7 @@ export function TagDetail({ data, tagId }: { data: RenderData; tagId: string }) 
 
         {tab === 'signals' && (
           signals.length > 0
-            ? <SignalGroups signals={signals} notesById={notesById} />
+            ? <SignalGroups signals={signals} notesById={notesById} onOpenNote={(id) => navigate({ docNoteId: id })} />
             : <div className={emptyCls}>No open risks, decisions, or questions.</div>
         )}
 

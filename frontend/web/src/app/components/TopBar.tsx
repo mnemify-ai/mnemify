@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Moon, Search, Settings, Sun } from "lucide-react";
+import { Search, Settings } from "lucide-react";
 import { useConnections } from "../api/connections";
 import { cn } from "../lib/cn";
 import { compileFinishedSince, useStartCompile, useTerrainCurrent } from "../api/terrain";
@@ -11,7 +11,6 @@ import { apiFetch } from "../api/client";
 import { toastError, toastInfo, toastSuccess } from "../lib/toast";
 import { qk } from "../api/keys";
 import { useCommandPalette } from "../lib/commandPalette";
-import { useThemeMode } from "../lib/useThemeMode";
 import { BrandMark } from "./BrandMark";
 import { Kbd } from "./ui/Kbd";
 import { OpsPill } from "./OpsPill";
@@ -120,27 +119,6 @@ function useRefreshChangesOnHarvestComplete() {
 
 // Ordered by usage frequency: daily surfaces first, occasional pipeline ops
 // behind one tab, rare Settings demoted to the gear icon on the right.
-/** Light/dark toggle. The Settings→General picker remains the canonical
- *  control; both stay in sync via useThemeMode's class-list observer. */
-function ThemeToggle() {
-  const [mode, setMode] = useThemeMode();
-  const dark = mode === "dark";
-  return (
-    <button
-      type="button"
-      onClick={() => setMode(dark ? "light" : "dark")}
-      aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
-      className="grid h-9 w-9 place-items-center rounded-full border border-hair bg-bone/40 text-muted transition-colors hover:bg-bone hover:text-ink"
-    >
-      {dark ? (
-        <Sun size={15} strokeWidth={1.75} aria-hidden />
-      ) : (
-        <Moon size={15} strokeWidth={1.75} aria-hidden />
-      )}
-    </button>
-  );
-}
-
 // TODOs sits second: it's the surface with the most time-sensitive content
 // (overdue / due-soon deadlines), so it earns the slot right after the map.
 // Label matches the page's own heading (ActionItemsPage title="TODOs").
@@ -224,7 +202,6 @@ export function TopBar() {
             <Kbd className="hidden md:inline-flex ml-0.5">⌘K</Kbd>
           </button>
           <OpsPill />
-          <ThemeToggle />
           {/* Labelled rather than icon-only: a bare gear names itself nowhere,
               and a hover tooltip only reaches people who already suspected it
               was Settings. Takes the Search pill's shape so the right-hand

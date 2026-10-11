@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { apiUrl, CLIENT_HEADER, CLIENT_NAME } from "../app/api/client";
 import { newLocalId, useActiveThreadMessages, useAskThreadStore } from "./askThreadStore";
-import type { AgentStep, AskMessage, AskSettings, Citation } from "./types";
+import type { AgentStep, AskMessage, AskSettings, AskStatus, Citation } from "./types";
 import { activeKey, wireProvider } from "./types";
 import { useMapPulseStore } from "../app/lib/mapPulseStore";
 import { asOfWireDate, useMapTimelineStore } from "../app/lib/mapTimelineStore";
@@ -152,6 +152,9 @@ export function useAskStream(settings: AskSettings) {
               };
             });
           },
+          onStatus: (status) => {
+            patch(assistantId, (m) => ({ ...m, status }));
+          },
           onAgentStep: (step) => {
             // Mirror the agent's exploration onto the 3D map. Fire-and-forget:
             // the store self-expires, so a dock closed mid-answer leaves
@@ -223,6 +226,7 @@ type Handlers = {
   onCitations: (citations: Citation[]) => void;
   onDelta: (text: string) => void;
   onAgentStep: (step: AgentStep) => void;
+  onStatus: (status: AskStatus) => void;
   onCitationsUsed: (used: string[], fallback: boolean) => void;
   onError: (msg: string) => void;
   onDone: () => void;
@@ -264,6 +268,8 @@ async function consumeSseStream(
         handlers.onCitations((payload?.citations as Citation[]) || []);
       } else if (currentEvent === "delta") {
         handlers.onDelta(payload?.text || "");
+      } else if (currentEvent === "status") {
+        if (typeof payload?.stage === "string") handlers.onStatus(payload as AskStatus);
       } else if (currentEvent === "agent_step") {
         if (payload?.id && payload?.label) {
           handlers.onAgentStep(payload as AgentStep);

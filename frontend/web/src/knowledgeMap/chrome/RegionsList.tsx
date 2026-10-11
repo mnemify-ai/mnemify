@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useKnowledgeMapStore } from '../store';
 import type { RenderData } from '../types';
 import { buildTopLevelRegions } from '../util/topLevelRegions';
+import { formatSimilarity } from '../util/similarity';
 import { toRoman } from '../util/roman';
 import { useTagRegionHighlight } from '../util/useTagRegionHighlight';
 import { useHoverRegion } from '../util/hoverRegion';
@@ -95,7 +96,7 @@ export function RegionsList({ data }: { data: RenderData }) {
                 </span>
               )}
               {weight !== undefined && (
-                <span className="shrink-0 text-[10px] text-magenta tabular-nums">{weight.toFixed(2)}</span>
+                <span className="shrink-0 text-[10px] text-magenta tabular-nums" title="Similarity to the selected tag">{formatSimilarity(weight)}</span>
               )}
             </button>
           );

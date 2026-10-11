@@ -232,7 +232,7 @@ async def ask(
 
         return EventSourceResponse(
             _persist_exchange(
-                ask_agent.run_agent_session(
+                _lead_with_status("thinking", ask_agent.run_agent_session(
                     query_text=body.query,
                     history=body.history,
                     provider=body.provider,
@@ -242,7 +242,7 @@ async def ask(
                     embedder=_embedder_for_query(),
                     excluded_note_ids=excluded_notes,
                     system_suffix=as_of_suffix,
-                ),
+                )),
                 thread_id=thread_id,
                 region_id=scope.region_id if scope is not None else None,
                 query_text=body.query,
@@ -250,142 +250,157 @@ async def ask(
             )
         )
 
-    # Query understanding (best-effort, one cheap non-streaming call on the
-    # user's BYOK provider). Improves seeding for paraphrased questions; on any
-    # failure ``understanding`` is None and retrieval falls back to the regex
-    # heuristic. The topic paraphrase, when present, is what we embed.
-    understanding = await ask_providers.understand_query(
-        body.provider, body.model, key, body.query, history=body.history[-2:]
-    )
-    embed_text = body.query
-    if understanding and understanding.get("topicIntent"):
-        embed_text = understanding["topicIntent"]
-
-    embedder = _embedder_for_query()
-    try:
-        query_embedding = embedder.embed(embed_text)
-    except Exception:  # noqa: BLE001
-        logger.exception("ask: query embed failed; falling back to no semantic seed")
-        query_embedding = []
-
-    # Guard against a query/graph embedding-space mismatch (e.g. graph
-    # compiled with OpenAI vectors but OPENAI_API_KEY absent at ask time →
-    # 64-dim hash fallback). Cosine over mismatched dims is silently 0, which
-    # empties retrieval and produces a confidently-ungrounded answer — fail
-    # loudly instead.
-    graph_dim = _graph_embedding_dim(knowledge_map)
-    if query_embedding and graph_dim and len(query_embedding) != graph_dim:
-        raise HTTPException(
-            503,
-            f"retrieval unavailable: query embedding dimension "
-            f"({len(query_embedding)}) does not match the compiled graph "
-            f"({graph_dim}). Set OPENAI_API_KEY on the server to the "
-            f"compile-time embedding key (or recompile) and retry.",
-        )
-
-    # Chunk-level semantic search — matches raw source text directly, then
-    # seeds the parent note nodes. Best-effort: empty on old terrain.db
-    # files (no stamped hashes) or dimension mismatch.
-    chunk_matches = [
-        h for h in ask_chunks.search(query_embedding)
-        if h.note_node_id not in excluded_notes
-    ]
-    chunk_hits: dict[str, float] = {}
-    chunk_ids_by_note: dict[str, list[str]] = {}
-    for hit in chunk_matches:
-        chunk_hits[hit.note_node_id] = max(
-            chunk_hits.get(hit.note_node_id, 0.0), hit.score
-        )
-        chunk_ids_by_note.setdefault(hit.note_node_id, []).append(hit.chunk_id)
-
-    retrieval = ask_retrieval.retrieve(
-        body.query,
-        query_embedding,
-        knowledge_map.graph,
-        understanding=understanding,
-        chunk_hits=chunk_hits,
-    )
-
-    # Matched chunks lead each note's expansion list so the budget is spent
-    # on the text that actually matched the query.
-    for item in retrieval.items:
-        matched = chunk_ids_by_note.get(item.node_id)
-        if matched and item.node_type == "note":
-            rest = [c for c in item.source_chunk_ids if c not in matched]
-            item.source_chunk_ids = matched + rest
-
-    if not query_embedding and not retrieval.seed_node_ids:
-        # No semantic signal AND no entity-mention seeds — answering now would
-        # just be the chat model freewheeling with an empty context bundle.
-        raise HTTPException(
-            503,
-            "retrieval unavailable: query embedding failed and no entity "
-            "mentions matched the graph. Retry, or check the server's "
-            "embedding configuration.",
-        )
-
-    expansion = ask_expansion.expand_bundle(retrieval.items)
-
-    bundle_text = ask_retrieval.render_bundle(retrieval.items)
-    system = (
-        ask_retrieval.system_prompt()
-        + as_of_suffix
-        + "\n\nContext bundle:\n"
-        + bundle_text
-    )
-
-    messages = list(body.history) + [{"role": "user", "content": body.query}]
-
-    citations = [
-        {
-            "citation_id": item.citation_id,
-            "node_id": item.node_id,
-            "node_type": item.node_type,
-            "layer": item.layer,
-            "label": item.label,
-            "edge_provenance": item.edge_provenance,
-            "source_note_ids": item.source_note_ids,
-            "source_chunk_ids": item.source_chunk_ids,
-            "score": item.score,
-            "home_region_id": item.home_region_id,
-            # Doc name/excerpt/date for the citation popover. Empty for
-            # tag/entity/region items, which never go through chunk
-            # expansion — the frontend falls back to label/type/provenance.
-            "source_refs": [
-                {
-                    "doc_title": r.doc_title,
-                    "doc_id": r.doc_id,
-                    "heading": r.heading,
-                    "excerpt": r.excerpt,
-                    "source_url": r.source_url,
-                    "updated_at": r.updated_at,
-                }
-                for r in item.source_refs
-            ],
-        }
-        for item in retrieval.items
-    ]
-    retrieval_debug = {
-        "seed_node_ids": retrieval.seed_node_ids,
-        "selected_node_ids": [item.node_id for item in retrieval.items],
-        "source_note_ids": sorted({
-            note_id
-            for item in retrieval.items
-            for note_id in (
-                item.source_note_ids
-                or ([item.node_id] if item.node_type == "note" else [])
-            )
-        }),
-        "context_item_count": len(retrieval.items),
-        "estimated_context_tokens": max(1, len(bundle_text) // 4) if bundle_text else 0,
-        "raw_chunks_expanded": expansion.expanded,
-        "expanded_chunk_count": expansion.chunk_count,
-        "expansion_chars": expansion.chars,
-        "chunk_search_hits": len(chunk_matches),
-        "chunk_seeded_note_ids": sorted(chunk_hits),
-    }
-
     async def event_gen():
+        # Retrieval runs inside the stream, behind `status` events, so the
+        # client can show each stage instead of silence until the first token
+        # (#26). Failures found here — including the 503-style "retrieval
+        # unavailable" checks — arrive as an `error` event.
+        yield _status("understanding")
+        try:
+            # Query understanding (best-effort, one cheap non-streaming call on the
+            # user's BYOK provider). Improves seeding for paraphrased questions; on any
+            # failure ``understanding`` is None and retrieval falls back to the regex
+            # heuristic. The topic paraphrase, when present, is what we embed.
+            understanding = await ask_providers.understand_query(
+                body.provider, body.model, key, body.query, history=body.history[-2:]
+            )
+            embed_text = body.query
+            if understanding and understanding.get("topicIntent"):
+                embed_text = understanding["topicIntent"]
+
+            yield _status("searching")
+            embedder = _embedder_for_query()
+            try:
+                query_embedding = embedder.embed(embed_text)
+            except Exception:  # noqa: BLE001
+                logger.exception("ask: query embed failed; falling back to no semantic seed")
+                query_embedding = []
+
+            # Guard against a query/graph embedding-space mismatch (e.g. graph
+            # compiled with OpenAI vectors but OPENAI_API_KEY absent at ask time →
+            # 64-dim hash fallback). Cosine over mismatched dims is silently 0, which
+            # empties retrieval and produces a confidently-ungrounded answer — fail
+            # loudly instead.
+            graph_dim = _graph_embedding_dim(knowledge_map)
+            if query_embedding and graph_dim and len(query_embedding) != graph_dim:
+                raise HTTPException(
+                    503,
+                    f"retrieval unavailable: query embedding dimension "
+                    f"({len(query_embedding)}) does not match the compiled graph "
+                    f"({graph_dim}). Set OPENAI_API_KEY on the server to the "
+                    f"compile-time embedding key (or recompile) and retry.",
+                )
+
+            # Chunk-level semantic search — matches raw source text directly, then
+            # seeds the parent note nodes. Best-effort: empty on old terrain.db
+            # files (no stamped hashes) or dimension mismatch.
+            chunk_matches = [
+                h for h in ask_chunks.search(query_embedding)
+                if h.note_node_id not in excluded_notes
+            ]
+            chunk_hits: dict[str, float] = {}
+            chunk_ids_by_note: dict[str, list[str]] = {}
+            for hit in chunk_matches:
+                chunk_hits[hit.note_node_id] = max(
+                    chunk_hits.get(hit.note_node_id, 0.0), hit.score
+                )
+                chunk_ids_by_note.setdefault(hit.note_node_id, []).append(hit.chunk_id)
+
+            retrieval = ask_retrieval.retrieve(
+                body.query,
+                query_embedding,
+                knowledge_map.graph,
+                understanding=understanding,
+                chunk_hits=chunk_hits,
+            )
+
+            # Matched chunks lead each note's expansion list so the budget is spent
+            # on the text that actually matched the query.
+            for item in retrieval.items:
+                matched = chunk_ids_by_note.get(item.node_id)
+                if matched and item.node_type == "note":
+                    rest = [c for c in item.source_chunk_ids if c not in matched]
+                    item.source_chunk_ids = matched + rest
+
+            if not query_embedding and not retrieval.seed_node_ids:
+                # No semantic signal AND no entity-mention seeds — answering now would
+                # just be the chat model freewheeling with an empty context bundle.
+                raise HTTPException(
+                    503,
+                    "retrieval unavailable: query embedding failed and no entity "
+                    "mentions matched the graph. Retry, or check the server's "
+                    "embedding configuration.",
+                )
+
+            expansion = ask_expansion.expand_bundle(retrieval.items)
+
+            bundle_text = ask_retrieval.render_bundle(retrieval.items)
+            system = (
+                ask_retrieval.system_prompt()
+                + as_of_suffix
+                + "\n\nContext bundle:\n"
+                + bundle_text
+            )
+
+            messages = list(body.history) + [{"role": "user", "content": body.query}]
+
+            citations = [
+                {
+                    "citation_id": item.citation_id,
+                    "node_id": item.node_id,
+                    "node_type": item.node_type,
+                    "layer": item.layer,
+                    "label": item.label,
+                    "edge_provenance": item.edge_provenance,
+                    "source_note_ids": item.source_note_ids,
+                    "source_chunk_ids": item.source_chunk_ids,
+                    "score": item.score,
+                    "home_region_id": item.home_region_id,
+                    # Doc name/excerpt/date for the citation popover. Empty for
+                    # tag/entity/region items, which never go through chunk
+                    # expansion — the frontend falls back to label/type/provenance.
+                    "source_refs": [
+                        {
+                            "doc_title": r.doc_title,
+                            "doc_id": r.doc_id,
+                            "heading": r.heading,
+                            "excerpt": r.excerpt,
+                            "source_url": r.source_url,
+                            "updated_at": r.updated_at,
+                        }
+                        for r in item.source_refs
+                    ],
+                }
+                for item in retrieval.items
+            ]
+            retrieval_debug = {
+                "seed_node_ids": retrieval.seed_node_ids,
+                "selected_node_ids": [item.node_id for item in retrieval.items],
+                "source_note_ids": sorted({
+                    note_id
+                    for item in retrieval.items
+                    for note_id in (
+                        item.source_note_ids
+                        or ([item.node_id] if item.node_type == "note" else [])
+                    )
+                }),
+                "context_item_count": len(retrieval.items),
+                "estimated_context_tokens": max(1, len(bundle_text) // 4) if bundle_text else 0,
+                "raw_chunks_expanded": expansion.expanded,
+                "expanded_chunk_count": expansion.chunk_count,
+                "expansion_chars": expansion.chars,
+                "chunk_search_hits": len(chunk_matches),
+                "chunk_seeded_note_ids": sorted(chunk_hits),
+            }
+        except HTTPException as e:
+            yield {"event": "error", "data": json.dumps({"message": str(e.detail)})}
+            return
+        except Exception as e:  # noqa: BLE001
+            logger.exception("ask: retrieval failed")
+            yield {"event": "error", "data": json.dumps({"message": str(e)[:200]})}
+            return
+
+        yield _status("reading", count=len(retrieval_debug["source_note_ids"]))
         # Citations go up-front so the UI can resolve [cN] markers as they
         # stream in; the authoritative "which items the answer actually used"
         # set follows as `citations_used` once the answer is complete.
@@ -397,6 +412,7 @@ async def ask(
             "event": "citations",
             "data": json.dumps({"citations": citations}),
         }
+        yield _status("writing")
         answer_parts: list[str] = []
         try:
             async for chunk in ask_providers.stream_chat(
@@ -433,6 +449,18 @@ async def ask(
             as_of=body.as_of,
         )
     )
+
+
+def _status(stage: str, **extra) -> dict:
+    """A progress ``status`` event: which stage the answer is in, so the chat
+    can say something truer than "…" while nothing has streamed yet."""
+    return {"event": "status", "data": json.dumps({"stage": stage, **extra})}
+
+
+async def _lead_with_status(stage: str, events):
+    yield _status(stage)
+    async for ev in events:
+        yield ev
 
 
 async def _persist_exchange(
