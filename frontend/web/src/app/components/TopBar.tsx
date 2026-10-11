@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Search, Settings } from "lucide-react";
+import { Search, Settings, Sparkles, X } from "lucide-react";
 import { useConnections } from "../api/connections";
 import { cn } from "../lib/cn";
 import { compileFinishedSince, useStartCompile, useTerrainCurrent } from "../api/terrain";
@@ -14,6 +14,7 @@ import { useCommandPalette } from "../lib/commandPalette";
 import { BrandMark } from "./BrandMark";
 import { Kbd } from "./ui/Kbd";
 import { OpsPill } from "./OpsPill";
+import { isSampleHome, isSamplePath, toSamplePath } from "../demo/samplePaths";
 
 /**
  * Global watcher: when any compile finishes (even one running in the
@@ -142,7 +143,17 @@ function useBuildTabSuffix(): string | null {
 
 export function TopBar() {
   const { pathname } = useLocation();
-  const isHome = pathname === "/";
+  // Inside the sample workspace the tabs browse the sample and nothing else:
+  // Build, Settings, search and the ops pill all act on the user's own data,
+  // so they give way to a plain "this is a sample / exit" cluster.
+  const inSample = isSamplePath(pathname);
+  const isHome = pathname === "/" || isSampleHome(pathname);
+  const navItems = inSample
+    ? NAV_ITEMS.flatMap((item) => {
+        const to = toSamplePath(item.to);
+        return to ? [{ ...item, to }] : [];
+      })
+    : NAV_ITEMS;
   const settingsActive = pathname.startsWith("/settings");
   const openPalette = useCommandPalette((s) => s.setOpen);
   useRefreshMapDataOnCompileComplete();
@@ -158,11 +169,13 @@ export function TopBar() {
           : "bg-cream/95 backdrop-blur-md border-b border-hair",
       )}
     >
+      {/* A magenta rule across the top: you're not on your own map. */}
+      {inSample && <div className="absolute inset-x-0 top-0 h-[3px] bg-magenta" aria-hidden />}
       <div className="w-full max-w-page mx-auto px-6 lg:px-10 flex items-center justify-between gap-6">
         <div className="flex items-center gap-10">
           <BrandMark />
           <nav className="hidden md:flex items-center gap-1" aria-label="Primary">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -184,6 +197,9 @@ export function TopBar() {
             ))}
           </nav>
         </div>
+        {inSample ? (
+          <SampleWorkspaceControls />
+        ) : (
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -222,7 +238,32 @@ export function TopBar() {
             <span className="hidden md:inline font-sans text-[13px]">Settings</span>
           </NavLink>
         </div>
+        )}
       </div>
     </header>
+  );
+}
+
+/** Inside /sample, in place of search / ops / Settings: whose data this is,
+ *  and an unmissable way back to the user's own home. */
+function SampleWorkspaceControls() {
+  return (
+    <div className="flex shrink-0 items-center gap-3">
+      <span
+        className="hidden lg:inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-magenta/40 bg-magenta/[0.08] px-3 h-8 font-sans text-[12px] text-ink"
+        title="A fictional company's harvested and compiled notes. Nothing here is yours, and nothing you do here is saved."
+      >
+        <Sparkles size={13} strokeWidth={1.75} className="text-magenta" aria-hidden />
+        <span className="font-medium">Sample workspace</span>
+        <span className="text-muted">· Stencil, a fictional company</span>
+      </span>
+      <NavLink
+        to="/"
+        className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full bg-magenta px-4 font-sans text-[13px] font-medium text-cream shadow-sm transition-colors hover:bg-magenta/90"
+      >
+        <X size={14} strokeWidth={2} aria-hidden />
+        Exit sample
+      </NavLink>
+    </div>
   );
 }

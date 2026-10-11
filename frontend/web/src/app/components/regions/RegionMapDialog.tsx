@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useAppNavigate } from "../../lib/useAppNavigate";
 import { Maximize2 } from "lucide-react";
 import { KnowledgeMap } from "../../../knowledgeMap";
 import { Button } from "../ui/Button";
 import { Dialog, DialogClose } from "../ui/Dialog";
 import { useMapFocusStore } from "../../lib/mapFocusStore";
+import { useDemo } from "../../demo/DemoContext";
 
 function hasWebGL(): boolean {
   try {
@@ -32,7 +33,8 @@ export function RegionMapDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
+  const demo = useDemo();
   const setFocusRegion = useMapFocusStore((s) => s.setFocusRegion);
   const [webgl, setWebgl] = useState<boolean | null>(null);
   useEffect(() => {
@@ -67,7 +69,15 @@ export function RegionMapDialog({
       <div className="relative h-[72vh] overflow-hidden rounded-b-3xl bg-cream">
         {open && webgl ? (
           <div className="absolute inset-0">
-            <KnowledgeMap preview focusRegionId={regionId} hideHeader hideBottomBar hideRightPanel />
+            <KnowledgeMap
+              preview
+              focusRegionId={regionId}
+              hideHeader
+              hideBottomBar
+              hideRightPanel
+              dataUrl={demo?.mapUrls.dataUrl}
+              notesUrl={demo?.mapUrls.notesUrl}
+            />
           </div>
         ) : webgl === false ? (
           <div className="absolute inset-0 grid place-items-center px-6 text-center font-sans text-sm text-muted">

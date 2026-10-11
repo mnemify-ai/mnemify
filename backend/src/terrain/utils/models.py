@@ -506,6 +506,10 @@ class Note(BaseModel):
     # Where inside the source the doc lives (Confluence space key, Jira
     # project key); "" when the source has no such container.
     sourceDetail: str = ""
+    # Container path inside the source, root first, excluding the doc itself
+    # (Notion parent pages, Confluence space, vault/local folders). Drives the
+    # right panel's Sources tree.
+    docPath: list[str] = Field(default_factory=list)
     createdAt: str
     updatedAt: str
     regionId: str

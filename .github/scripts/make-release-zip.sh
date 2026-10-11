@@ -46,7 +46,7 @@ case "$OUT" in /*) ;; *) OUT="$(pwd -P)/$OUT" ;; esac
 
 # Tracked files, minus the contributor-only parts. Paths are repo-relative.
 ( cd "$ROOT" && git ls-files ) \
-    | grep -v -E '^(\.github/|backend/tests/|mockdata/|\.gitignore$|UPDATES\.md$)' \
+    | grep -v -E '^(\.github/|backend/tests/|mockdata/|scripts/sample-data/|\.gitignore$|UPDATES\.md$)' \
     > "$STAGE/files.txt"
 if ! grep -q '^setup\.sh$' "$STAGE/files.txt"; then
     printf 'git ls-files did not list setup.sh - is this a git checkout?\n' >&2

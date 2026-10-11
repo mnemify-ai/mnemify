@@ -22,6 +22,7 @@ import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/relativeTime";
 import { toastError, toastInfo, toastSuccess } from "../../lib/toast";
 import { resumeThread } from "../../../ask/threadSync";
+import { useDemo } from "../../demo/DemoContext";
 import { useRegionWorkspace } from "./useRegionWorkspace";
 
 const TABS = [
@@ -139,6 +140,7 @@ function MovedRedirect({ to }: { to: string }) {
  *  kept, and the user can move them onto a current region. */
 export function UnassignedRegionPage({ regionKey, regionName }: { regionKey: string; regionName: string }) {
   const navigate = useNavigate();
+  const demo = useDemo();
   const q = useUnassignedRegion(regionKey);
   const reassign = useReassignUnassigned(regionKey);
   const del = useDeleteMemory();
@@ -188,7 +190,7 @@ export function UnassignedRegionPage({ regionKey, regionName }: { regionKey: str
               <ul className="divide-y divide-hair/70">
                 {q.data.threads.map((t) => (
                   <li key={t.id}>
-                    <button type="button" onClick={() => void resumeThread(t.id)} className="flex w-full items-center gap-3 py-2.5 text-left hover:text-magenta">
+                    <button type="button" onClick={() => (demo ? demo.openChat({ threadId: t.id }) : void resumeThread(t.id))} className="flex w-full items-center gap-3 py-2.5 text-left hover:text-magenta">
                       <span className="min-w-0 flex-1 truncate font-sans text-sm text-ink">{t.title}</span>
                       <span className="font-sans text-xs text-muted">{t.message_count} msgs · {relativeTime(t.updated_at)}</span>
                     </button>

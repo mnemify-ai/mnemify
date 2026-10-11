@@ -49,6 +49,15 @@ _URGENT_RE = re.compile(
     r"renewal|contract|customer|legal|sla|regression)\b",
     re.IGNORECASE,
 )
+# Markdown task-list items: "- [ ] open", "- [x] done".
+_CHECKBOX_RE = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s*)?\[([ xX])\]\s*(.+)$")
+_WORD_RE = re.compile(r"[a-z0-9]+")
+_STOPWORDS = frozenset({
+    "a", "an", "and", "the", "to", "of", "for", "in", "on", "by", "with", "at",
+    "from", "is", "be", "it", "this", "that", "me", "my", "our", "we", "i",
+    "you", "he", "she", "they", "them", "his", "her",
+})
+
 _RESOLVED_RE = re.compile(
     r"\b(done|resolved|closed|shipped|deployed|completed|fixed|approved)\b",
     re.IGNORECASE,
@@ -117,6 +126,35 @@ def extract_attention_signals(
     return signals
 
 
+def _words(text: str) -> set[str]:
+    return {w for w in _WORD_RE.findall(text.lower()) if w not in _STOPWORDS and len(w) > 1}
+
+
+def _checkbox_done(content: str, draft: ChunkSignalDraft) -> bool:
+    """True when the source line a todo was drafted from is a checked box.
+
+    The LLM drafts todos from task lists and often keeps "- [x] Devon: write
+    the plan by 2026-09-18" as an open todo, which then shows as overdue
+    forever. Match the draft to its task-list line by word overlap and trust
+    the box.
+    """
+    draft_words = _words(" ".join(filter(None, [draft.title, draft.summary, draft.due_text, draft.owner])))
+    if not draft_words:
+        return False
+    best_overlap, best_checked = 0.0, False
+    for line in content.splitlines():
+        m = _CHECKBOX_RE.match(line)
+        if not m:
+            continue
+        line_words = _words(m.group(2))
+        if not line_words:
+            continue
+        overlap = len(line_words & draft_words) / len(line_words)
+        if overlap > best_overlap:
+            best_overlap, best_checked = overlap, m.group(1) in "xX"
+    return best_overlap >= 0.5 and best_checked
+
+
 def _signal_from_draft(
     draft: ChunkSignalDraft,
     item: EnrichedChunk,
@@ -134,8 +172,11 @@ def _signal_from_draft(
         if draft.due_text
         else None
     )
+    status = draft.status
+    if draft.kind == "todo" and status != "resolved" and _checkbox_done(item.chunk.content, draft):
+        status = "resolved"
     severity = draft.severity
-    if draft.status != "resolved":
+    if status != "resolved":
         severity = min(100, severity + _deadline_boost(due_date))
     return AttentionSignal(
         id=_signal_id(draft.kind, item.chunk.id, draft.title + draft.summary),
@@ -143,7 +184,7 @@ def _signal_from_draft(
         title=_title_for(draft.kind, draft.title),
         summary=_summary_for(draft.summary),
         severity=severity,
-        status=draft.status,
+        status=status,
         owner=draft.owner,
         due_text=draft.due_text,
         due_date=due_date,
@@ -189,7 +230,11 @@ def _extract_regex_signals(
             kind = "owner"
         if kind is None:
             continue
-        status = "resolved" if _RESOLVED_RE.search(line) else "open"
+        box = _CHECKBOX_RE.match(line)
+        if box:
+            status = "resolved" if box.group(1) in "xX" else "open"
+        else:
+            status = "resolved" if _RESOLVED_RE.search(line) else "open"
         severity = _severity_for(kind, line, status)
         due_date = resolve_deadline(line, anchor) if kind == "todo" else None
         if due_date and status != "resolved":

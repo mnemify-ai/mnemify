@@ -12,6 +12,7 @@ import { useRegionChanges, type RegionActionItem, type RegionSignal } from "../.
 import { useMapData } from "../../data/MapDataProvider";
 import { sourcesBreakdown } from "../../lib/regions";
 import { useRegionWorkspaceContext } from "./useRegionWorkspace";
+import { nowMs } from "../../lib/clock";
 
 /** The workspace's main view. Sub-regions span the top as the way down;
  *  evidence and questions own the wide column;
@@ -28,7 +29,7 @@ export function RegionOverviewTab() {
   const since = previousVisit === undefined ? null : previousVisit ?? "last_compile";
   const changes = useRegionChanges(regionId, since ?? "last_compile", { enabled: since !== null });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date(nowMs()).toISOString().slice(0, 10);
   const subtreeNotes = map?.indexes.notesByRegionSubtree.get(regionId) ?? [];
   const sources = detail?.sources ?? sourcesBreakdown(subtreeNotes);
   const fallbackSummary = map?.attention?.regions[regionId]?.summary ?? null;

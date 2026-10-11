@@ -81,18 +81,27 @@ export type KnowledgeMapProps = {
   selectedTagId?: string | null;
   onTagSelect?: (tagId: string | null) => void;
 
+  /** One-shot request to open a note's document in the right panel, from
+   *  chrome that lives outside the map's own store (the sample workspace's
+   *  chat "View source"). A new `tick` re-opens even the same note. */
+  openDocRequest?: { noteId: string; tick: number } | null;
+
   /** Suppress individual chrome pieces. Used when the host renders its own. */
   hideHeader?: boolean;
   hideBreadcrumb?: boolean;
   hideBottomBar?: boolean;
   /** Suppress the right drill-down panel. The panel reads app-level map data
-   *  (useMapDataReady), which is absent in standalone contexts like the
-   *  sample-terrain demo — hide it there to keep the map self-contained. */
+   *  (useMapDataReady) — hide it where none is provided (the sample workspace
+   *  provides its own via StaticMapDataProvider). */
   hideRightPanel?: boolean;
   /** Narrow the right panel to its compact width. Set while the app-level Ask
    *  dock is open, so the canvas keeps a usable share of the viewport with
    *  two right-hand columns on screen. Manual resizing still wins. */
   compactRightPanel?: boolean;
+  /** Start with the right panel open and leave the remembered open/collapsed
+   *  state alone (the sample workspace: a first look should show the panel,
+   *  and collapsing it there shouldn't collapse the user's own map). */
+  panelAlwaysOpenAtStart?: boolean;
 
   /** Effective width, in px, of the right detail panel: its resizable full
    *  width, the narrow rail when collapsed, or 0 when suppressed. Hosts that
@@ -213,7 +222,9 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
   // alone while collapsed: expanding restores exactly what was there, and the
   // Ask-dock snap below keeps running underneath, unaware of the collapse.
   // Persisted the same way the Documents filter rail is (see DocumentsPage).
+  const ephemeralPanel = props.panelAlwaysOpenAtStart === true;
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(() => {
+    if (ephemeralPanel) return false;
     try {
       return window.localStorage.getItem(PANEL_COLLAPSED_KEY) === '1';
     } catch {
@@ -221,12 +232,15 @@ function ReadyChrome({ data: rawData, props }: { data: RenderData; props: Knowle
     }
   });
   useEffect(() => {
+    if (ephemeralPanel) return;
     try {
       window.localStorage.setItem(PANEL_COLLAPSED_KEY, panelCollapsed ? '1' : '0');
     } catch {
       /* ignore — private mode etc. */
     }
-  }, [panelCollapsed]);
+  }, [panelCollapsed, ephemeralPanel]);
+  // A doc opened from outside the map has to be visible: expand the panel.
+  useOpenDocRequest(props.openDocRequest, () => setPanelCollapsed(false));
 
   // Snap to the matching default when the Ask dock opens/closes. A width the
   // user dragged themselves is left alone — only untouched defaults move.
@@ -465,6 +479,21 @@ function findTagSpireRegionIdx(data: RenderData, tagId: string): number | null {
     if (data.hexes[i + 4] === tagIdx) return data.hexes[i + 2];
   }
   return null;
+}
+
+/** Applies `openDocRequest` through the panel's nav layer (so Back returns to
+ *  wherever the user was). Each tick is handled once. */
+function useOpenDocRequest(request: KnowledgeMapProps['openDocRequest'], reveal: () => void) {
+  const navigate = useKnowledgeMapStore((s) => s.navigate);
+  const seenTickRef = useRef<number | null>(null);
+  const revealRef = useRef(reveal);
+  revealRef.current = reveal;
+  useEffect(() => {
+    if (!request || request.tick === seenTickRef.current) return;
+    seenTickRef.current = request.tick;
+    revealRef.current();
+    navigate({ docNoteId: request.noteId });
+  }, [request, navigate]);
 }
 
 /** Same shape as useControlledFocusBridge, for `selectedTagId`. */

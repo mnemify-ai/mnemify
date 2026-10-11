@@ -1,0 +1,35 @@
+# Suggested questions for the sample workspace's chat. `label` is the short
+# question shown on the button; `question` is what was actually asked. Each is asked once
+# against the real /api/ask on the compiled sample (record_ask.py) and the
+# recorded answer is replayed in the app. Order = order of the chips.
+#
+# region: optional case-insensitive substrings of a region name (first match
+# wins). When one matches, the question is asked scoped to that region (a
+# workspace-style ask). Region names come from the compile, so if none match
+# record_ask.py asks unscoped and says so.
+questions:
+  - id: q01
+    label: Where is the ACH cut-over?
+    question: What's the status of the ACH pipeline cut-over with Pillar Bank, and what's still open?
+  - id: q02
+    label: Did the ACH outage follow-ups land?
+    question: What did we decide after the April 6 ACH outage, and did the follow-ups actually get done?
+  - id: q03
+    label: What do I owe the board?
+    question: What do I owe the board and Northfield before the Series B closes?
+  - id: q04
+    label: How ready are we for SOC 2?
+    region: [SOC 2, SOC2, Compliance, Security]
+    question: Where are we on SOC 2 Type II readiness, and what gaps are left?
+  - id: q05
+    label: Is the investing GA at risk?
+    question: Is the investing GA on October 20 at risk? What's blocking it and who owns each blocker?
+  - id: q06
+    label: Which risks have I not addressed?
+    question: What risks are people raising that I haven't addressed yet?
+  - id: q07
+    label: What does Nadia need from me?
+    question: Summarize my recent 1:1s with Nadia. What does she need from me?
+  - id: q08
+    label: Grace or Tomas for VP Eng?
+    question: Grace Liu or Tomas Reyes for VP Engineering? Lay out the case for each from my notes.

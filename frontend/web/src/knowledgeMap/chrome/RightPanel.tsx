@@ -14,10 +14,12 @@
 // This file is just the router; the views live in RegionsList / RegionDetail /
 // TagDetail / DocDetail, with shared chrome in panelShared.
 
+import { useMapData } from '../../app/data/MapDataProvider';
 import { useKnowledgeMapStore } from '../store';
 import type { RenderData } from '../types';
-import { panelFontCls } from './panelShared';
+import { bodyCls, headerCls, panelFontCls, TabBar, usePanelView } from './panelShared';
 import { RegionsList } from './RegionsList';
+import { SourcesTree } from './SourcesTree';
 import { RegionDetail } from './RegionDetail';
 import { TagDetail } from './TagDetail';
 import { DocDetail } from './DocDetail';
@@ -35,7 +37,7 @@ export function RightPanel({ data }: { data: RenderData }) {
   //   • an open document  → DocDetail
   //   • a selected tag    → TagDetail
   //   • a focused region  → RegionDetail
-  //   • none              → the Regions index
+  //   • none              → the map index (Regions | Sources)
   if (docNoteId) {
     return <div className={tabShellCls}><DocDetail key={docNoteId} data={data} noteId={docNoteId} /></div>;
   }
@@ -45,9 +47,40 @@ export function RightPanel({ data }: { data: RenderData }) {
   if (focusRegionIdx !== null) {
     return <div className={tabShellCls}><RegionDetail key={focusRegionIdx} data={data} idx={focusRegionIdx} /></div>;
   }
+  return <MapIndex data={data} />;
+}
+
+type IndexTab = 'regions' | 'sources';
+
+/** The panel's root: the regions index, plus the documents in their source
+ *  tree. The tab (and scroll) survive opening a doc and coming Back. */
+function MapIndex({ data }: { data: RenderData }) {
+  const { tab, setTab, bodyProps } = usePanelView<IndexTab>('regions');
+  const docCount = useMapData().data?.notes.notes.length ?? 0;
+
+  // No notes file (older bake) → nothing to put in a Sources tab.
+  if (docCount === 0) {
+    return (
+      <div className={`flex flex-col gap-[18px] h-full min-h-0 overflow-auto ${panelFontCls}`}>
+        <RegionsList data={data} />
+      </div>
+    );
+  }
   return (
-    <div className={`flex flex-col gap-[18px] h-full min-h-0 overflow-auto ${panelFontCls}`}>
-      <RegionsList data={data} />
+    <div className={tabShellCls}>
+      <div className={headerCls}>
+        <TabBar
+          tabs={[
+            { key: 'regions', label: 'Regions' },
+            { key: 'sources', label: 'Sources', count: docCount },
+          ]}
+          active={tab}
+          onChange={(k) => setTab(k as IndexTab)}
+        />
+      </div>
+      <div className={bodyCls} {...bodyProps}>
+        {tab === 'regions' ? <RegionsList data={data} /> : <SourcesTree />}
+      </div>
     </div>
   );
 }

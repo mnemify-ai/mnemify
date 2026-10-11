@@ -149,6 +149,10 @@ export type Note = {
   lastModifiedBy?: string | null;
   /** Container inside the source — Confluence space key, Jira project key. */
   sourceDetail?: string;
+  /** Container path inside the source, outermost first — Notion parent pages,
+   *  Confluence space, vault/local folders. Absent on maps compiled before
+   *  the compiler emitted it. */
+  docPath?: string[];
   createdAt: string;
   updatedAt: string;
   regionId: string;

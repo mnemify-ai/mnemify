@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MousePointerClick, X } from "lucide-react";
 import { hasClickedTag, markTagClicked } from "../lib/onboardingFlags";
+import { useDemo } from "../demo/DemoContext";
 
 /**
  * A single, focused "how to drive the map" nudge shown on Home once a map is
@@ -36,6 +37,9 @@ function markDismissed(): void {
 }
 
 export function MapInteractionHint({ selectedTagId }: { selectedTagId: string | null }) {
+  // The sample workspace shows the hint but must not spend the user's
+  // onboarding flags (they gate the hint and briefing on their own map).
+  const demo = useDemo();
   // Hidden if they've ever clicked a spire or previously dismissed the hint.
   const [hidden, setHidden] = useState(() => hasClickedTag() || readDismissed());
 
@@ -43,9 +47,9 @@ export function MapInteractionHint({ selectedTagId }: { selectedTagId: string | 
   // flag the briefing card reads to know the user is past first-interaction).
   useEffect(() => {
     if (!selectedTagId) return;
-    markTagClicked();
+    if (!demo) markTagClicked();
     setHidden(true);
-  }, [selectedTagId]);
+  }, [selectedTagId, demo]);
 
   if (hidden) return null;
 
@@ -68,7 +72,7 @@ export function MapInteractionHint({ selectedTagId }: { selectedTagId: string | 
       <button
         type="button"
         onClick={() => {
-          markDismissed();
+          if (!demo) markDismissed();
           setHidden(true);
         }}
         aria-label="Dismiss map controls hint"

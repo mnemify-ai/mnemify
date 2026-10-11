@@ -29,7 +29,34 @@ export class ApiError extends Error {
 export const CLIENT_HEADER = "X-Mnemify-Client";
 export const CLIENT_NAME = "web";
 
+/**
+ * Answers `apiFetch` from somewhere other than the network. The sample
+ * workspace (app/demo) installs one around each of its queries and mutations
+ * so the real pages it reuses read fixtures instead of the backend.
+ */
+export type ApiOverride = (path: string, init?: RequestInit) => Promise<unknown>;
+
+let activeOverride: ApiOverride | null = null;
+
+/**
+ * Run `fn` with `override` answering every `apiFetch` it starts
+ * *synchronously*. Synchronous on purpose: the real app keeps polling the
+ * backend while the sample is open, and a scope that outlived this call
+ * would capture those requests too.
+ */
+export function withApiOverride<R>(override: ApiOverride, fn: () => R): R {
+  const prev = activeOverride;
+  activeOverride = override;
+  try {
+    return fn();
+  } finally {
+    activeOverride = prev;
+  }
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Read before the first await — that's what keeps the override scoped.
+  if (activeOverride) return (await activeOverride(path, init)) as T;
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
   const res = await fetch(url, {
     ...init,
