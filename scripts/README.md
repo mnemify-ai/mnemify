@@ -8,8 +8,8 @@ is meant to be run directly — run `setup.sh` / `setup.bat` or `mnemify.sh` /
 |---|---|
 | `setup.ps1` | Windows mirror of `setup.sh`. Called by `setup.bat`. |
 | `mnemify.ps1` | Windows mirror of `mnemify.sh`. Called by `mnemify.bat` and by the shortcut. |
-| `make-launcher.sh` | Creates `Mnemify.app` (macOS) or `mnemify.desktop` (Linux). |
-| `make-launcher.ps1` | Creates `Mnemify.lnk` on the Desktop and in the Start Menu. |
+| `make-launcher.sh` | Creates `Mnemify.app` (macOS, an AppleScript applet — see the comment in the script for why) or `mnemify.desktop` (Linux). |
+| `make-launcher.ps1` | Creates `Mnemify.lnk` in the Start Menu, and on the Desktop if asked to. |
 
 ## Rules these files live by
 
@@ -69,7 +69,8 @@ hosts that pass it through rather than rejecting it.)
 | Variable | Effect |
 |---|---|
 | `MNEMIFY_NONINTERACTIVE=1` | No prompts, and `setup` does not launch the app at the end. |
-| `MNEMIFY_LAUNCHER_DIR` | Where `make-launcher` writes, instead of `~/Applications` / Desktop + Start Menu. |
+| `MNEMIFY_LAUNCHER_DIR` | Where `make-launcher` writes, instead of `~/Applications` / Start Menu. |
+| `MNEMIFY_DESKTOP_SHORTCUT=1` / `0` | Answer setup's "Add a Mnemify shortcut to your Desktop?" in advance (macOS and Windows). Unset and non-interactive means no. |
 | `MNEMIFY_LOG_DIR` | Where `--gui` / `-Gui` writes `launcher.log`. |
 | `MNEMIFY_DIALOG_DRYRUN=1` | Log the error dialog instead of showing it (nothing to click in CI). |
 

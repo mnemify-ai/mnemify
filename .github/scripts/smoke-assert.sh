@@ -125,9 +125,26 @@ esac
 
 # ------------------------------------------------------------- 2. launcher
 section "launcher"
+# On macOS the checkout path lives in a plain-text file inside the applet
+# (the compiled script itself is not greppable). This cannot catch the
+# privacy-protection failure from issue #41: CI installs under $RUNNER_TEMP,
+# which macOS does not guard, and nobody is there to click the prompt.
 case "$(uname -s)" in
-    Darwin) LAUNCHER="$MNEMIFY_LAUNCHER_DIR/Mnemify.app/Contents/MacOS/Mnemify" ;;
-    *)      LAUNCHER="$MNEMIFY_LAUNCHER_DIR/mnemify.desktop" ;;
+    Darwin)
+        APP="$MNEMIFY_LAUNCHER_DIR/Mnemify.app"
+        LAUNCHER="$APP/Contents/Resources/mnemify-repo"
+        if [ -x "$APP/Contents/MacOS/applet" ]; then
+            ok "applet executable present"
+        else
+            bad "applet executable missing: $APP/Contents/MacOS/applet"
+        fi
+        if codesign --verify --deep --strict "$APP" >/dev/null 2>&1; then
+            ok "launcher signature is valid"
+        else
+            bad "launcher signature does not verify (codesign --verify $APP)"
+        fi
+        ;;
+    *)  LAUNCHER="$MNEMIFY_LAUNCHER_DIR/mnemify.desktop" ;;
 esac
 if [ -f "$LAUNCHER" ]; then
     ok "launcher exists: $LAUNCHER"
