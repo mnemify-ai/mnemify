@@ -24,6 +24,7 @@ import { CitationChip } from "./CitationChip";
 import { parseTerrainOverview, type TerrainFocusTarget } from "./citationDisplay";
 import type { SourceInspectorTarget } from "./SourceInspector";
 import type { AgentStep, AskMessage, Citation } from "./types";
+import { elapsedLabel, pendingLabel } from "./pendingStatus";
 
 type Props = {
   /** The conversation's session state — settings, draft, streamed messages —
@@ -250,9 +251,12 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
                 usedCitationCount={(m.usedCitationIds || []).length}
               />
             ) : null}
+            {m.role === "assistant" && m.pending && !m.text && !m.steps?.length ? (
+              <PendingStatus label={pendingLabel(m.status, (m.citations || []).length)} />
+            ) : null}
             {m.role === "assistant" ? (
               <AssistantMarkdown
-                text={m.text || (m.pending && !m.steps?.length ? "…" : "")}
+                text={m.text}
                 citations={m.citations || []}
                 onFocusTerrain={onFocusTerrain}
                 onViewSource={onViewSource}
@@ -348,11 +352,34 @@ export function AskPanel({ session, onFocusTerrain, onViewSource }: Props) {
 }
 
 /**
+ * What a pending answer shows before its first token or agent step (#26):
+ * the server's current stage, plus an elapsed counter once the wait passes a few
+ * seconds so a slow answer visibly isn't stuck. Only the stage is announced
+ * to screen readers; the ticking seconds are hidden from them.
+ */
+export function PendingStatus({ label }: { label: string }) {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = window.setInterval(() => setSeconds((Date.now() - started) / 1000), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const elapsed = elapsedLabel(seconds);
+  return (
+    <div className="flex items-center gap-1.5 font-sans text-[12px] text-muted">
+      <Loader2 size={12} strokeWidth={1.5} className="shrink-0 animate-spin motion-reduce:animate-none" aria-hidden />
+      <span role="status" aria-live="polite">{label}</span>
+      {elapsed ? <span className="tabular-nums" aria-hidden>{elapsed}</span> : null}
+    </div>
+  );
+}
+
+/**
  * Live agent-exploration timeline. Expanded while the answer is pending so
  * the user sees the terrain being walked; collapses to a one-line summary
  * (still expandable) once the answer lands.
  */
-function StepTimeline({
+export function StepTimeline({
   steps,
   pending,
   usedCitationCount,
@@ -426,7 +453,7 @@ function StepTimeline({
  * real claim, not decoration. Dropped count = markers still present in the
  * final text that the server refused to endorse.
  */
-function VerifiedLine({ message }: { message: AskMessage }) {
+export function VerifiedLine({ message }: { message: AskMessage }) {
   if (message.pending || message.error) return null;
   const used = message.usedCitationIds || [];
   if (used.length === 0 || message.citationsFallback) return null;
@@ -451,7 +478,7 @@ function VerifiedLine({ message }: { message: AskMessage }) {
  * always-visible. Only the citations the answer actually used are listed
  * (in citation order); nothing renders before the first `[cN]` marker lands.
  */
-function GroundedInSources({
+export function GroundedInSources({
   message,
   onFocusTerrain,
   onViewSource,

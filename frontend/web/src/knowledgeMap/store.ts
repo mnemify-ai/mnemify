@@ -92,6 +92,9 @@ export type FocusState = {
   /** Notes were fetched (or failed) — distinguishes "loading" from "this
    *  map has no dates" when `timelineIndex` is null. */
   timelineLoaded: boolean;
+  /** Expanded groups in the right panel's Sources tree (sourcesTree.ts keys).
+   *  Lives here so opening a doc and coming Back keeps the tree as it was. */
+  sourcesOpen: ReadonlySet<string>;
 };
 
 export type KnowledgeMapState = FocusState & {
@@ -114,6 +117,7 @@ export type KnowledgeMapState = FocusState & {
   /** From useTimelineSync. A fresh index parks the cutoff at its latest
    *  date, so opening the scrubber never flattens the map by surprise. */
   setTimelineIndex: (idx: TimelineIndex | null, loaded: boolean) => void;
+  setSourcesOpen: (keys: ReadonlySet<string>) => void;
   /** The single nav layer. Pushes the current snapshot to history, applies the
    *  patch atomically, and (by default) zooms the map when focus changes. This
    *  is the ONLY thing that should write focus/tag/doc from UI navigation. */
@@ -150,6 +154,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
     timeline: initial?.timeline ?? null,
     timelineIndex: initial?.timelineIndex ?? null,
     timelineLoaded: initial?.timelineLoaded ?? false,
+    sourcesOpen: initial?.sourcesOpen ?? new Set(),
     setFocusRegion: (idx) => set({ focusRegionIdx: idx }),
     setSelectedTag: (id) => set({ selectedTagId: id }),
     setHoveredInstance: (id) => set({ hoveredInstanceId: id }),
@@ -166,6 +171,7 @@ export function createKnowledgeMapStore(initial?: Partial<FocusState>) {
         timeline: s.timelineIndex ? { cutoff: s.timelineIndex.maxMs, showChanges: false } : null,
       })),
     closeTimeline: () => set({ timelineOpen: false, timeline: null }),
+    setSourcesOpen: (keys) => set({ sourcesOpen: keys }),
     setTimelineCutoff: (ms) =>
       set((s) => (s.timeline ? { timeline: { ...s.timeline, cutoff: ms } } : {})),
     setTimelineShowChanges: (on) =>

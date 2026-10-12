@@ -8,6 +8,7 @@ import { AssistantMarkdown } from "../../../ask/AssistantMarkdown";
 import { useAskSettingsStore } from "../../../ask/askSettingsStore";
 import { activeKey, wireProvider } from "../../../ask/types";
 import { streamOverviewRefresh } from "../../api/regionOverview";
+import { useDemo } from "../../demo/DemoContext";
 import type { RegionBrief } from "../../api/regions";
 import { qk } from "../../api/keys";
 import { cn } from "../../lib/cn";
@@ -41,6 +42,9 @@ export function RegionBriefCard({
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
+  // The sample's briefs were written when it was built; there's no model to
+  // re-synthesize them with.
+  const demo = useDemo();
 
   const refresh = async () => {
     if (streaming !== null) return;
@@ -79,7 +83,7 @@ export function RegionBriefCard({
     <SectionCard
       eyebrow="Region brief"
       bodyClassName="pt-2 pb-4"
-      action={
+      action={demo ? undefined : (
         <button
           type="button"
           onClick={() => void refresh()}
@@ -90,7 +94,7 @@ export function RegionBriefCard({
           {streaming !== null ? <RefreshCw size={12} className="animate-spin" aria-hidden /> : <Sparkles size={12} aria-hidden />}
           {streaming !== null ? "Refreshing…" : "Refresh"}
         </button>
-      }
+      )}
     >
       {loading && !text ? (
         <div className="space-y-2">

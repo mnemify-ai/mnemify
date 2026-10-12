@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useAppNavigate } from "../../lib/useAppNavigate";
 import { Command } from "cmdk";
 import { ChevronDown, Search } from "lucide-react";
 import { Popover } from "../ui/Popover";
@@ -24,7 +24,7 @@ export function RegionSwitcher({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const { renderData, indexes } = useMapDataReady();
   const rows = useMemo(() => {
     const sib = computeSiblingInfo(renderData.regions);

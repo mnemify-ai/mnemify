@@ -77,6 +77,11 @@ AGENT_SYSTEM_PROMPT = (
 )
 
 
+# Text a turn streams before calling a tool is narration, not the answer
+# (see `_consume_session`). Longer than this, it is treated as the answer.
+NARRATION_MAX_CHARS = 400
+
+
 # ── citation registry ────────────────────────────────────────────────
 
 
@@ -844,6 +849,7 @@ async def run_agent_session(
         ResultMessage,
         StreamEvent,
         TextBlock,
+        ToolUseBlock,
     )
 
     ctx = AgentContext(
@@ -866,6 +872,21 @@ async def run_agent_session(
     async def _consume_session() -> None:
         answer_parts: list[str] = []
         delta_chars = 0
+        # Text the current turn has streamed but not yet released. A turn
+        # that ends in a tool call is the agent narrating ("I'll start by
+        # orienting myself…"), not answering, despite the prompt; holding
+        # its text until the turn's AssistantMessage shows whether it called
+        # a tool keeps that out of the answer. Past NARRATION_MAX_CHARS the
+        # text is clearly the answer and streams live from then on.
+        pending: list[str] = []
+        pending_chars = 0
+        streaming_turn = False
+
+        def release(parts: list[str]) -> None:
+            for part in parts:
+                answer_parts.append(part)
+                ctx.emit("delta", {"text": part})
+
         try:
             async for message in _sdk_query(prompt=prompt, options=options):
                 if isinstance(message, StreamEvent):
@@ -877,23 +898,39 @@ async def run_agent_session(
                     delta = ev.get("delta") or {}
                     text = delta.get("text") or ""
                     if delta.get("type") == "text_delta" and text:
-                        answer_parts.append(text)
                         delta_chars += len(text)
-                        ctx.emit("delta", {"text": text})
+                        if streaming_turn:
+                            release([text])
+                            continue
+                        pending.append(text)
+                        pending_chars += len(text)
+                        if pending_chars > NARRATION_MAX_CHARS:
+                            release(pending)
+                            pending, pending_chars, streaming_turn = [], 0, True
                 elif isinstance(message, AssistantMessage):
-                    # Fallback when partial streaming yields no text (its
-                    # deltas would have arrived before the completed
-                    # message, so delta_chars > 0 whenever streaming works).
+                    if getattr(message, "parent_tool_use_id", None):
+                        continue
+                    calls_tool = any(isinstance(b, ToolUseBlock) for b in message.content)
                     if delta_chars == 0:
-                        for block in message.content:
-                            if isinstance(block, TextBlock) and block.text:
-                                answer_parts.append(block.text)
-                                ctx.emit("delta", {"text": block.text})
+                        # Fallback when partial streaming yields no text (its
+                        # deltas arrive before the completed message, so
+                        # delta_chars > 0 whenever streaming works).
+                        if not calls_tool:
+                            release([b.text for b in message.content if isinstance(b, TextBlock) and b.text])
+                    elif not calls_tool:
+                        release(pending)
+                    # else: the held text was narration before a tool call.
+                    pending, pending_chars, streaming_turn = [], 0, False
                 elif isinstance(message, ResultMessage):
+                    release(pending)
+                    pending, pending_chars = [], 0
                     if message.is_error and not answer_parts:
                         raise RuntimeError(
                             f"agent session failed ({message.subtype})"
                         )
+            # A stream that ends without a final message still answers.
+            release(pending)
+            pending = []
         except asyncio.CancelledError:
             raise
         except CLINotFoundError:

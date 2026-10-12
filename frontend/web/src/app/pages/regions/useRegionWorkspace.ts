@@ -6,6 +6,7 @@ import type { RegionEntry } from "../../data/types";
 import { useAskDockStore } from "../../../ask/askDockStore";
 import { useAskThreadStore } from "../../../ask/askThreadStore";
 import { recolorRegions } from "../../../knowledgeMap/util/regionColors";
+import { useDemo } from "../../demo/DemoContext";
 import { computeSiblingInfo, regionShadeHex } from "../../../knowledgeMap/util/regionShade";
 
 /** What the workspace layout hands its tabs through `<Outlet context>`. */
@@ -44,6 +45,7 @@ export function useRegionColors(): (regionId: string) => string {
 
 export function useRegionWorkspace(regionId: string): RegionWorkspaceContext {
   const map = useMapData().data;
+  const demo = useDemo();
   const query = useRegion(regionId);
   const colorFor = useRegionColors();
   const entry = map?.indexes.regionsById.get(regionId) ?? null;
@@ -61,6 +63,12 @@ export function useRegionWorkspace(regionId: string): RegionWorkspaceContext {
   useEffect(() => {
     if (stampedRef.current === regionId) return;
     stampedRef.current = regionId;
+    // The sample records no visits; its "last visit" is its compile, so
+    // "since your last visit" shows what was harvested after it.
+    if (demo) {
+      setPreviousVisit(demo.previousVisit);
+      return;
+    }
     setPreviousVisit(undefined);
     let cancelled = false;
     recordVisit(regionId)
@@ -73,9 +81,13 @@ export function useRegionWorkspace(regionId: string): RegionWorkspaceContext {
     return () => {
       cancelled = true;
     };
-  }, [regionId]);
+  }, [regionId, demo]);
 
   const askRegion = () => {
+    if (demo) {
+      demo.openChat({ regionId });
+      return;
+    }
     useAskThreadStore.getState().newThreadForRegion(regionId);
     useAskDockStore.getState().openDock();
   };

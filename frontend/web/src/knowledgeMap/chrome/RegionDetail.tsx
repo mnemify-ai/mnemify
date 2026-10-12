@@ -2,7 +2,7 @@
 // for the currently focused region (drill depth).
 
 import { useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigate } from '../../app/lib/useAppNavigate';
 import { LayoutDashboard } from 'lucide-react';
 import { useKnowledgeMapStore } from '../store';
 import type { RenderData } from '../types';
@@ -31,7 +31,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
   // footprint + on-map label (see util/hoverRegion.ts). Hover never navigates.
   const hover = useHoverRegion(data);
   const region = data.regions[idx];
-  const routerNavigate = useNavigate();
+  const routerNavigate = useAppNavigate();
 
   // Drilling into a sub-region swaps this view out, and React fires no
   // mouseleave on unmount — clear so the terrain doesn't stay lit for a row
@@ -224,7 +224,7 @@ export function RegionDetail({ data, idx }: { data: RenderData; idx: number }) {
 
         {tab === 'signals' && (
           signals.length > 0
-            ? <SignalGroups signals={signals} notesById={notesById} />
+            ? <SignalGroups signals={signals} notesById={notesById} onOpenNote={(id) => navigate({ docNoteId: id })} />
             : <div className={emptyCls}>No open risks, decisions, or questions.</div>
         )}
 

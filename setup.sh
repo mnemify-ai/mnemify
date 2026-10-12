@@ -220,6 +220,26 @@ fi
 
 # --------------------------------------------------------------- 7. launcher
 step "creating the desktop launcher" "Not fatal — you can always start Mnemify with: sh mnemify.sh"
+# macOS: ask whether to also put a shortcut on the Desktop. An existing one is
+# refreshed without asking, so re-running setup to update stays prompt-free.
+# MNEMIFY_DESKTOP_SHORTCUT=1/0 answers in advance. Linux has no Desktop
+# shortcut (desktop environments disagree on whether to run one).
+if [ "$(uname -s)" = "Darwin" ] && [ -z "${MNEMIFY_DESKTOP_SHORTCUT:-}" ]; then
+    if [ -e "$HOME/Desktop/Mnemify.app" ] || [ -L "$HOME/Desktop/Mnemify.app" ]; then
+        MNEMIFY_DESKTOP_SHORTCUT=1
+    elif [ -n "${MNEMIFY_NONINTERACTIVE:-}" ]; then
+        MNEMIFY_DESKTOP_SHORTCUT=0
+    else
+        printf 'Add a Mnemify shortcut to your Desktop? [Y/n] '
+        _answer=""
+        read -r _answer || true
+        case "$_answer" in
+            [Nn]*) MNEMIFY_DESKTOP_SHORTCUT=0 ;;
+            *)     MNEMIFY_DESKTOP_SHORTCUT=1 ;;
+        esac
+    fi
+fi
+export MNEMIFY_DESKTOP_SHORTCUT
 if ! sh "$REPO/scripts/make-launcher.sh" "$REPO"; then
     printf 'Could not create the launcher. Start Mnemify with: sh mnemify.sh\n' >&2
 fi
@@ -234,7 +254,7 @@ fi
 
 printf '\n%s\n' '---------------------------------------------------------------'
 printf 'Done. Mnemify is installed.\n\n'
-printf '  Start    the Mnemify icon (Launchpad / your app menu), or: sh mnemify.sh\n'
+printf '  Start    the Mnemify icon (Launchpad / Desktop / your app menu), or: sh mnemify.sh\n'
 printf '  Fallback cd backend && uv run mnemify up\n'
 printf '  Data     %s\n' "$MNEMIFY_DATA_HOME"
 printf '  Update   get the new code (git pull, or unzip a fresh download), then: sh setup.sh\n'

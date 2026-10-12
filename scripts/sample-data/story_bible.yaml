@@ -1,0 +1,162 @@
+# Story bible for the Mnemify sample workspace.
+#
+# Every corpus document (corpus/{notion,confluence,obsidian/Maya,notes,late})
+# is written FROM this file. Authors must not invent new people, companies,
+# numbers or dates that contradict it. Small supporting details (a Slack
+# quote, a config value, a meeting room) are fine.
+#
+# Everything here is fictional. Stencil, Pillar Bank, Northfield Ventures and
+# all people are made up; real vendor names (Plaid, DriveWealth, Lithic,
+# Alloy, Persona, Snowflake, AWS) appear only as vendors.
+
+anchor_date: 2026-10-09          # Friday. "Today" in the story. Compile date.
+timeline_start: 2026-02-01
+timeline_end: 2026-10-09         # Nothing is dated after this, except corpus/late (2026-10-10).
+
+company:
+  name: Stencil
+  what: >
+    Consumer fintech app for automated saving. Round-ups, goals-based savings
+    buckets, a $6/mo "Pro Plus" subscription, and (launching now) ETF investing.
+    Banking-as-a-service on top of a sponsor bank (Pillar Bank).
+  hq: San Francisco (hybrid; eng also in Denver and remote)
+  size: 64 people, 31 in engineering (Oct 2026)
+  stack: Ruby on Rails monolith (legacy), Go services (new money movement), Postgres (system of record), Redis, Sidekiq (non-ACH jobs), AWS (SQS FIFO, RDS, EKS), Snowflake (analytics; ML features moved to Postgres per ADR-030), Swift/SwiftUI + TCA iOS app, Kotlin Android app, Datadog, PagerDuty, Linear, Slack.
+  metrics:
+    may_2026: {mau: 120k, mtu: 78k, sub_arr: "$4.1M", burn: "$480k/mo", runway_months: 19}
+    sep_2026: {mau: 151k, mtu: 101k, sub_arr: "$5.3M", burn: "$540k/mo", runway_months: 15}
+  vendors: {bank_linking: Plaid, brokerage: DriveWealth, card_issuing: Lithic, kyc_old: Persona, kyc_new: Alloy, sponsor_bank: Pillar Bank, soc2_auditor: "Ledgerwise Assurance (fictional)", search_firm: "Hollis Partners (fictional)"}
+
+people:
+  # --- Stencil ---
+  - {name: Maya Chen, role: CTO and co-founder, notes: "The persona. Writes most docs. Direct, dry, self-critical. Owns architecture, board eng updates, Pillar exec relationship, SOC 2 sponsor."}
+  - {name: Aleks Varga, role: CEO and co-founder, notes: "Owns fundraising, commercial, Pillar business relationship with Maya."}
+  - {name: Marcus Bell, role: Staff engineer / Payments & Platform lead, notes: "Owns ACH pipeline (ADR-024), KYC migration. Weekly ops sync with Pillar. Overloaded since August."}
+  - {name: Devon Park, role: Senior backend engineer (Payments), notes: "Built the ACH outbox worker. Owns DriveWealth position reconciliation. Spotted the April 6 anomaly."}
+  - {name: Nadia Okafor, role: iOS tech lead, trial manager since Aug, notes: "Ex-Square. Owns iOS refactor (SwiftUI+TCA) and iOS hiring loop. Took first direct report (Theo) on Aug 18."}
+  - {name: Kavi Raman, role: Growth engineering lead, notes: "Onboarding conversion work; owns experiments platform and the round-up multiplier."}
+  - {name: Lin Zhao, role: Product designer (lead), notes: "Investing tab design; pairs with Nadia."}
+  - {name: Renee Alvarez, role: Head of Product, notes: "Runs product until a CPO is hired. Owns investing launch PRD and GA decision with Maya."}
+  - {name: Sam Whitfield, role: Security & compliance engineer, notes: "Hired June 2026. Day-to-day SOC 2 owner, evidence collection, access reviews, MDM rollout."}
+  - {name: Jordan Ellis, role: CFO (part-time until Series B), notes: "Owns financial sections of data room, budget."}
+  - {name: Hana Ito, role: Compliance counsel (BSA/AML officer), notes: "Owns BSA/AML program, disclosures review for investing, Pillar annual compliance review."}
+  - {name: Theo Brandt, role: iOS engineer (junior), notes: "Started Aug 18, reports to Nadia."}
+  - {name: Sarah Kim, role: Senior backend engineer, notes: "Candidate in May (final round), accepted offer Jun 12, started Jul 7 on Payments under Marcus."}
+  - {name: Priya Nair (Stencil recruiter), role: Recruiter, notes: "NOT the same as Pillar's Priya. Refer to her as 'Priya N.' to disambiguate. Runs funnel."}
+  # --- Pillar Bank (sponsor bank) ---
+  - {name: Karim Haddad, role: Pillar Bank account lead, notes: "Monthly business review with Maya."}
+  - {name: Theresa Lowe, role: Pillar Bank ACH operations lead, notes: "Weekly ops sync with Marcus."}
+  - {name: Priya Shah, role: Pillar Bank compliance lead, notes: "Annual compliance review; signs off on investing money-movement profile."}
+  - {name: Brent Ochoa, role: Pillar Bank integration engineering lead}
+  # --- Investors / board ---
+  - {name: Dana Whitaker, role: Board member (Series A lead, Bessemer-style firm 'Granite Peak Capital')}
+  - {name: Ravi Menon, role: Partner at Northfield Ventures (Series B lead), notes: "Issued term sheet Sep 22."}
+  - {name: Elena Sorensen, role: Northfield technical diligence advisor (ex-CTO), notes: "Runs tech diligence call Oct 14."}
+  # --- VP Eng search ---
+  - {name: Grace Liu, role: VP Engineering finalist (ex-Chime director), notes: "Final round Oct 6; references in progress."}
+  - {name: Tomas Reyes, role: VP Engineering finalist (ex-Brex), notes: "Final round Oct 8."}
+
+storylines:
+  ach_pipeline:
+    title: "ACH pipeline rebuild (ADR-024) and the April 6 outage"
+    beats:
+      - {date: 2026-04-06, what: "P0: Sidekiq ACH batch stalls; 2,138 users' auto-deposits ($147k) miss 6 PM PT NACHA cutoff; 3-day delay; $25 credit each (~$53k)."}
+      - {date: 2026-04-14, what: "Postmortem published (Maya). Action items: durable pipeline, NACHA-cutoff alerting, Sunday load test, customer-comms runbook."}
+      - {date: 2026-04-19, what: "ADR-024 accepted: Go service + Postgres outbox + SQS FIFO, idempotent state machine."}
+      - {date: 2026-06-04, what: "Cut-over coordination meeting with Pillar (Theresa). Original cut-over target end of June."}
+      - {date: 2026-06-27, what: "Cut-over slips: Sunday load test fails at 3x volume (outbox vacuum contention). New target Aug 18."}
+      - {date: 2026-08-18, what: "Cut-over done (shadow mode Aug 4-17, then primary). Marcus + Devon. Zero missed cutoffs since."}
+      - {date: 2026-09-17, what: "30-day stability hold ends. Old Sidekiq ACH code deletion approved."}
+      - {date: 2026-10-09, what: "OPEN: Sidekiq ACH code still not deleted (Devon, due Oct 16). NACHA-cutoff alert tuning still open (Marcus, due Oct 13). Customer-comms runbook DONE (Jun 2)."}
+  investing_launch:
+    title: "ETF investing feature launch (DriveWealth)"
+    beats:
+      - {date: 2026-05-25, what: "Q3 plan: investing is priority #1, Q3 launch."}
+      - {date: 2026-07-15, what: "PRD v3 (Renee). Lead with performance not portfolio value (Nadia/Lin decision May 19)."}
+      - {date: 2026-08-28, what: "Pillar Bank (Priya Shah) signs off on money-movement profile with condition: daily funding cap $2,500/user for first 90 days."}
+      - {date: 2026-09-08, what: "Beta launch to 5% of MTU (~5k users)."}
+      - {date: 2026-09-15, what: "Position reconciliation discrepancy found: 0.4% of positions off by fractional shares after DriveWealth corporate-action events (a stock split in an ETF holding)."}
+      - {date: 2026-09-29, what: "Go/no-go #1 for GA: NO-GO. Blockers: reconciliation fix (Devon), disclosures final review (Hana), Android parity (2 screens)."}
+      - {date: 2026-10-09, what: "GA target Oct 20 is at risk. Reconciliation fix in review (Devon, due Oct 14). Disclosures signed (Oct 7). Android parity due Oct 15. Go/no-go #2 on Oct 16."}
+  series_b:
+    title: "Series B"
+    beats:
+      - {date: 2026-05-20, what: "Diligence room setup plan (Maya owns eng/security/compliance sections)."}
+      - {date: 2026-07-09, what: "Pitch process kicks off; 14 first meetings in July-August."}
+      - {date: 2026-09-22, what: "Term sheet from Northfield Ventures (lead Ravi Menon): $38M at $210M post. Granite Peak pro-rata."}
+      - {date: 2026-10-14, what: "Technical diligence call with Elena Sorensen (upcoming)."}
+      - {date: 2026-10-09, what: "OPEN for Maya: data room eng section (architecture narrative, scale metrics, security policies, SOC 2 status letter) due Oct 12; board deck eng section for Oct 21 board meeting due Oct 17. Target close: Nov 14."}
+  soc2:
+    title: "SOC 2 Type II"
+    beats:
+      - {date: 2026-06-09, what: "Sam Whitfield hired as security & compliance engineer."}
+      - {date: 2026-06-30, what: "Type I report issued by Ledgerwise Assurance (clean, 2 observations)."}
+      - {date: 2026-07-01, what: "Type II observation window starts (ends Dec 31)."}
+      - {date: 2026-09-10, what: "Readiness review: 3 gaps — quarterly access reviews late (Q3 not done), vendor risk assessments missing for 4 vendors, MDM on 88% of laptops (need 100%)."}
+      - {date: 2026-10-09, what: "Q3 access review 70% done (Sam, due Oct 10). Vendor risk: 2 of 4 done (Sam, due Oct 24). MDM 96% (IT, due Oct 17). Northfield asked for SOC 2 status letter."}
+  incident_sept:
+    title: "Sep 26 duplicate round-up debits incident"
+    beats:
+      - {date: 2026-09-26, what: "SEV1: retry storm in round-up sweep (Rails/Sidekiq, NOT the new ACH pipeline) double-debited 1,412 users ~$9 avg; caught in 47 min by Devon's reconciliation alert; reversed same day."}
+      - {date: 2026-10-01, what: "Postmortem (Marcus author, Maya reviewer). Root cause: missing idempotency key on round-up sweep job after a Sidekiq retry config change. Action items: idempotency keys on all money-moving jobs (Marcus, due Oct 23), move round-up sweep onto ADR-024 pipeline (Q4), Pillar notification within 24h — done."}
+      - {date: 2026-10-02, what: "Pillar (Theresa, Priya Shah) asks for written remediation plan by Oct 15 (Maya owns)."}
+  hiring:
+    title: "Hiring push and org design post-Series B"
+    beats:
+      - {date: 2026-05-18, what: "VP Eng search brief drafted (search waits for Series B)."}
+      - {date: 2026-06-12, what: "Sarah Kim accepts senior backend offer; starts Jul 7."}
+      - {date: 2026-08-18, what: "Theo Brandt starts (junior iOS) reporting to Nadia (trial manager track)."}
+      - {date: 2026-08-25, what: "Hollis Partners engaged for VP Eng search early (Aleks approved given term-sheet momentum)."}
+      - {date: 2026-09-21, what: "Hiring plan: 12 eng hires in 9 months post-close (2 payments, 2 iOS incl. a senior, 1 Android, 2 data/ML, 1 SRE, 1 security, 2 growth, 1 EM)."}
+      - {date: 2026-10-06, what: "Grace Liu VP Eng final round. Strong; concern: never managed a regulated-money-movement org."}
+      - {date: 2026-10-08, what: "Tomas Reyes VP Eng final round. Strong operator; concern: culture fit, very process-heavy."}
+      - {date: 2026-10-09, what: "OPEN: VP Eng decision by Oct 20 (Maya); Grace references (Priya N., due Oct 13); iOS senior offer to candidate 'Ama' pending comp approval (Nadia, due Oct 10); offer-accept rate is 55% (too low; comp bands below market for senior iOS)."}
+  kyc_migration:
+    title: "KYC vendor migration Persona -> Alloy"
+    beats:
+      - {date: 2026-04-22, what: "ADR-026 and Pillar notified."}
+      - {date: 2026-06-15, what: "New signups on Alloy."}
+      - {date: 2026-08-29, what: "Existing-user migration complete. $120k/yr COGS saved. Closed."}
+  card_issuing:
+    title: "Card issuing with Lithic"
+    beats:
+      - {date: 2026-05-25, what: "Lithic selected (build vs buy)."}
+      - {date: 2026-09-30, what: "Card program design review; soft launch slips to Q1 2027 to protect investing GA and Series B. Aleks agreed."}
+  people_threads:
+    - "Nadia: manager-track trial going well; asked about comp in Sep 1:1; Maya promised comp review post-close."
+    - "Marcus: overloaded since August (ACH cut-over + KYC + incident). Maya worried about burnout; wants VP Eng to take ops load. Marcus asked to drop Pillar weekly sync to Sarah Kim."
+    - "Devon: wants to grow into staff; reconciliation work is his proof point."
+    - "Kavi: frustrated that growth experiments are frozen during investing beta."
+    - "Maya: tired; therapy notes; 'stop being the router for every decision'."
+
+containers:
+  confluence:
+    # Formal, team-authored docs. space key -> description
+    ENG: "Engineering: ADRs, system design, eng policies (code review, on-call, perf reviews), postmortems."
+    PLAT: "Payments & Platform: ACH pipeline design, cut-over plan, runbooks, Pillar integration docs, reconciliation."
+    SEC: "Security & Compliance: SOC 2, BSA/AML, data retention, vendor risk, access reviews, security reviews."
+  notion:
+    # Two levels max: one root page per teamspace, every other page is a child of a root.
+    roots:
+      - {title: "Leadership", what: "Board updates, Series B, investor prep, strategy, exec staff notes."}
+      - {title: "Product", what: "Investing PRD, launch checklist, go/no-go notes, card issuing, pricing."}
+      - {title: "Hiring", what: "JDs, scorecards, funnel health, candidate notes, VP Eng search."}
+      - {title: "Meeting Notes", what: "Weekly eng staff, Pillar MBRs/QBRs, launch standups."}
+  obsidian_vault: "Maya"      # personal vault; folders: 1on1s/, Daily/, People/, Projects/, Reflections/, Reading/
+  local_notes: "Notes"        # ~/Notes: drafts, scratch, checklists, talk drafts; folders: drafts/, scratch/, board/
+
+# Frontmatter contract — EVERY corpus file starts with YAML frontmatter.
+frontmatter:
+  common_required: [title, author, created, updated]   # dates as YYYY-MM-DD; created <= updated <= 2026-10-09
+  confluence_extra: {space: "ENG|PLAT|SEC", labels: "[list]"}
+  notion_extra: {parent: "<root page title, omitted for root pages>"}
+  obsidian_extra: {tags: "[list]"}
+  notes_extra: {}   # local notes: nothing else
+
+writing_rules:
+  - "Body starts with '# <title>'. Then real content. 250-900 words typical; daily notes and scratch can be 80-250."
+  - "Realistic voice per source: Confluence = structured/team voice; Notion = meeting notes, plans, PRDs; Obsidian = Maya's private first-person, terse, wikilinks; local notes = rough drafts and checklists."
+  - "Write open TODOs as markdown checkboxes with owner and explicit date: '- [ ] Devon: delete Sidekiq ACH code by 2026-10-16'. Closed ones as '- [x] ...'. Most open todos due between 2026-09-28 and 2026-10-23."
+  - "Decisions: write them as 'Decision: ...' lines. Open questions: 'Open question: ...'. Risks: 'Risk: ...'. These feed Mnemify's signal extraction."
+  - "Cross-reference other docs by their exact title (Confluence/Notion/local) or [[wikilink]] (Obsidian only, must resolve to a vault note)."
+  - "No real people, no real company internals, no URLs except obvious fakes. No emails/phone numbers."

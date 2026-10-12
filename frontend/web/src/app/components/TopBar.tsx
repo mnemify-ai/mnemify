@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Moon, Search, Settings, Sun } from "lucide-react";
+import { Search, Settings, Sparkles, X } from "lucide-react";
 import { useConnections } from "../api/connections";
 import { cn } from "../lib/cn";
 import { compileFinishedSince, useStartCompile, useTerrainCurrent } from "../api/terrain";
@@ -11,10 +11,10 @@ import { apiFetch } from "../api/client";
 import { toastError, toastInfo, toastSuccess } from "../lib/toast";
 import { qk } from "../api/keys";
 import { useCommandPalette } from "../lib/commandPalette";
-import { useThemeMode } from "../lib/useThemeMode";
 import { BrandMark } from "./BrandMark";
 import { Kbd } from "./ui/Kbd";
 import { OpsPill } from "./OpsPill";
+import { isSampleHome, isSamplePath, toSamplePath } from "../demo/samplePaths";
 
 /**
  * Global watcher: when any compile finishes (even one running in the
@@ -120,27 +120,6 @@ function useRefreshChangesOnHarvestComplete() {
 
 // Ordered by usage frequency: daily surfaces first, occasional pipeline ops
 // behind one tab, rare Settings demoted to the gear icon on the right.
-/** Light/dark toggle. The Settings→General picker remains the canonical
- *  control; both stay in sync via useThemeMode's class-list observer. */
-function ThemeToggle() {
-  const [mode, setMode] = useThemeMode();
-  const dark = mode === "dark";
-  return (
-    <button
-      type="button"
-      onClick={() => setMode(dark ? "light" : "dark")}
-      aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
-      className="grid h-9 w-9 place-items-center rounded-full border border-hair bg-bone/40 text-muted transition-colors hover:bg-bone hover:text-ink"
-    >
-      {dark ? (
-        <Sun size={15} strokeWidth={1.75} aria-hidden />
-      ) : (
-        <Moon size={15} strokeWidth={1.75} aria-hidden />
-      )}
-    </button>
-  );
-}
-
 // TODOs sits second: it's the surface with the most time-sensitive content
 // (overdue / due-soon deadlines), so it earns the slot right after the map.
 // Label matches the page's own heading (ActionItemsPage title="TODOs").
@@ -164,7 +143,17 @@ function useBuildTabSuffix(): string | null {
 
 export function TopBar() {
   const { pathname } = useLocation();
-  const isHome = pathname === "/";
+  // Inside the sample workspace the tabs browse the sample and nothing else:
+  // Build, Settings, search and the ops pill all act on the user's own data,
+  // so they give way to a plain "this is a sample / exit" cluster.
+  const inSample = isSamplePath(pathname);
+  const isHome = pathname === "/" || isSampleHome(pathname);
+  const navItems = inSample
+    ? NAV_ITEMS.flatMap((item) => {
+        const to = toSamplePath(item.to);
+        return to ? [{ ...item, to }] : [];
+      })
+    : NAV_ITEMS;
   const settingsActive = pathname.startsWith("/settings");
   const openPalette = useCommandPalette((s) => s.setOpen);
   useRefreshMapDataOnCompileComplete();
@@ -180,11 +169,13 @@ export function TopBar() {
           : "bg-cream/95 backdrop-blur-md border-b border-hair",
       )}
     >
+      {/* A magenta rule across the top: you're not on your own map. */}
+      {inSample && <div className="absolute inset-x-0 top-0 h-[3px] bg-magenta" aria-hidden />}
       <div className="w-full max-w-page mx-auto px-6 lg:px-10 flex items-center justify-between gap-6">
         <div className="flex items-center gap-10">
           <BrandMark />
           <nav className="hidden md:flex items-center gap-1" aria-label="Primary">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -206,6 +197,9 @@ export function TopBar() {
             ))}
           </nav>
         </div>
+        {inSample ? (
+          <SampleWorkspaceControls />
+        ) : (
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -224,7 +218,6 @@ export function TopBar() {
             <Kbd className="hidden md:inline-flex ml-0.5">⌘K</Kbd>
           </button>
           <OpsPill />
-          <ThemeToggle />
           {/* Labelled rather than icon-only: a bare gear names itself nowhere,
               and a hover tooltip only reaches people who already suspected it
               was Settings. Takes the Search pill's shape so the right-hand
@@ -245,7 +238,32 @@ export function TopBar() {
             <span className="hidden md:inline font-sans text-[13px]">Settings</span>
           </NavLink>
         </div>
+        )}
       </div>
     </header>
+  );
+}
+
+/** Inside /sample, in place of search / ops / Settings: whose data this is,
+ *  and an unmissable way back to the user's own home. */
+function SampleWorkspaceControls() {
+  return (
+    <div className="flex shrink-0 items-center gap-3">
+      <span
+        className="hidden lg:inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-magenta/40 bg-magenta/[0.08] px-3 h-8 font-sans text-[12px] text-ink"
+        title="A fictional company's harvested and compiled notes. Nothing here is yours, and nothing you do here is saved."
+      >
+        <Sparkles size={13} strokeWidth={1.75} className="text-magenta" aria-hidden />
+        <span className="font-medium">Sample workspace</span>
+        <span className="text-muted">· Stencil, a fictional company</span>
+      </span>
+      <NavLink
+        to="/"
+        className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-full bg-magenta px-4 font-sans text-[13px] font-medium text-cream shadow-sm transition-colors hover:bg-magenta/90"
+      >
+        <X size={14} strokeWidth={2} aria-hidden />
+        Exit sample
+      </NavLink>
+    </div>
   );
 }

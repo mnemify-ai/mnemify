@@ -1,12 +1,11 @@
 import { useCallback } from "react";
 import { apiUrl, CLIENT_HEADER, CLIENT_NAME } from "../app/api/client";
 import { newLocalId, useActiveThreadMessages, useAskThreadStore } from "./askThreadStore";
-import type { AgentStep, AskMessage, AskSettings, Citation } from "./types";
+import type { AgentStep, AskMessage, AskSettings, AskStatus, Citation } from "./types";
 import { activeKey, wireProvider } from "./types";
-import { useMapPulseStore } from "../app/lib/mapPulseStore";
 import { asOfWireDate, useMapTimelineStore } from "../app/lib/mapTimelineStore";
 import { useMapHighlightStore } from "../app/lib/mapHighlightStore";
-import { highlightFromCitations, usedCitations } from "./askHighlight";
+import { applyAskEvent, applyAskEventToMap, extractCitationIds } from "./askEvents";
 import { queryClient } from "../app/lib/queryClient";
 import { qk } from "../app/api/keys";
 
@@ -128,60 +127,39 @@ export function useAskStream(settings: AskSettings) {
           },
           onCitations: (citations) => {
             lastCitations = citations;
-            patch(assistantId, (m) => ({ ...m, citations }));
+            const ev = { kind: "citations", citations } as const;
+            patch(assistantId, (m) => applyAskEvent(m, ev));
             // Light the map with everything retrieval touched. The agentic
             // path re-sends citations cumulatively as tools register items,
             // so keep one token per answer: first arrival frames the camera,
             // later ones only widen the set.
-            const ids = highlightFromCitations(citations);
-            const hl = useMapHighlightStore.getState();
-            if (hl.highlight === null) hl.setHighlight({ ...ids, label: query.trim() });
-            else hl.narrow(ids);
-            useMapPulseStore.getState().pulseRegions(ids.regionIds);
+            applyAskEventToMap(ev, query, lastCitations);
           },
           onDelta: (text) => {
-            patch(assistantId, (m) => {
-              const nextText = m.text + text;
-              // Surface chips live as [cN] markers stream in; the server's
-              // citations_used event reconciles at the end.
-              return {
-                ...m,
-                text: nextText,
-                pending: true,
-                usedCitationIds: extractCitationIds(nextText),
-              };
-            });
+            patch(assistantId, (m) => applyAskEvent(m, { kind: "delta", text }));
+          },
+          onStatus: (status) => {
+            patch(assistantId, (m) => applyAskEvent(m, { kind: "status", status }));
           },
           onAgentStep: (step) => {
             // Mirror the agent's exploration onto the 3D map. Fire-and-forget:
             // the store self-expires, so a dock closed mid-answer leaves
             // nothing behind.
-            useMapPulseStore.getState().pulseRegions(step.node_ids);
-            patch(assistantId, (m) => {
-              const steps = m.steps ? [...m.steps] : [];
-              const idx = steps.findIndex((s) => s.id === step.id);
-              if (idx === -1) steps.push(step);
-              else steps[idx] = step;
-              return { ...m, steps };
-            });
+            const ev = { kind: "agent_step", step } as const;
+            applyAskEventToMap(ev, query, lastCitations);
+            patch(assistantId, (m) => applyAskEvent(m, ev));
           },
           onCitationsUsed: (used, fallback) => {
-            patch(assistantId, (m) => ({
-              ...m,
-              usedCitationIds: used,
-              citationsFallback: fallback,
-            }));
-            // Narrow the map to what the answer actually leaned on. Same
-            // token, so the camera stays where the first framing put it.
-            useMapHighlightStore
-              .getState()
-              .narrow(highlightFromCitations(usedCitations(lastCitations, used)));
+            const ev = { kind: "citations_used", used, fallback } as const;
+            patch(assistantId, (m) => applyAskEvent(m, ev));
+            // Narrow the map to what the answer actually leaned on.
+            applyAskEventToMap(ev, query, lastCitations);
           },
           onError: (msg) => {
-            patch(assistantId, (m) => ({ ...m, error: msg, pending: false }));
+            patch(assistantId, (m) => applyAskEvent(m, { kind: "error", message: msg }));
           },
           onDone: () => {
-            patch(assistantId, (m) => ({ ...m, pending: false }));
+            patch(assistantId, (m) => applyAskEvent(m, { kind: "done" }));
           },
         });
       } catch (err) {
@@ -223,25 +201,14 @@ type Handlers = {
   onCitations: (citations: Citation[]) => void;
   onDelta: (text: string) => void;
   onAgentStep: (step: AgentStep) => void;
+  onStatus: (status: AskStatus) => void;
   onCitationsUsed: (used: string[], fallback: boolean) => void;
   onError: (msg: string) => void;
   onDone: () => void;
 };
 
-const CITATION_MARKER = /\[(c\d+)\]/g;
-
-/** Citation ids referenced in the text, deduped in first-appearance order. */
-export function extractCitationIds(text: string): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const match of text.matchAll(CITATION_MARKER)) {
-    if (!seen.has(match[1])) {
-      seen.add(match[1]);
-      out.push(match[1]);
-    }
-  }
-  return out;
-}
+// Kept importable from here for existing callers.
+export { extractCitationIds };
 
 async function consumeSseStream(
   stream: ReadableStream<Uint8Array>,
@@ -264,6 +231,8 @@ async function consumeSseStream(
         handlers.onCitations((payload?.citations as Citation[]) || []);
       } else if (currentEvent === "delta") {
         handlers.onDelta(payload?.text || "");
+      } else if (currentEvent === "status") {
+        if (typeof payload?.stage === "string") handlers.onStatus(payload as AskStatus);
       } else if (currentEvent === "agent_step") {
         if (payload?.id && payload?.label) {
           handlers.onAgentStep(payload as AgentStep);

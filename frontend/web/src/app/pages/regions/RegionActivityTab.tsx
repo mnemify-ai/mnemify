@@ -7,10 +7,12 @@ import { ChangeRow, groupChanges } from "../../components/RecentChangesPanel";
 import { useRegionChanges, useRegionThreads } from "../../api/regions";
 import { relativeTime } from "../../lib/relativeTime";
 import { resumeThread } from "../../../ask/threadSync";
+import { useDemo } from "../../demo/DemoContext";
 import { useRegionWorkspaceContext } from "./useRegionWorkspace";
 
 export function RegionActivityTab() {
   const { regionId, askRegion } = useRegionWorkspaceContext();
+  const demo = useDemo();
   const threads = useRegionThreads(regionId);
   const changes = useRegionChanges(regionId, "last_compile");
   const days = useMemo(() => groupChanges(changes.data?.changes ?? []), [changes.data]);
@@ -32,7 +34,7 @@ export function RegionActivityTab() {
           <ul className="mt-2 divide-y divide-hair/70">
             {threads.data!.threads.map((t) => (
               <li key={t.id}>
-                <button type="button" onClick={() => void resumeThread(t.id)} className="group flex w-full items-center gap-3 py-3 text-left">
+                <button type="button" onClick={() => (demo ? demo.openChat({ threadId: t.id }) : void resumeThread(t.id))} className="group flex w-full items-center gap-3 py-3 text-left">
                   <span className="inline-grid h-9 w-9 shrink-0 place-items-center rounded-full bg-lavender/40 text-ink">
                     <MessageSquare size={15} strokeWidth={1.75} aria-hidden />
                   </span>

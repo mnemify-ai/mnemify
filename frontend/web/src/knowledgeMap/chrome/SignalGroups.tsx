@@ -4,7 +4,7 @@
 
 import { useMemo } from 'react';
 import {
-  AlertTriangle, CircleCheckBig, HelpCircle, ListTodo, User, Clock, Check,
+  AlertTriangle, CircleCheckBig, HelpCircle, ListTodo, User, Clock, Check, FileText,
   type LucideIcon,
 } from 'lucide-react';
 import type { AttentionSignal, Note } from '../types';
@@ -33,9 +33,12 @@ const RESOLVED_STATUSES = new Set([
 export function SignalGroups({
   signals,
   notesById,
+  onOpenNote,
 }: {
   signals: AttentionSignal[];
   notesById: Map<string, Note>;
+  /** Opens a source document in the panel. Without it, sources stay plain text. */
+  onOpenNote?: (noteId: string) => void;
 }) {
   const groups = useMemo(
     () => KIND_ORDER
@@ -74,12 +77,8 @@ export function SignalGroups({
                     <SeverityTag signal={signal} />
                   </div>
                   {signal.owner && <div className={signalMetaCls}>Owner: {signal.owner}</div>}
-                  {(signal.status || sourceLabel(signal, notesById)) && (
-                    <div className={signalMetaCls}>
-                      {signal.status}
-                      {sourceLabel(signal, notesById)}
-                    </div>
-                  )}
+                  {signal.status && <div className={signalMetaCls}>{signal.status}</div>}
+                  <SignalSources signal={signal} notesById={notesById} onOpenNote={onOpenNote} />
                 </div>
               ))}
               {group.rows.length > 6 && (
@@ -117,10 +116,44 @@ function SeverityTag({ signal }: { signal: AttentionSignal }) {
   );
 }
 
-function sourceLabel(signal: AttentionSignal, notesById: Map<string, Note>): string {
-  const titles = signal.source_note_ids
-    .map((id) => notesById.get(id)?.title)
-    .filter(Boolean)
-    .slice(0, 2);
-  return titles.length ? ` · ${titles.join(', ')}` : '';
+// The documents a highlight was extracted from (#16). Each resolved note is a
+// link into the panel's doc view, so the user can check the highlight against
+// its source; notes missing from the registry are skipped.
+const MAX_SOURCES = 2;
+
+function SignalSources({
+  signal,
+  notesById,
+  onOpenNote,
+}: {
+  signal: AttentionSignal;
+  notesById: Map<string, Note>;
+  onOpenNote?: (noteId: string) => void;
+}) {
+  const notes = signal.source_note_ids
+    .map((id) => notesById.get(id))
+    .filter((n): n is Note => n !== undefined);
+  if (notes.length === 0) return null;
+  const shown = notes.slice(0, MAX_SOURCES);
+  const extra = notes.length - shown.length;
+  if (!onOpenNote) {
+    return <div className={signalMetaCls}>{shown.map((n) => n.title).join(', ')}</div>;
+  }
+  return (
+    <div className={`${signalMetaCls} flex flex-wrap items-center gap-x-2 gap-y-0.5`}>
+      {shown.map((n) => (
+        <button
+          key={n.id}
+          type="button"
+          onClick={() => onOpenNote(n.id)}
+          title={`Open ${n.title}`}
+          className="inline-flex min-w-0 max-w-full items-center gap-1 text-magenta hover:underline"
+        >
+          <FileText size={11} strokeWidth={1.75} className="shrink-0" aria-hidden />
+          <span className="truncate">{n.title}</span>
+        </button>
+      ))}
+      {extra > 0 && <span>+{extra} more</span>}
+    </div>
+  );
 }

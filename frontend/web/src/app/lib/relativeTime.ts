@@ -1,4 +1,5 @@
-import { formatDistanceToNowStrict } from "date-fns";
+import { formatDistanceStrict } from "date-fns";
+import { nowMs } from "./clock";
 import { RELATIVE_TIME_JUST_NOW_THRESHOLD_MS } from "./constants";
 
 /**
@@ -9,9 +10,10 @@ export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
-  const ms = Date.now() - date.getTime();
+  const now = nowMs();
+  const ms = now - date.getTime();
   if (ms < RELATIVE_TIME_JUST_NOW_THRESHOLD_MS) return "just now";
-  const formatted = formatDistanceToNowStrict(date, { addSuffix: false });
+  const formatted = formatDistanceStrict(date, now, { addSuffix: false });
   return `${formatted} ago`
     .replace(" seconds", "s")
     .replace(" second", "s")

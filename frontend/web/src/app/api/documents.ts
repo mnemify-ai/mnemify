@@ -91,7 +91,7 @@ export function useDocuments(params: {
 }) {
   const { source = null, search = null, page = 0, limit = 50 } = params;
   return useQuery({
-    queryKey: qk.documents({ source, search, page }),
+    queryKey: qk.documents({ source, search, page, limit }),
     queryFn: () => {
       const qs = new URLSearchParams();
       if (source) qs.set("source", source);

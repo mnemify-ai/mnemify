@@ -47,7 +47,7 @@ export function GeneralSection() {
       <SettingsSection
         eyebrow="Display"
         title="Theme"
-        help="Switches between the canonical cream palette and an after-dark variant with the same brand hues. Motion respects your OS prefers-reduced-motion setting. The TopBar moon/sun button toggles the same setting."
+        help="Switches between the canonical cream palette and an after-dark variant with the same brand hues. Motion respects your OS prefers-reduced-motion setting."
       >
         <div className="grid grid-cols-2 gap-2 max-w-md">
           <ThemeButton

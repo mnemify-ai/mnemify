@@ -3,8 +3,9 @@
     Create the Mnemify shortcuts (Windows).
 
 .DESCRIPTION
-    Writes Mnemify.lnk to the Desktop and to the Start Menu's Programs folder.
-    Set MNEMIFY_LAUNCHER_DIR to write a single shortcut somewhere else instead.
+    Writes Mnemify.lnk to the Start Menu's Programs folder, and to the Desktop
+    when MNEMIFY_DESKTOP_SHORTCUT=1 (setup.ps1 asks). Set MNEMIFY_LAUNCHER_DIR
+    to write a single shortcut somewhere else instead.
 
     The shortcut hardcodes the absolute path of this checkout. If you move or
     rename the folder, run setup.bat again from the new location to rewrite it.
@@ -36,8 +37,11 @@ $destDirs = @()
 if ($env:MNEMIFY_LAUNCHER_DIR) {
     $destDirs += $env:MNEMIFY_LAUNCHER_DIR
 } else {
-    $destDirs += [Environment]::GetFolderPath('Desktop')
     $destDirs += [Environment]::GetFolderPath('Programs')
+    if ($env:MNEMIFY_DESKTOP_SHORTCUT -eq '1') {
+        # GetFolderPath, not $HOME\Desktop: OneDrive often moves the Desktop.
+        $destDirs += [Environment]::GetFolderPath('Desktop')
+    }
 }
 
 $shell = New-Object -ComObject WScript.Shell
@@ -55,4 +59,8 @@ foreach ($dir in $destDirs) {
     $sc.Save()
     Write-Host ("Shortcut: " + $lnk)
 }
-Write-Host 'Start Mnemify from the Desktop icon or the Start Menu.'
+if ($env:MNEMIFY_DESKTOP_SHORTCUT -eq '1') {
+    Write-Host 'Start Mnemify from the Desktop icon or the Start Menu.'
+} else {
+    Write-Host 'Start Mnemify from the Start Menu.'
+}

@@ -12,6 +12,7 @@ import type { RenderData } from '../types';
 import { useKnowledgeMapStore } from '../store';
 import { useTagRegionHighlight } from '../util/useTagRegionHighlight';
 import { resolveTagLabel } from '../util/topLevelRegions';
+import { formatSimilarity, similarityPercent } from '../util/similarity';
 
 const LIFT = 4; // apparent-space units above the spire summit
 
@@ -76,12 +77,12 @@ export function TagRelationPopover({
                   <span
                     style={{
                       ...barFillStyle,
-                      width: `${Math.round(Math.max(0, Math.min(1, weight)) * 100)}%`,
+                      width: `${similarityPercent(weight)}%`,
                       background: region.color,
                     }}
                   />
                 </span>
-                <span style={weightStyle}>{weight.toFixed(2)}</span>
+                <span style={weightStyle}>{formatSimilarity(weight)}</span>
               </button>
             );
           })}
@@ -159,7 +160,7 @@ const barFillStyle: React.CSSProperties = {
 };
 
 const weightStyle: React.CSSProperties = {
-  width: 26,
+  width: 32,
   textAlign: 'right',
   fontSize: 10,
   fontVariantNumeric: 'tabular-nums',

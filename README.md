@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://mnemify.ai"><img alt="Website" src="https://img.shields.io/badge/website-mnemify.ai-8b2e4a?style=flat-square"></a>
-  <a href="backend/pyproject.toml"><img alt="Version" src="https://img.shields.io/badge/version-v1.2.0-1f6feb?style=flat-square"></a>
+  <a href="backend/pyproject.toml"><img alt="Version" src="https://img.shields.io/badge/version-v1.3.0-1f6feb?style=flat-square"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-6a994e?style=flat-square"></a>
   <a href="backend/pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-%3E%3D3.11-3776ab?style=flat-square&logo=python&logoColor=white"></a>
   <a href="frontend/web/package.json"><img alt="Node" src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white"></a>
@@ -76,7 +76,9 @@ Setup installs **[uv](https://docs.astral.sh/uv/)** for you if it's missing, and
 | **Download `main.zip`** | [`main.zip`](https://github.com/mnemify-ai/mnemify/archive/refs/heads/main.zip) → unzip → `sh setup.sh` in the unzipped folder (Windows: double-click `setup.bat`). Needs Node.js 18+. |
 | **Developers** | Two terminals, hot reload: `cd backend && uv sync && uv run mnemify up --reload --no-browser` and `cd frontend/web && npm install && npm run dev` → <http://localhost:5173>. |
 
-Setup installs the backend, builds the web app (or uses the prebuilt one from a release ZIP), creates a **Mnemify** icon (macOS: `~/Applications`; Linux: your app menu; Windows: Desktop + Start Menu), and opens the app on <http://127.0.0.1:8783>. The first run needs an internet connection to download the Python packages.
+Setup installs the backend, builds the web app (or uses the prebuilt one from a release ZIP), creates a **Mnemify** icon (macOS: `~/Applications`, so Launchpad and Spotlight find it; Linux: your app menu; Windows: Start Menu), asks whether to add one to your Desktop too (macOS and Windows), and opens the app on <http://127.0.0.1:8783>. The first run needs an internet connection to download the Python packages.
+
+On macOS, the first time you open the Mnemify icon, macOS may ask to let Mnemify access the folder you installed it in (Documents, Desktop or Downloads). Click **Allow**: Mnemify runs from that folder. If you clicked Don't Allow, turn it back on under System Settings → Privacy & Security → Files & Folders → Mnemify.
 
 On Windows, double-clicking `setup.bat` is fine. It runs PowerShell with `-ExecutionPolicy Bypass` for that one process only — nothing in your system settings is read or changed.
 

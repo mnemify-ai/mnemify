@@ -7,6 +7,7 @@ import {
   useAskDockStore,
 } from "../../../ask/askDockStore";
 import { cn } from "../../lib/cn";
+import { useDemo } from "../../demo/DemoContext";
 
 interface SideDrawerProps {
   open: boolean;
@@ -47,19 +48,23 @@ export function SideDrawer({
   // Selecting a constant 0 for the common case is deliberate: every drawer in
   // the app renders this component, and without the guard all of them would
   // re-render on every dock open/close/resize-release.
+  // The sample workspace doesn't mount the Ask dock: there is nothing to
+  // avoid, and its persisted layout state isn't the sample's to change.
+  const demo = useDemo();
+  const avoidDock = avoidAskDock && !demo;
   const dockInset = useAskDockStore((s) =>
-    avoidAskDock ? dockOverlayInset(s) : 0,
+    avoidDock ? dockOverlayInset(s) : 0,
   );
 
   // A maximized dock owns the whole shell row, so there is nowhere beside it
   // to be. Claim a slot for as long as this drawer is open: the dock restores
   // its docked width on the way in and refuses to re-maximize until we let go.
   useEffect(() => {
-    if (!avoidAskDock || !open) return;
+    if (!avoidDock || !open) return;
     const { openOverlay, closeOverlay } = useAskDockStore.getState();
     openOverlay();
     return closeOverlay;
-  }, [avoidAskDock, open]);
+  }, [avoidDock, open]);
 
   const reduceMotion =
     typeof window !== "undefined" &&
@@ -92,7 +97,7 @@ export function SideDrawer({
           data-vaul-animate={reduceMotion ? "false" : undefined}
           className={cn(
             "fixed top-0 bottom-0 right-0 z-40 flex flex-col bg-cream shadow-xl outline-none",
-            avoidAskDock && [
+            avoidDock && [
               "md:right-[var(--ask-dock-inset)]",
               // The inset eats into the available width, so cap it rather
               // than letting a 480px drawer run off the left edge on a
@@ -115,7 +120,7 @@ export function SideDrawer({
             className,
           )}
           style={
-            avoidAskDock
+            avoidDock
               ? ({
                   width,
                   // Re-clamped to this viewport, exactly the way the dock

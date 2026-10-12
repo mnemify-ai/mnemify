@@ -262,7 +262,7 @@ export function OpsPill() {
               </>
             ) : null}
             <Link
-              to="/build/harvest"
+              to={compiling || compileFailed ? "/build/compile" : "/build/harvest"}
               onClick={() => setOpen(false)}
               className="ml-auto inline-flex items-center gap-1 text-xs text-muted hover:text-ink"
             >
