@@ -7,6 +7,7 @@
 <p align="center">
   <a href="https://mnemify.ai"><img alt="Website" src="https://img.shields.io/badge/website-mnemify.ai-8b2e4a?style=flat-square"></a>
   <a href="backend/pyproject.toml"><img alt="Version" src="https://img.shields.io/badge/version-v1.3.0-1f6feb?style=flat-square"></a>
+  <a href="https://github.com/mnemify-ai/mnemify/releases/latest"><img alt="Download" src="https://img.shields.io/badge/download-latest%20release-2ea043?style=flat-square&logo=github&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-6a994e?style=flat-square"></a>
   <a href="backend/pyproject.toml"><img alt="Python" src="https://img.shields.io/badge/python-%3E%3D3.11-3776ab?style=flat-square&logo=python&logoColor=white"></a>
   <a href="frontend/web/package.json"><img alt="Node" src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white"></a>
@@ -23,9 +24,19 @@
 
 <p align="center"><sub>Click the preview to watch the full-resolution demo.</sub></p>
 
-Our knowledge was scattered across Notion, Confluence, Obsidian vaults, Zoom meeting notes, Google meeting notes and so on.... We built Mnemify to bring it together into one connected, searchable map — and we use it every day to rediscover what we know and give our AI tools better context.
+**Mnemify is open-source AI context infrastructure.** It turns everything you've worked on — notes, wikis, tickets, meeting transcripts — into one local, persistent knowledge map that you and your AI tools can explore, query and cite. Notion, Confluence and Obsidian ship today; Jira, Slack, Gmail and Google Meet notes are already built and landing next.
 
-For several month we have been using this product ourselves and found it very useful. Now we are sharing it with you. 
+```sh
+git clone https://github.com/mnemify-ai/mnemify && cd mnemify && sh setup.sh
+```
+
+## Why we built it
+
+Most of the people are using multiple notetaking apps, we have been using Obisidan, Notion, Google notetaking app, notepad, Confluence and so on all for different reasons. We decided to create a platform for us to put all the notes together in one space. 
+
+Mnemify brings everything meetings, personal notes, work notes, tickets into one space that runs locally on our own machines, with your personal AI support on top: a 3D map to explore it, a chat that answers from it and cites its sources, and compact context we can hand to any other AI tool. Nothing leaves the machine, and nothing is written back to the sources.
+
+We have been using it ourselves every day for several months, found it genuinely useful, and decided to share it.
 
 ## How it works
 
@@ -43,7 +54,7 @@ Everything Mnemify generates lives in one folder on your machine, outside this r
 - **3D knowledge map** — an emergent hex terrain where regions and peaks come from embedding similarity.
 - **Chat over your map** — grounded answers that start from regions, topics, and entities, and cite the exact source passages they used.
 - **Attention signals** — **todos**, **risks**, **decisions**, **open questions,** and **owners** pulled from your content, rolled into an urgency score per region and shown in the **Burning** overlay.
-- **Action items** — every **open todo** across all sources are clustered into one list, bucketed by deadline against today's date.
+- **Action items** — every **open todo** across all sources is clustered into one list, bucketed by deadline against today's date.
 - **What changed** — documents harvested or deleted since your last compile, so you always know what the map doesn't know yet.
 - **Documents browser** — search and filter everything harvested, open the clean-markdown version, and view attachments in place.
 - **Schedules** — **daily updates on your documents**, so your map stays fresh without you remembering to run anything.
@@ -52,13 +63,6 @@ Everything Mnemify generates lives in one folder on your machine, outside this r
 - **Data retention** — auto-purge of old raw documents and a type-to-confirm full reset, both under **Settings → Data**.
 - **Audit log** — a paginated record of every harvest event, so you can see exactly what was fetched and when.
 - **Runs itself** — starts from a desktop icon, stops after 30 idle minutes, and updates by re-running setup.
-
-## Coming next
-
-- [ ] **You decide the regions** — **pin**, **rename**, **split**, or **merge** regions and have the compiler respect *your* structure, not only HDBSCAN's.
-- [ ] **Real World map** — project your knowledge onto **cities**, **districts**, and **streets**, and explore documents **street-view style**.
-- [ ] **Sync between sources** — push selected information from one source to another, e.g. a **Notion** decision into a **Confluence** page.
-- [ ] **More connectors** — **Jira**, **Slack**, **Gmail**, and **Google Meet Notes** are built and tested; they ship once the wizards are polished.
 
 ---
 
@@ -127,13 +131,13 @@ Open **Build → Sources**. Mnemify harvests **Notion**, **Confluence**, and **O
 
 Nothing here needs a file edited. Tokens are written to your data folder, readable only by you, and never to the repo.
 
-Then run a **harvest**, then a **compile**, and the home page turns into a living map of everything you've worked on. (Until you compile, it shows the connect → harvest → compile onboarding screen.) The first harvest and compile take a while; after that results are cached and later runs are much faster.
+Then run a **harvest**, then a **compile**, and the home page turns into a living map of everything you've worked on. (Until you compile, it shows the connect → harvest → compile onboarding screen.) How long it takes depends on the size of your sources and on API latency more than on your hardware: our own first run over ~700 Confluence pages harvested in about 1.5 minutes and compiled in about 6.5 minutes with OpenAI. After that results are cached and later runs are much faster.
 
 ## AI models
 
 The **Compile** step and **Chat** need a language model. You have three options, and Mnemify picks up whichever you have. Set keys under **Settings → AI & Models**:
 
-- **OpenAI** (recommended) — set `OPENAI_API_KEY`. This is the default mode and the one we run day to day. Also provides the embeddings (multilingual, best map quality).
+- **OpenAI** (recommended) — set `OPENAI_API_KEY`. This is the default mode and the one we run day to day. Also provides the embeddings (multilingual, best map quality). Cost is small: our first compile of ~700 Confluence pages used about 1.8M input and 0.4M output tokens, roughly $0.40 at current `gpt-6-luna` list prices (under $1 on the previous `gpt-5.6-luna`), plus a few cents of embeddings. Recompiles reuse cached results and cost a fraction of that. Local mode is free.
 - **Claude Code** — if the `claude` CLI is installed and logged in, Mnemify detects it automatically and can use your Claude subscription for compile and chat, no API key needed. An Anthropic API key (`ANTHROPIC_API_KEY`) works too. Anthropic has no embeddings API, so with no OpenAI key Mnemify asks before your first compile whether to run a small embedding model on your computer instead (a one-time ~67 MB download, English-only, regions group a little more coarsely).
 - **Local** — compiles deterministically with no key and no network. Good for a first look; the map is much better with a real model.
 
@@ -146,6 +150,13 @@ Mnemify is **read-only**. It never edits Notion, Confluence, or any other source
 On top of the semantic map, Mnemify pulls out **attention signals** straight from your content — todos, risks, decisions, open questions, owners, and recent changes — and rolls them up into an urgency score for every region and topic. Flip the map into the **Burning** overlay and the same terrain is tinted by what needs attention, without the geography changing under you. Clicking a region or tag shows its summary, active documents, and every signal behind it, each linked back to the source page.
 
 **Chat** works over the compiled map rather than over raw documents: it starts from regions, topics, entities, and attention signals, then cites only the source passages it needs to ground an answer. That keeps context small and fast, and it's the same compact context Mnemify can hand to your other AI tools.
+
+## Coming next
+
+- [ ] **You decide the regions** — **pin**, **rename**, **split**, or **merge** regions and have the compiler respect *your* structure, not only HDBSCAN's.
+- [ ] **Real World map** — project your knowledge onto **cities**, **districts**, and **streets**, and explore documents **street-view style**.
+- [ ] **Sync between sources** — push selected information from one source to another, e.g. a **Notion** decision into a **Confluence** page.
+- [ ] **More connectors** — **Jira**, **Slack**, **Gmail**, and **Google Meet Notes** are built and tested; they ship once the wizards are polished.
 
 ---
 
