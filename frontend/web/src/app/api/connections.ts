@@ -17,6 +17,10 @@ export interface Connection {
   /** Configured scope ids that have no harvested docs yet. Non-zero after a
    *  Manage Scope edit until the user clicks Harvest. */
   pending_scope_count: number;
+  /** Obsidian only: vault folders with notes that the saved scope leaves out
+   *  (typically created after the scope was picked). Nothing is harvested
+   *  from them until the user adds them. */
+  new_folders?: string[];
   /** Local files only: every linked folder. `scope` for this source is the
    *  flat `<root>::<entry>` form (`<root>::` = the whole folder). */
   roots?: LocalRoot[];

@@ -8,7 +8,7 @@ import { Pill } from "./ui/Pill";
 import { cn } from "../lib/cn";
 import { useHarvestCurrent, useStartHarvest } from "../api/harvest";
 import { toast } from "sonner";
-import { useRemoveLocalFilesRoot, type Connection } from "../api/connections";
+import { useRemoveLocalFilesRoot, useUpdateScope, type Connection } from "../api/connections";
 
 export type CardState = "connected" | "not_connected" | "not_supported";
 
@@ -46,6 +46,7 @@ export function ConnectionCard({
   const harvestCurrent = useHarvestCurrent({ poll: true });
   const navigate = useNavigate();
   const removeRoot = useRemoveLocalFilesRoot();
+  const updateScope = useUpdateScope();
   const isLocalFiles = source === "localfiles";
 
   useEffect(() => {
@@ -60,6 +61,24 @@ export function ConnectionCard({
   const isComingSoon = state === "not_supported";
   const hasHarvested =
     isConnected && connection && connection.doc_count > 0 && !!connection.last_harvest_at;
+
+  // Obsidian: folders that exist in the vault but not in the saved scope.
+  const newFolders = connection?.new_folders ?? [];
+
+  function handleAddNewFolders() {
+    if (!connection || newFolders.length === 0) return;
+    updateScope.mutate(
+      { source, scope: [...connection.scope, ...newFolders] },
+      {
+        onSuccess: () =>
+          toast.success(
+            `Added ${newFolders.length} folder${newFolders.length === 1 ? "" : "s"} to scope.`,
+            { description: "Click Harvest on this connection to pull them in." },
+          ),
+        onError: (err) => toast.error("Couldn't update scope", { description: String(err) }),
+      },
+    );
+  }
 
   function handleReharvest() {
     startHarvest.mutate(
@@ -218,6 +237,50 @@ export function ConnectionCard({
             </p>
           </div>
         )}
+
+      {/* Unscoped folders: the vault has note folders the saved scope leaves
+          out. Never harvested silently — the user adds them (or picks) here. */}
+      {isConnected && newFolders.length > 0 && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-magenta/25 bg-magenta/[0.04] px-3 py-2.5">
+          <FolderPlus
+            size={14}
+            strokeWidth={1.75}
+            aria-hidden
+            className="mt-0.5 shrink-0 text-magenta"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="font-sans text-xs text-ink leading-snug">
+              <span className="font-medium">
+                {newFolders.length} folder{newFolders.length === 1 ? "" : "s"} in your vault
+                {newFolders.length === 1 ? " isn't" : " aren't"} being harvested.
+              </span>{" "}
+              <span className="text-muted break-words">
+                {newFolders.slice(0, 4).join(", ")}
+                {newFolders.length > 4 ? ` and ${newFolders.length - 4} more` : ""}
+              </span>
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleAddNewFolders}
+                disabled={updateScope.isPending}
+              >
+                Add {newFolders.length === 1 ? "it" : "them"}
+              </Button>
+              {onManageScope && (
+                <button
+                  type="button"
+                  onClick={onManageScope}
+                  className="font-sans text-[11px] text-muted hover:text-ink px-2.5 py-1.5 rounded-full transition-colors duration-fast"
+                >
+                  Choose…
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Coming-soon cards have no action footer — the section heading already
           says "Available in a later v2.x" so per-card text would be redundant. */}

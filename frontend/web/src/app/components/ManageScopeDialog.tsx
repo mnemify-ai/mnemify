@@ -228,7 +228,7 @@ function ManageScopeDialogShell({
         <h2 className="font-serif text-2xl text-ink leading-tight">Manage scope</h2>
         <p className="font-sans text-sm text-muted mt-2 max-w-prose">
           {source === "obsidian"
-            ? "Which vault folders should Mnemify harvest? Pick a parent folder to include everything beneath it. Leave empty to harvest the whole vault."
+            ? "Which vault folders should Mnemify harvest? Pick a parent folder to include everything beneath it. Leave empty — or check every folder — to harvest the whole vault, including folders you add later."
             : source === "localfiles"
               ? "Which parts of each linked folder should Mnemify harvest? Pick sub-folders or single files; leave everything unchecked to harvest that whole folder."
             : source === "confluence"

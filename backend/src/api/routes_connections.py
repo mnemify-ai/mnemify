@@ -111,6 +111,90 @@ def _pending_scope_count(source: str, scope: list[str]) -> int:
     return len({s for s in cleaned} - snapshot_set)
 
 
+# Cap on directories visited by the vault walks below — the Connections list
+# is polled, so a pathological vault must not make it slow.
+_VAULT_WALK_CAP = 3000
+
+
+def _obsidian_uncovered_folders(
+    vault_path: str, watch_folders: list[str], *, limit: int = 50
+) -> list[str]:
+    """Vault folders that hold notes but sit outside ``watch_folders``.
+
+    Reports the *topmost* uncovered folders (their subfolders come along when
+    the user adds them — the scanner walks recursively). Empty
+    ``watch_folders`` means the whole vault is harvested, so nothing is
+    uncovered. Hidden and default-ignored folders are skipped, as are folders
+    with no ``.md`` beneath them.
+    """
+    watch = [w.replace("\\", "/").strip("/") for w in watch_folders if w and w.strip("/")]
+    if not watch:
+        return []
+    from src.harvester.obsidian.scanner import DEFAULT_IGNORE
+
+    try:
+        root = Path(os.path.expanduser(vault_path)).resolve()
+    except Exception:  # noqa: BLE001
+        return []
+    if not root.is_dir():
+        return []
+
+    ignored = {p[:-2] for p in DEFAULT_IGNORE if p.endswith("/*")}
+
+    def covered(rel: str) -> bool:
+        return any(rel == w or rel.startswith(w + "/") for w in watch)
+
+    def ancestor_of_watch(rel: str) -> bool:
+        return any(w.startswith(rel + "/") for w in watch)
+
+    def has_notes(d: Path) -> bool:
+        for _dirpath, dirnames, filenames in os.walk(d):
+            dirnames[:] = [x for x in dirnames if not x.startswith(".")]
+            if any(f.endswith(".md") and not f.startswith(".") for f in filenames):
+                return True
+        return False
+
+    out: list[str] = []
+    queue: list[Path] = [root]
+    visited = 0
+    while queue and visited < _VAULT_WALK_CAP and len(out) < limit:
+        current = queue.pop(0)
+        try:
+            children = sorted(current.iterdir(), key=lambda x: x.name.lower())
+        except (PermissionError, OSError):
+            continue
+        for child in children:
+            visited += 1
+            if child.name.startswith(".") or not child.is_dir() or child.is_symlink():
+                continue
+            rel = child.relative_to(root).as_posix()
+            if rel in ignored or covered(rel):
+                continue
+            if ancestor_of_watch(rel):
+                queue.append(child)
+            elif has_notes(child):
+                out.append(rel)
+    return out
+
+
+def _collapse_obsidian_scope(vault_path: str, scope: list[str]) -> list[str]:
+    """Turn "every folder picked" into the empty scope (= the whole vault).
+
+    A list that names every note-bearing folder is the user saying "all of
+    it" — saved as a fixed list it would silently exclude folders created
+    later, so store it as ``[]`` instead. An unreadable vault leaves the
+    scope untouched.
+    """
+    if not scope or not vault_path:
+        return scope
+    try:
+        if not Path(os.path.expanduser(vault_path)).resolve().is_dir():
+            return scope
+    except Exception:  # noqa: BLE001
+        return scope
+    return [] if not _obsidian_uncovered_folders(vault_path, scope, limit=1) else scope
+
+
 # ─── /api/connections ───────────────────────────────────────────────
 
 @router.get("/connections")
@@ -181,6 +265,11 @@ async def list_connections() -> list[dict[str, Any]]:
             n = len(roots_out)
             if n:
                 summary_bits.append(f"{n} folder{'s' if n != 1 else ''}")
+        new_folders: list[str] = []
+        if name == "obsidian" and enabled and scope_list:
+            new_folders = _obsidian_uncovered_folders(
+                str(block.get("vault_path") or ""), scope_list
+            )
         out.append({
             "source": name,
             "status": status,
@@ -197,6 +286,11 @@ async def list_connections() -> list[dict[str, Any]]:
             # Local files only: the linked folders, for the card's list and
             # the Manage Scope root picker.
             **({"roots": roots_out} if roots_out is not None else {}),
+            # Obsidian only: vault folders with notes that the saved
+            # watch_folders leave out (e.g. created after the scope was
+            # picked). The card offers to add them — nothing is harvested
+            # until the user says so.
+            **({"new_folders": new_folders} if name == "obsidian" else {}),
         })
     return out
 
@@ -318,6 +412,8 @@ async def update_scope(source: str, body: ScopeUpdate):
         new_block["space_keys"] = space_keys
         new_block["page_ids"] = page_ids
     else:
+        if source == "obsidian":
+            kept = _collapse_obsidian_scope(str(block.get("vault_path") or ""), kept)
         new_block[key] = kept
     upsert_source(source, new_block)
     return {"ok": True, "scope": kept, "rejected": rejected}
@@ -923,8 +1019,11 @@ async def save_obsidian(body: ObsidianSave):
         "vault_path": body.vault_path.strip(),
         "concurrency": block.get("concurrency", 10),
     }
-    if body.scope:
-        new_block["watch_folders"] = body.scope
+    scope = _collapse_obsidian_scope(body.vault_path.strip(), body.scope)
+    if scope:
+        new_block["watch_folders"] = scope
+    elif body.scope:
+        pass  # every folder picked → whole vault, so future folders come along
     elif "watch_folders" in block:
         new_block["watch_folders"] = block["watch_folders"]
     if "ignore_patterns" in block:
